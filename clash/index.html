@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clash Analyzer — base progress, metrics &amp; upgrade planner</title>
+<meta name="description" content="Import your Clash of Clans base (API or JSON), see progress metrics, resources needed to max your Town Hall, and an efficient upgrade plan.">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="app">
+    <div class="logo">
+      <h1>⚔️ Clash Analyzer</h1>
+      <span class="sub">progress · metrics · upgrade planner</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="player-chip" id="playerChip">
+      <span class="th-badge" id="thBadge">TH –</span>
+      <span id="playerName">no base loaded</span>
+    </div>
+    <div class="controls">
+      <label class="field">TH
+        <select id="thSelect"></select>
+      </label>
+      <label class="field">Builders
+        <select id="builderSelect">
+          <option>1</option><option>2</option><option>3</option>
+          <option>4</option><option selected>5</option><option>6</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="overview" class="active">Overview</button>
+    <button data-tab="base">My Base</button>
+    <button data-tab="plan">Upgrade Plan</button>
+    <button data-tab="tomax">To Max</button>
+    <button data-tab="metrics">Metrics</button>
+    <button data-tab="io">Import / Export</button>
+  </nav>
+
+  <main>
+    <section id="tab-overview"></section>
+    <section id="tab-base" hidden></section>
+    <section id="tab-plan" hidden></section>
+    <section id="tab-tomax" hidden></section>
+    <section id="tab-metrics" hidden></section>
+    <section id="tab-io" hidden></section>
+  </main>
+
+  <footer class="app">
+    <p><b>Data:</b> upgrade costs, times and caps scraped from the
+      <a href="https://clashofclans.fandom.com" target="_blank" rel="noopener">Clash of Clans Wiki</a>
+      (<span id="dataDate"></span>, through TH<span id="dataMaxTH"></span>).
+      Supercharges and Builder-Base gear-ups are not counted. Everything runs in your browser;
+      your base is stored locally (localStorage) only.</p>
+    <p>This is a fan tool. Not affiliated with, endorsed or sponsored by Supercell.
+      See <a href="https://supercell.com/en/fan-content-policy/" target="_blank" rel="noopener">Supercell's Fan Content Policy</a>.</p>
+  </footer>
+
+</div>
+<script src="data.js"></script>
+<script src="mybase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
