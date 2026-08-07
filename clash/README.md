@@ -25,6 +25,19 @@ A fully client-side Clash of Clans base analyzer, hosted on GitHub Pages at
   per-defense matrix (counts, level ranges, remaining cost/time), a
   "best value right now" ranking of every available defense upgrade, and a
   laboratory value matrix.
+- **Running upgrades** — live timers from the village export (and a "start"
+  button on any next step) occupy their lanes in the timetable as striped
+  in-progress bars; when a timer lapses the level applies automatically.
+- **Wall sprint** — walls are costed separately from other gold (they're
+  payable with gold *or* elixir from level 5), with a daily wall budget,
+  walls-per-week rate and a finish date.
+- **Equipment & ore plan** — weekly ore income → when each owned equipment
+  (and all of them) maxes for this TH's Blacksmith.
+- **Next-TH preview** — what the jump costs, what it unlocks, and what your
+  progress % would read the day you upgrade.
+- **Share links** — the full base compressed into a URL hash; recipients get
+  a read-only view they can optionally keep. The site owner's base is baked
+  in as the default (`mybase.js`).
 
 ## Importing your base
 

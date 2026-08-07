@@ -152,9 +152,11 @@ for it in raw["items"]:
         data["heroes"].append({"id": slug(name), "name": name, "res": res or "dark",
                                "unlockTH": lv[0][3], "levels": lv})
     elif cat == "wall":
+        eok = set(it.get("elixir_ok") or [])
         data["walls"] = {"res": "gold", "counts": counts_arr(it),
                          "levels": [[r["level"], r["cost"], 0, r.get("th", 1), None,
-                                     r.get("hp"), None] for r in it["levels"]]}
+                                     r.get("hp"), None, 1 if r["level"] in eok else 0]
+                                    for r in it["levels"]]}
 
 for eq in raw["equipment"]:
     lv = [[r["level"], r.get("shiny", 0), r.get("glowy", 0), r.get("starry", 0), r["bs"]]

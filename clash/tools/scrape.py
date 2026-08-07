@@ -376,6 +376,32 @@ def parse_equipment_table(soup):
     return None
 
 
+
+def parse_wall_elixir(soup):
+    """Levels payable with elixir: the wall table's second Cost column."""
+    for tbl in soup.find_all("table"):
+        cls = " ".join(tbl.get("class") or [])
+        if "wikitable" not in cls:
+            continue
+        grid = table_grid(tbl)
+        if len(grid) < 3:
+            continue
+        headers = [re.sub(r"[*†‡]", "", cd["t"]).strip().lower() for cd in grid[0]]
+        cost_cols = [i for i, h in enumerate(headers) if h == "cost"]
+        if len(cost_cols) < 2 or not any("town hall" in h for h in headers):
+            continue
+        ok = []
+        for grow in grid[1:]:
+            cells = [cd["t"] for cd in grow]
+            lvl = num(cells[0]) if cells else None
+            if lvl is None:
+                continue
+            if cost_cols[1] < len(cells) and num(cells[cost_cols[1]]) is not None:
+                ok.append(int(lvl))
+        if ok:
+            return ok
+    return None
+
 def scrape_item(name, cat):
     page, html = get_page(name)
     if not html:
@@ -394,6 +420,10 @@ def scrape_item(name, cat):
         u = parse_unlock(soup)
         if u:
             out["unlock"] = u
+    if name == "Walls":
+        ew = parse_wall_elixir(soup)
+        if ew:
+            out["elixir_ok"] = ew
     if name == "Blacksmith":
         caps = parse_blacksmith_caps(soup)
         if caps:

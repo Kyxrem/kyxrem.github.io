@@ -7,7 +7,7 @@ const MAX_TH = D.meta.maxTH;
 
 /* ---------------- data unpacking ---------------- */
 function unpackRows(levels) {
-  return levels.map(r => ({ lvl: r[0], cost: r[1], time: r[2], th: r[3], dps: r[4], hp: r[5], cap: r[6] }));
+  return levels.map(r => ({ lvl: r[0], cost: r[1], time: r[2], th: r[3], dps: r[4], hp: r[5], cap: r[6], elixirOk: !!r[7] }));
 }
 const BUILDINGS = D.buildings.map(b => ({ ...b, rows: unpackRows(b.levels) }));
 const LAB = D.labItems.map(x => ({ ...x, rows: unpackRows(x.levels) }));
@@ -34,16 +34,22 @@ let state = null;
 function freshState(th) {
   return {
     v: 1, th: th || 11, builders: 5, name: "", tag: "",
-    buildings: {}, walls: {}, heroes: {}, lab: {}, pets: {}, equip: {},
-    settings: { buildBoost: 0, labBoost: 0, wallRes: "gold",
-      lootGold: 12000000, lootElixir: 12000000, lootDark: 60000 },
+    buildings: {}, walls: {}, heroes: {}, lab: {}, pets: {}, equip: {}, running: [],
+    settings: { buildBoost: 0, labBoost: 0,
+      lootGold: 12000000, lootElixir: 12000000, lootDark: 60000,
+      wallGoldDay: 3000000, wallElixirDay: 3000000,
+      oreWeekShiny: 6500, oreWeekGlowy: 550, oreWeekStarry: 15 },
   };
 }
 function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(LS_KEY));
-    if (s && s.v === 1) return s;
+    if (s && s.v === 1) {
+      if (!Array.isArray(s.running)) s.running = [];
+      s.settings = { ...freshState(1).settings, ...s.settings };
+      return s;
+    }
   } catch (e) {}
   return null;
 }
@@ -87,9 +93,43 @@ function stepsBetween(rows, from, to) {
   return rows.filter(r => r.lvl > from && r.lvl <= to);
 }
 
+function completeRunning(r) {
+  const item = byId[r.id];
+  if (!item) return;
+  if (r.q === "builder") {
+    if (HEROES.includes(item)) state.heroes[r.id] = Math.max(state.heroes[r.id] || 0, r.to);
+    else {
+      const arr = state.buildings[r.id] || [];
+      const i = arr.indexOf(r.to - 1);
+      if (i >= 0) arr[i] = r.to;
+    }
+  } else if (r.q === "lab") state.lab[r.id] = Math.max(state.lab[r.id] || 1, r.to);
+  else if (r.q === "pet") state.pets[r.id] = Math.max(state.pets[r.id] || 1, r.to);
+}
+
 // normalize state to TH: clamp levels, fit instance arrays to effective counts
 function normalize() {
   const th = state.th;
+  state.settings = { ...freshState(1).settings, ...(state.settings || {}) };
+  if (!Array.isArray(state.running)) state.running = [];
+  const now = Date.now();
+  state.running = state.running.filter(r => {
+    if (!byId[r.id] || !(r.endTs > 0)) return false;
+    if (r.endTs <= now) { completeRunning(r); return false; }
+    const item = byId[r.id];
+    if (r.q === "builder") {
+      if (HEROES.includes(item)) return (state.heroes[r.id] || 0) === r.to - 1;
+      return (state.buildings[r.id] || []).includes(r.to - 1);
+    }
+    if (r.q === "lab") return Math.max(1, state.lab[r.id] || 1) === r.to - 1;
+    if (r.q === "pet") return Math.max(1, state.pets[r.id] || 1) === r.to - 1;
+    return false;
+  });
+  // one lab / one pet queue at most, builders capped by count
+  const labs = state.running.filter(r => r.q === "lab");
+  const petsR = state.running.filter(r => r.q === "pet");
+  const builds = state.running.filter(r => r.q === "builder");
+  state.running = builds.slice(0, 6).concat(labs.slice(0, 1), petsR.slice(0, 1));
   for (const b of BUILDINGS) {
     const n = effCount(b, th, "cur");
     let arr = (state.buildings[b.id] || []).slice();
@@ -137,10 +177,10 @@ function normalize() {
   }
 }
 
-function blacksmithLevel(mode) {
+function blacksmithLevel(mode, thArg) {
   const bs = byId.blacksmith;
   if (!bs) return 0;
-  if (mode === "max") return maxLvlAt(bs.rows, state.th);
+  if (mode === "max") return maxLvlAt(bs.rows, thArg || state.th);
   const arr = state.buildings.blacksmith || [];
   return arr.length ? Math.max(...arr, 0) : 0;
 }
@@ -157,8 +197,8 @@ function emptyRes() { return { gold: 0, elixir: 0, dark: 0 }; }
 const RES_W = { gold: 1, elixir: 1, dark: 100 };
 function wcost(res, v) { return v * (RES_W[res] || 1); }
 
-function analyze() {
-  const th = state.th;
+function analyze(thArg) {
+  const th = thArg || state.th;
   const A = {
     cats: {}, totals: { res: emptyRes(), buildH: 0, labH: 0, petH: 0, heroH: 0,
       shiny: 0, glowy: 0, starry: 0 },
@@ -206,7 +246,8 @@ function analyze() {
       }
     }
   }
-  // walls
+  // walls — tracked separately (mixable gold/elixir payment, no builder time)
+  A.wall = { rem: 0, remElixirOk: 0, segsLeft: 0, total: 0, levels: [] };
   {
     const c = cat("walls");
     const mx = maxLvlAt(WALLS.rows, th);
@@ -214,16 +255,22 @@ function analyze() {
     const full = cumCost(WALLS.rows, mx);
     c.total = total * full;
     c.items = total;
+    A.wall.total = total * full;
     for (const [lvlStr, cnt] of Object.entries(state.walls)) {
       const lvl = +lvlStr;
       c.spent += cnt * cumCost(WALLS.rows, lvl);
+      const toMax = full - cumCost(WALLS.rows, lvl);
       if (lvl >= mx) c.maxed += cnt;
       else {
-        const rem = (full - cumCost(WALLS.rows, lvl)) * cnt;
-        c.res[state.settings.wallRes === "elixir" ? "elixir" : "gold"] += rem;
-        A.totals.res[state.settings.wallRes === "elixir" ? "elixir" : "gold"] += rem;
+        A.wall.rem += toMax * cnt;
+        A.wall.segsLeft += cnt;
+        let elig = 0;
+        for (const r of WALLS.rows) if (r.lvl > lvl && r.lvl <= mx && r.elixirOk) elig += r.cost;
+        A.wall.remElixirOk += elig * cnt;
       }
+      A.wall.levels.push({ lvl, cnt, each: toMax, maxed: lvl >= mx });
     }
+    A.wall.levels.sort((a, b) => b.lvl - a.lvl);
   }
   // heroes
   for (const h of HEROES) {
@@ -275,7 +322,7 @@ function analyze() {
   }
   // equipment (owned only), capped by blacksmith available at this TH
   {
-    const bsMax = blacksmithLevel("max");
+    const bsMax = blacksmithLevel("max", th);
     if (bsMax > 0) {
       const c = cat("equipment");
       for (const [id, lvl] of Object.entries(state.equip)) {
@@ -331,12 +378,24 @@ const TIER_WHY = { 1: "army & unlocks first", 2: "high-value defense", 3: "splas
 function builderTasks(A) {
   const th = state.th;
   const tasks = [];
+  const seeds = [];
+  const nowMs = Date.now();
+  const runPool = state.running.filter(r => r.q === "builder").slice();
+  const consume = (id, cur, key, name, res) => {
+    const i = runPool.findIndex(r => r.id === id && r.to === cur + 1);
+    if (i === -1) return false;
+    const r = runPool.splice(i, 1)[0];
+    seeds.push({ kind: "run", id, inst: +key.split(":")[1], key, name, to: r.to, cost: 0, res,
+      time: (r.endTs - nowMs) / 3.6e6, end: (r.endTs - nowMs) / 3.6e6, why: "in progress now" });
+    return true;
+  };
   // heroes — top priority, always keep them going
   for (const h of HEROES) {
     if (h.unlockTH > th) continue;
     const mx = maxLvlAt(h.rows, th);
-    const cur = state.heroes[h.id] || 0;
-    stepsBetween(h.rows, cur, mx).forEach((s, k) => {
+    let cur = state.heroes[h.id] || 0;
+    const seeded = consume(h.id, cur, h.id + ":0", h.name, h.res);
+    stepsBetween(h.rows, cur + (seeded ? 1 : 0), mx).forEach((s, k) => {
       tasks.push({ kind: "hero", id: h.id, name: h.name, inst: 0, to: s.lvl, cost: s.cost, res: h.res,
         time: s.time, tier: 0, seq: k, why: "hero — always keep upgrading", value: 0 });
     });
@@ -349,6 +408,8 @@ function builderTasks(A) {
     while (arr.length < n) arr.push(0);
     const tier = buildingTier(b);
     arr.forEach((cur, i) => {
+      const seeded = consume(b.id, cur, b.id + ":" + i, b.name, b.res);
+      if (seeded) cur += 1;
       stepsBetween(b.rows, cur, mx).forEach((s, k) => {
         const prevRow = b.rows.find(r => r.lvl === s.lvl - 1);
         const dDps = (s.dps || 0) - (prevRow && prevRow.dps || 0);
@@ -368,36 +429,48 @@ function builderTasks(A) {
     if (t.id === "elixir_storage" && A.storage.elixir < capNeed.elixir) { t.tier = 1; t.why = "storage too small for coming upgrades"; }
   }
   tasks.sort((a, b) => a.tier - b.tier || b.value - a.value || a.cost - b.cost || a.seq - b.seq);
-  return tasks;
+  return { tasks, seeds };
 }
 
-function schedule(tasks, workers, boostPct) {
+function schedule(tasks, workers, boostPct, seeds) {
   const factor = 1 - (boostPct || 0) / 100;
   const lanes = Array.from({ length: workers }, () => ({ free: 0, items: [] }));
+  const instAvail = {}; // instance key -> hour its current upgrade finishes
+  (seeds || []).slice(0, workers).forEach((sd, i) => {
+    const item = { ...sd, start: 0, lane: i, running: true };
+    lanes[i].free = sd.end;
+    lanes[i].items.push(item);
+    instAvail[sd.key] = sd.end;
+  });
   const timeline = [];
   const pending = tasks.map(t => ({ ...t }));
   const started = {};
   let guard = 0;
-  while (pending.length && guard++ < 20000) {
-    // earliest-free lane
+  while (pending.length && guard++ < 30000) {
     let lane = lanes[0];
     for (const l of lanes) if (l.free < lane.free) lane = l;
-    // find first pending whose predecessor is done (instance sequencing)
-    let idx = -1;
+    // first eligible task whose instance is idle by the time this lane frees up;
+    // otherwise the eligible one that becomes available soonest
+    let idx = -1, fbIdx = -1, fbAvail = Infinity;
     for (let i = 0; i < pending.length; i++) {
       const t = pending[i];
       const key = t.id + ":" + t.inst;
-      const done = started[key] || 0;
-      if (t.seq === done) { idx = i; break; }
+      if ((started[key] || 0) !== t.seq) continue;
+      const avail = instAvail[key] || 0;
+      if (avail <= lane.free) { idx = i; break; }
+      if (avail < fbAvail) { fbAvail = avail; fbIdx = i; }
     }
+    if (idx === -1) idx = fbIdx;
     if (idx === -1) break;
     const t = pending.splice(idx, 1)[0];
     const key = t.id + ":" + t.inst;
     started[key] = (started[key] || 0) + 1;
+    const start = Math.max(lane.free, instAvail[key] || 0);
     const dur = t.time * factor;
-    const item = { ...t, start: lane.free, end: lane.free + dur, lane: lanes.indexOf(lane) };
+    const item = { ...t, start, end: start + dur, lane: lanes.indexOf(lane) };
     lane.free = item.end;
     lane.items.push(item);
+    instAvail[key] = item.end;
     timeline.push(item);
   }
   timeline.sort((a, b) => a.start - b.start || a.end - b.end);
@@ -602,14 +675,14 @@ function renderOverview() {
     <div class="card"><h2>Progress by category</h2>${bars || '<p class="muted">Load a base first.</p>'}</div>
   </div>
   <div class="grid cols-4">
-    ${tile("Gold needed", fmt(A.totals.res.gold), "gold", "incl. walls (" + fmt((A.cats.walls || { res: emptyRes() }).res.gold) + ")")}
+    ${tile("Gold needed", fmt(A.totals.res.gold), "gold", "buildings + traps, excl. walls")}
     ${tile("Elixir needed", fmt(A.totals.res.elixir), "elixir", "buildings + research")}
     ${tile("Dark Elixir needed", fmt(A.totals.res.dark), "dark", "heroes + research")}
     ${tile("Builder time left", fmtDays(A.totals.buildH), "time", `≈ ${fmtDays(A.totals.buildH / state.builders)} with ${state.builders} builders`)}
     ${tile("Lab time left", fmtDays(A.totals.labH), "time", "single laboratory queue")}
     ${PETS.some(p => p.unlockTH <= state.th) ? tile("Pet House queue", fmtDays(A.totals.petH), "time", "") : ""}
     ${tile("Ores needed", `${fmt(A.totals.shiny)} / ${fmt(A.totals.glowy)} / ${fmt(A.totals.starry)}`, "shiny", "shiny / glowy / starry (owned equipment)")}
-    ${tile("Wall segments left", String((A.cats.walls ? A.cats.walls.items - A.cats.walls.maxed : 0)), "accent", "of " + (WALLS.counts[state.th - 1] || 0))}
+    ${tile("Walls remaining", fmt(A.wall.rem), "accent", `${A.wall.segsLeft} of ${WALLS.counts[state.th - 1] || 0} segments · gold or elixir`)}
   </div>
   <p class="small muted" style="margin-top:14px">Rough finish estimate: builders ≈ <b>${fmtDays(days * 24)}</b> · lab ≈ <b>${fmtDays(labDays * 24)}</b> (no boosts, uninterrupted queue). See the Upgrade Plan tab for a real schedule.</p>`;
 }
@@ -709,7 +782,7 @@ function renderBase() {
   }
   // equipment
   {
-    const bsMax = blacksmithLevel("max");
+    const bsMax = blacksmithLevel("max", th);
     if (bsMax > 0) {
       const cards = EQUIP.map(e => {
         const owned = e.id in state.equip;
@@ -765,9 +838,9 @@ function ganttHTML(sched, labTL, petTL) {
       const endDate = new Date(Date.now() + t.end * 3600000)
         .toLocaleDateString("en-US", { month: "short", day: "numeric" });
       const title = `${label} · ${fmt(t.cost)} ${RES_LABEL[t.res]} · ${fmtH(t.end - t.start)} · day ${Math.floor(sD)}–${Math.ceil(eD)} (done ${endDate})`;
-      return `<div class="g-block ${t.res === "dark" ? "dark" : t.res}${cut ? " cut" : ""}" ` +
-        `style="left:${(sD * PX).toFixed(1)}px;width:${w.toFixed(1)}px" title="${esc(title)}">` +
-        `${w > 68 ? esc(label) : ""}</div>`;
+      return `<div class="g-block ${t.res === "dark" ? "dark" : t.res}${cut ? " cut" : ""}${t.running ? " running" : ""}" ` +
+        `style="left:${(sD * PX).toFixed(1)}px;width:${w.toFixed(1)}px" title="${esc((t.running ? "IN PROGRESS — " : "") + title)}">` +
+        `${w > 68 ? (t.running ? "▶ " : "") + esc(label) : ""}</div>`;
     }).join("");
     return `<div class="g-track" style="width:${width}px">${blocks}</div>`;
   }).join("");
@@ -781,15 +854,51 @@ function ganttHTML(sched, labTL, petTL) {
 function renderPlan() {
   const A = analyze();
   const root = $("#tab-plan");
-  const tasks = builderTasks(A);
-  const sched = schedule(tasks, state.builders, state.settings.buildBoost);
+  const { tasks, seeds } = builderTasks(A);
+  const sched = schedule(tasks, state.builders, state.settings.buildBoost, seeds);
   const lab = labQueue();
   const pets = petQueue();
   const labFactor = 1 - (state.settings.labBoost || 0) / 100;
+  const nowMs = Date.now();
+  const runLab = state.running.find(r => r.q === "lab");
   let accL = 0;
-  const labTL = lab.map(t => { const start = accL; accL += t.time * labFactor; return { ...t, start, end: accL }; });
+  const labTL = [];
+  if (runLab && byId[runLab.id]) {
+    accL = Math.max(0.01, (runLab.endTs - nowMs) / 3.6e6);
+    labTL.push({ id: runLab.id, name: byId[runLab.id].name, to: runLab.to, cost: 0,
+      res: byId[runLab.id].res, tier: 0, start: 0, end: accL, running: true });
+  }
+  for (const t of lab) {
+    if (runLab && t.id === runLab.id && t.to === runLab.to) continue;
+    const start = accL; accL += t.time * labFactor;
+    labTL.push({ ...t, start, end: accL });
+  }
+  const runPet = state.running.find(r => r.q === "pet");
   let accPt = 0;
-  const petTL = pets.map(t => { const start = accPt; accPt += t.time * labFactor; return { ...t, start, end: accPt }; });
+  const petTL = [];
+  if (runPet && byId[runPet.id]) {
+    accPt = Math.max(0.01, (runPet.endTs - nowMs) / 3.6e6);
+    petTL.push({ id: runPet.id, name: byId[runPet.id].name, to: runPet.to, cost: 0,
+      res: byId[runPet.id].res, start: 0, end: accPt, running: true });
+  }
+  for (const t of pets) {
+    if (runPet && t.id === runPet.id && t.to === runPet.to) continue;
+    const start = accPt; accPt += t.time * labFactor;
+    petTL.push({ ...t, start, end: accPt });
+  }
+  const bFactor = 1 - (state.settings.buildBoost || 0) / 100;
+  const runningRows = state.running.map((r, i) => {
+    const item = byId[r.id];
+    if (!item) return "";
+    const remH = (r.endTs - nowMs) / 3.6e6;
+    const icon = r.q === "lab" ? "🧪" : r.q === "pet" ? "🐾" : "🔨";
+    return `<div class="plan-item"><div class="idx">${icon}</div>
+      <div class="what"><b>${esc(item.name)}</b> → L${r.to}
+        <div class="why">finishes ${new Date(r.endTs).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div></div>
+      <div class="cost">${fmtH(remH)} left</div>
+      <div class="dur"><button class="btn sm ghost" data-rdone="${i}">finish now</button></div>
+      <div class="when"><button class="btn sm ghost" data-rcancel="${i}">cancel</button></div></div>`;
+  }).join("");
 
   const planRows = sched.timeline.slice(0, 60).map((t, i) => `
     <div class="plan-item">
@@ -797,19 +906,19 @@ function renderPlan() {
       <div class="what"><b>${esc(t.name)}</b>${t.kind === "building" && (state.buildings[t.id] || []).length > 1 ? ` <span class="muted">#${t.inst + 1}</span>` : ""}
         → L${t.to} <div class="why">${esc(t.why)}</div></div>
       <div class="cost">${resTxt(t.res, t.cost)}</div>
-      <div class="dur">${fmtH(t.time * (1 - state.settings.buildBoost / 100))}</div>
+      <div class="dur">${t.seq === 0 ? `<button class="btn sm ghost" title="mark as started in game now" data-sq="builder" data-sid="${t.id}" data-sto="${t.to}" data-stime="${(t.time * bFactor).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.time * bFactor)}</div>
       <div class="when" title="builder ${t.lane + 1}">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)} · B${t.lane + 1}</div>
     </div>`).join("");
 
-  const labRows = labTL.slice(0, 40).map((t, i) => `<div class="plan-item"><div class="idx">${i + 1}</div>
-      <div class="what"><b>${esc(t.name)}</b> → L${t.to}<div class="why">lab tier ${t.tier}</div></div>
-      <div class="cost">${resTxt(t.res, t.cost)}</div>
-      <div class="dur">${fmtH(t.end - t.start)}</div>
+  const labRows = labTL.slice(0, 40).map((t, i) => `<div class="plan-item"><div class="idx">${t.running ? "▶" : i + 1}</div>
+      <div class="what"><b>${esc(t.name)}</b> → L${t.to}<div class="why">${t.running ? "researching now" : "lab tier " + t.tier}</div></div>
+      <div class="cost">${t.running ? "" : resTxt(t.res, t.cost)}</div>
+      <div class="dur">${!t.running && i === (runLab ? 1 : 0) && !runLab ? `<button class="btn sm ghost" data-sq="lab" data-sid="${t.id}" data-sto="${t.to}" data-stime="${((t.end - t.start)).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.end - t.start)}</div>
       <div class="when">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)}</div></div>`).join("");
-  const petRows = petTL.slice(0, 20).map((t, i) => `<div class="plan-item"><div class="idx">${i + 1}</div>
-      <div class="what"><b>${esc(t.name)}</b> → L${t.to}</div>
-      <div class="cost">${resTxt(t.res, t.cost)}</div>
-      <div class="dur">${fmtH(t.end - t.start)}</div>
+  const petRows = petTL.slice(0, 20).map((t, i) => `<div class="plan-item"><div class="idx">${t.running ? "▶" : i + 1}</div>
+      <div class="what"><b>${esc(t.name)}</b> → L${t.to}${t.running ? '<div class="why">upgrading now</div>' : ""}</div>
+      <div class="cost">${t.running ? "" : resTxt(t.res, t.cost)}</div>
+      <div class="dur">${!t.running && i === 0 && !runPet ? `<button class="btn sm ghost" data-sq="pet" data-sid="${t.id}" data-sto="${t.to}" data-stime="${(t.end - t.start).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.end - t.start)}</div>
       <div class="when">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)}</div></div>`).join("");
 
   const labDays = accL / 24;
@@ -824,6 +933,9 @@ function renderPlan() {
         <label class="field small">lab −<select id="labBoost">${[0, 10, 15, 20].map(v => `<option ${v === state.settings.labBoost ? "selected" : ""}>${v}</option>`).join("")}</select>%</label>
       </div><div class="delta">Gold Pass / events time discount</div></div>
   </div>
+  ${state.running.length ? `<div class="card" style="margin-bottom:14px"><h2>Running now</h2>
+    <div class="note">Imported from your village export or marked started here. These occupy their lanes in the timetable; when a timer lapses, the level is applied automatically.</div>
+    ${runningRows}</div>` : ""}
   <div class="card" style="margin-bottom:14px"><h2>Timetable</h2>
     <div class="note">Every queue as a lane, every upgrade as a bar spanning its days. Builders follow the
     priority order below; the Laboratory and Pet House are single queues. Hover a bar for cost and finish date.
@@ -861,6 +973,16 @@ function renderPlan() {
 }
 
 /* ---------- To Max ---------- */
+function wallETA(A) {
+  const G = state.settings.wallGoldDay || 0, E = state.settings.wallElixirDay || 0;
+  if (A.wall.rem <= 0) return 0;
+  if (G + E <= 0) return Infinity;
+  const goldOnly = Math.max(0, A.wall.rem - A.wall.remElixirOk);
+  let d = A.wall.rem / (G + E);
+  if (goldOnly > 0) d = Math.max(d, G > 0 ? goldOnly / G : Infinity);
+  return d;
+}
+
 function renderToMax() {
   const A = analyze();
   const root = $("#tab-tomax");
@@ -870,18 +992,81 @@ function renderToMax() {
   const dDark = s.lootDark > 0 ? A.totals.res.dark / s.lootDark : Infinity;
   const buildDays = A.totals.buildH / 24 / state.builders;
   const labDays = A.totals.labH / 24;
-  const bottleneck = Math.max(dGold, dElix, dDark, buildDays, labDays);
+  const wallDays = wallETA(A);
+  const bottleneck = Math.max(dGold, dElix, dDark, buildDays, labDays, wallDays);
   const bottleneckName = [["farming gold", dGold], ["farming elixir", dElix], ["farming dark elixir", dDark],
-    [state.builders + " builders", buildDays], ["the laboratory", labDays]].sort((a, b) => b[1] - a[1])[0][0];
-  const eta = new Date(Date.now() + bottleneck * 86400000);
+    [state.builders + " builders", buildDays], ["the laboratory", labDays], ["walls at your wall budget", wallDays]]
+    .sort((a, b) => b[1] - a[1])[0][0];
+  const eta = new Date(Date.now() + Math.min(bottleneck, 36500) * 86400000);
+  const wallEtaDate = isFinite(wallDays) ? new Date(Date.now() + wallDays * 86400000) : null;
+  const segCost = A.wall.segsLeft ? A.wall.rem / A.wall.segsLeft : 0;
+  const segsPerWeek = segCost > 0 ? 7 * ((s.wallGoldDay || 0) + (s.wallElixirDay || 0)) / segCost : 0;
 
-  const catRows = Object.entries(A.cats).filter(([, c]) => c.total > 0).map(([k, c]) => {
+  const catRows = Object.entries(A.cats).filter(([k, c]) => c.total > 0 && k !== "walls" && k !== "equipment").map(([k, c]) => {
     const label = { defense: "Defenses", trap: "Traps", resource: "Resources", army: "Army buildings",
-      walls: "Walls", heroes: "Heroes", lab: "Laboratory", pets: "Pets", equipment: "Equipment" }[k] || k;
-    if (k === "equipment") return "";
+      heroes: "Heroes", lab: "Laboratory", pets: "Pets" }[k] || k;
     return `<tr><td>${label}</td><td>${fmt(c.res.gold)}</td><td>${fmt(c.res.elixir)}</td><td>${fmt(c.res.dark)}</td>
       <td>${c.timeRem ? fmtDays(c.timeRem) : "–"}</td><td>${c.items - c.maxed}</td></tr>`;
   }).join("");
+
+  const wallRows = A.wall.levels.map(w => `
+    <tr><td>Level ${w.lvl}${w.maxed ? ' <span class="pill good">max</span>' : ""}</td>
+      <td>${w.cnt}</td><td>${w.maxed ? "–" : fmt(w.each)}</td><td>${w.maxed ? "–" : fmt(w.each * w.cnt)}</td></tr>`).join("");
+
+  // ore planner
+  const oreRem = { shiny: A.totals.shiny, glowy: A.totals.glowy, starry: A.totals.starry };
+  const oreWk = { shiny: s.oreWeekShiny, glowy: s.oreWeekGlowy, starry: s.oreWeekStarry };
+  const oreWeeks = Object.fromEntries(Object.keys(oreRem).map(k =>
+    [k, oreWk[k] > 0 ? oreRem[k] / oreWk[k] : (oreRem[k] > 0 ? Infinity : 0)]));
+  const oreBottleneckW = Math.max(...Object.values(oreWeeks));
+  const bsMax = blacksmithLevel("max");
+  const eqRows = Object.entries(state.equip).map(([id, lvl]) => {
+    const e = byId[id];
+    if (!e) return null;
+    const cap = equipCapAt(bsMax, e.rarity);
+    const rem = { shiny: 0, glowy: 0, starry: 0 };
+    for (const r of e.rows) if (r.lvl > lvl && r.lvl <= cap) { rem.shiny += r.shiny; rem.glowy += r.glowy; rem.starry += r.starry; }
+    const wk = Math.max(oreWk.shiny > 0 ? rem.shiny / oreWk.shiny : (rem.shiny ? Infinity : 0),
+      oreWk.glowy > 0 ? rem.glowy / oreWk.glowy : (rem.glowy ? Infinity : 0),
+      oreWk.starry > 0 ? rem.starry / oreWk.starry : (rem.starry ? Infinity : 0));
+    return { name: e.name, rarity: e.rarity, lvl, cap, rem, wk };
+  }).filter(Boolean).filter(r => r.lvl < r.cap).sort((a, b) => a.wk - b.wk);
+  const eqTable = eqRows.slice(0, 14).map(r => `
+    <tr><td>${esc(r.name)} <span class="muted small">${r.rarity}</span></td><td>${r.lvl} / ${r.cap}</td>
+      <td>${fmt(r.rem.shiny)}</td><td>${fmt(r.rem.glowy)}</td><td>${fmt(r.rem.starry)}</td>
+      <td>${isFinite(r.wk) ? r.wk.toFixed(1) + " wk" : "–"}</td></tr>`).join("");
+
+  // next TH preview
+  let thPreview = "";
+  if (state.th < MAX_TH) {
+    const next = state.th + 1;
+    const A2 = analyze(next);
+    const thRow = TH_ROWS.find(r => r.lvl === next);
+    const unlockNames = LAB.filter(x => x.unlockTH === next).map(x => x.name)
+      .concat(PETS.filter(p => p.unlockTH === next).map(p => p.name))
+      .concat(HEROES.filter(h => h.unlockTH === next).map(h => h.name));
+    let newInstances = 0, newLevels = 0;
+    for (const b of BUILDINGS) {
+      const c1 = effCount(b, state.th, "max"), c2 = effCount(b, next, "max");
+      newInstances += Math.max(0, c2 - c1);
+      newLevels += c2 * Math.max(0, maxLvlAt(b.rows, next) - maxLvlAt(b.rows, state.th));
+    }
+    const dRes = { gold: A2.totals.res.gold - A.totals.res.gold, elixir: A2.totals.res.elixir - A.totals.res.elixir,
+      dark: A2.totals.res.dark - A.totals.res.dark };
+    const dWall = A2.wall.rem - A.wall.rem;
+    thPreview = `<div class="card" style="margin-bottom:14px"><h2>If you jumped to TH${next} today</h2>
+      <div class="grid cols-3">
+        <div class="tile"><div class="label"><span class="dot gold"></span>The jump itself</div>
+          <div class="value">${fmt(thRow ? thRow.cost : 0)}</div><div class="delta">gold · ${fmtH(thRow ? thRow.time : 0)} build time</div></div>
+        <div class="tile"><div class="label"><span class="dot accent"></span>Progress would read</div>
+          <div class="value">${pctStr(A2.overall.spent, A2.overall.total)}</div><div class="delta">of TH${next} max (now ${pctStr(A.overall.spent, A.overall.total)} of TH${state.th})</div></div>
+        <div class="tile"><div class="label"><span class="dot elixir"></span>Extra work unlocked</div>
+          <div class="value">${fmt(dRes.gold + dRes.elixir)} <span class="muted" style="font-size:1rem">g+e</span></div>
+          <div class="delta">+${fmt(dRes.dark)} dark · +${fmt(dWall)} walls</div></div>
+      </div>
+      <p class="small muted" style="margin:10px 0 0">TH${next} adds ${newInstances} new buildings and ${newLevels} building levels${unlockNames.length ? ", and unlocks " + unlockNames.slice(0, 8).map(esc).join(", ") + (unlockNames.length > 8 ? " +" + (unlockNames.length - 8) + " more" : "") : ""}.</p>
+    </div>`;
+  }
 
   const thRows = thTotals().map(r => `
     <tr ${r.th === state.th ? 'style="background:var(--surface-2)"' : ""}><td>${r.th === state.th ? "▶ " : ""}TH${r.th}</td>
@@ -890,20 +1075,22 @@ function renderToMax() {
 
   root.innerHTML = `
   <div class="grid cols-4" style="margin-bottom:14px">
-    ${tile("Gold to max TH" + state.th, fmt(A.totals.res.gold), "gold", fmtFull(A.totals.res.gold))}
-    ${tile("Elixir to max TH" + state.th, fmt(A.totals.res.elixir), "elixir", fmtFull(A.totals.res.elixir))}
-    ${tile("Dark Elixir to max TH" + state.th, fmt(A.totals.res.dark), "dark", fmtFull(A.totals.res.dark))}
-    ${tile("Ores to max owned equipment", `${fmt(A.totals.shiny)} / ${fmt(A.totals.glowy)} / ${fmt(A.totals.starry)}`, "glowy", "shiny / glowy / starry")}
+    ${tile("Gold to max TH" + state.th, fmt(A.totals.res.gold), "gold", "buildings + traps — walls tracked separately")}
+    ${tile("Elixir to max TH" + state.th, fmt(A.totals.res.elixir), "elixir", "buildings + research")}
+    ${tile("Dark Elixir to max TH" + state.th, fmt(A.totals.res.dark), "dark", "heroes + research")}
+    ${tile("Walls to max", fmt(A.wall.rem), "gold", `${A.wall.segsLeft} segments · payable with gold${A.wall.remElixirOk >= A.wall.rem ? " or elixir" : A.wall.remElixirOk > 0 ? " (partly elixir)" : ""}`)}
   </div>
+  ${thPreview}
   <div class="grid cols-2" style="margin-bottom:14px">
     <div class="card"><h2>Time to max at TH${state.th}</h2>
       <table class="data"><tbody>
         <tr><td>Builder work (${state.builders} builders)</td><td>${fmtDays(A.totals.buildH / state.builders)}</td></tr>
         <tr><td>Laboratory</td><td>${fmtDays(A.totals.labH)}</td></tr>
         <tr><td>Pet House</td><td>${fmtDays(A.totals.petH)}</td></tr>
-        <tr><td>Gold at your loot rate</td><td>${isFinite(dGold) ? dGold.toFixed(0) + " days" : "set loot/day"}</td></tr>
+        <tr><td>Gold at your loot rate (excl. walls)</td><td>${isFinite(dGold) ? dGold.toFixed(0) + " days" : "set loot/day"}</td></tr>
         <tr><td>Elixir at your loot rate</td><td>${isFinite(dElix) ? dElix.toFixed(0) + " days" : "set loot/day"}</td></tr>
         <tr><td>Dark elixir at your loot rate</td><td>${isFinite(dDark) ? dDark.toFixed(0) + " days" : "set loot/day"}</td></tr>
+        <tr><td>Walls at your wall budget</td><td>${isFinite(wallDays) ? wallDays.toFixed(0) + " days" : "set a wall budget"}</td></tr>
       </tbody></table>
       <p class="small" style="margin-top:10px">Bottleneck: <b>${bottleneckName}</b> →
         maxed around <b>${eta.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</b>
@@ -912,20 +1099,49 @@ function renderToMax() {
         <label class="field">Gold/day <input type="number" class="wide" id="lootGold" value="${s.lootGold}" step="500000"></label>
         <label class="field">Elixir/day <input type="number" class="wide" id="lootElixir" value="${s.lootElixir}" step="500000"></label>
         <label class="field">DE/day <input type="number" class="wide" id="lootDark" value="${s.lootDark}" step="5000"></label>
-        <label class="field">Walls paid with
-          <select id="wallRes"><option value="gold" ${s.wallRes === "gold" ? "selected" : ""}>gold</option>
-          <option value="elixir" ${s.wallRes === "elixir" ? "selected" : ""}>elixir</option></select></label>
       </div>
     </div>
     <div class="card"><h2>Remaining by category</h2>
       <div class="table-scroll"><table class="data">
         <thead><tr><th>Category</th><th>Gold</th><th>Elixir</th><th>Dark</th><th>Work time</th><th>Upgrades</th></tr></thead>
         <tbody>${catRows}</tbody></table></div>
-      <p class="small muted">Equipment is tracked in ores, not resources — see the tiles above.</p>
+      <p class="small muted">Walls and equipment have their own cards — walls spend either resource, equipment spends ores.</p>
+    </div>
+  </div>
+  <div class="grid cols-2" style="margin-bottom:14px">
+    <div class="card"><h2>Wall sprint</h2>
+      <div class="note">${A.wall.segsLeft ? `${A.wall.segsLeft} segments to go, <b>${fmt(A.wall.rem)}</b> total (avg ${fmt(segCost)} per segment).
+        ${A.wall.remElixirOk >= A.wall.rem ? "All of it can be paid with gold <i>or</i> elixir." : fmt(A.wall.remElixirOk) + " of it can be paid with elixir."}
+        Set how much loot you can dump into walls per day:` : "Walls are done for this TH. 🧱✨"}</div>
+      ${A.wall.segsLeft ? `<div class="io-row small">
+        <label class="field">Gold/day <input type="number" class="wide" id="wallGoldDay" value="${s.wallGoldDay}" step="500000"></label>
+        <label class="field">Elixir/day <input type="number" class="wide" id="wallElixirDay" value="${s.wallElixirDay}" step="500000"></label>
+      </div>
+      <p class="small" style="margin:6px 0 10px">≈ <b>${segsPerWeek.toFixed(1)}</b> walls/week →
+        done in <b>${isFinite(wallDays) ? Math.ceil(wallDays) + " days" : "∞"}</b>${wallEtaDate ? ` (<b>${wallEtaDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</b>)` : ""}.</p>` : ""}
+      <div class="table-scroll"><table class="data">
+        <thead><tr><th>Walls</th><th>Count</th><th>To max, each</th><th>Subtotal</th></tr></thead>
+        <tbody>${wallRows}</tbody></table></div>
+    </div>
+    <div class="card"><h2>Equipment & ore plan</h2>
+      <div class="note">Weekly ore income (raid medals, trader, events) → when your owned equipment maxes for this TH's Blacksmith.</div>
+      <div class="io-row small">
+        <label class="field"><span class="dot shiny"></span>Shiny/wk <input type="number" class="wide" id="oreWeekShiny" value="${s.oreWeekShiny}" step="500"></label>
+        <label class="field"><span class="dot glowy"></span>Glowy/wk <input type="number" class="wide" id="oreWeekGlowy" value="${s.oreWeekGlowy}" step="50"></label>
+        <label class="field"><span class="dot starry"></span>Starry/wk <input type="number" class="wide" id="oreWeekStarry" value="${s.oreWeekStarry}" step="5"></label>
+      </div>
+      <p class="small" style="margin:6px 0 10px">Remaining: <b>${fmt(oreRem.shiny)}</b> shiny (${isFinite(oreWeeks.shiny) ? oreWeeks.shiny.toFixed(0) : "∞"} wk) ·
+        <b>${fmt(oreRem.glowy)}</b> glowy (${isFinite(oreWeeks.glowy) ? oreWeeks.glowy.toFixed(0) : "∞"} wk) ·
+        <b>${fmt(oreRem.starry)}</b> starry (${isFinite(oreWeeks.starry) ? oreWeeks.starry.toFixed(0) : "∞"} wk)
+        → all owned equipment maxed in ≈ <b>${isFinite(oreBottleneckW) ? Math.ceil(oreBottleneckW) + " weeks" : "∞"}</b>.</p>
+      <div class="table-scroll"><table class="data">
+        <thead><tr><th>Equipment</th><th>Level</th><th>Shiny</th><th>Glowy</th><th>Starry</th><th>Alone</th></tr></thead>
+        <tbody>${eqTable || '<tr><td colspan=6 class="muted">Everything owned is maxed for this Blacksmith.</td></tr>'}</tbody></table></div>
+      ${eqRows.length > 14 ? `<p class="small muted">…and ${eqRows.length - 14} more. "Alone" = weeks if all income went to that one item.</p>` : '<p class="small muted">"Alone" = weeks if all income went to that one item.</p>'}
     </div>
   </div>
   <div class="card"><h2>Every Town Hall, from scratch</h2>
-    <div class="note">Cost of taking a <i>fully maxed</i> TH(n−1) to a fully maxed TH(n): everything new plus every level unlocked. Straight from the data — handy for planning ahead.</div>
+    <div class="note">Cost of taking a <i>fully maxed</i> TH(n−1) to a fully maxed TH(n): everything new plus every level unlocked, walls included in the gold column.</div>
     <div class="table-scroll"><table class="data">
       <thead><tr><th>Level</th><th>TH upgrade (gold)</th><th>Gold</th><th>Elixir</th><th>Dark</th><th>Builder time</th><th>Lab time</th></tr></thead>
       <tbody>${thRows}</tbody></table></div></div>`;
@@ -1102,6 +1318,11 @@ function importVillage(obj) {
   if (obj.tag) state.tag = obj.tag;
   state.buildings = {}; state.walls = {}; state.heroes = {}; state.lab = {}; state.pets = {};
   // equipment is merged, not reset — a prior API import may already name items exactly
+  const running = [];
+  const ts = obj.timestamp ? obj.timestamp * 1000 : Date.now();
+  const addRun = (q, slug, lvl, timer) => {
+    if (timer > 0 && slug && byId[slug]) running.push({ q, id: slug, to: lvl + 1, endTs: ts + timer * 1000 });
+  };
   const addInstances = (slug, lvl, cnt) => {
     const arr = state.buildings[slug] || (state.buildings[slug] = []);
     for (let i = 0; i < cnt; i++) arr.push(lvl);
@@ -1111,31 +1332,34 @@ function importVillage(obj) {
     if (e.data === 1000001) continue;
     if (e.data === 1000010) { state.walls[e.lvl] = (state.walls[e.lvl] || 0) + cnt; matched++; continue; }
     const slug = VILLAGE_BUILDING_IDS[e.data] || VILLAGE_TRAP_IDS[e.data];
-    if (slug && byId[slug]) { addInstances(slug, e.lvl, cnt); matched++; }
+    if (slug && byId[slug]) { addInstances(slug, e.lvl, cnt); addRun("builder", slug, e.lvl, e.timer); matched++; }
     else if (!VILLAGE_IGNORE_BUILDINGS.has(e.data)) unknown[e.data >= 12000000 ? "trap" : "building"]++;
   }
   for (const e of (obj.units || []).concat(obj.siege_machines || [])) {
     const slug = VILLAGE_UNIT_IDS[e.data];
-    if (slug && byId[slug]) { state.lab[slug] = e.lvl; matched++; }
+    if (slug && byId[slug]) { state.lab[slug] = e.lvl; addRun("lab", slug, e.lvl, e.timer); matched++; }
     else if (!VILLAGE_IGNORE_UNITS.has(e.data)) unknown.unit++;
   }
   for (const e of obj.spells || []) {
     const slug = VILLAGE_SPELL_IDS[e.data];
-    if (slug && byId[slug]) { state.lab[slug] = e.lvl; matched++; }
+    if (slug && byId[slug]) { state.lab[slug] = e.lvl; addRun("lab", slug, e.lvl, e.timer); matched++; }
     else if (!VILLAGE_IGNORE_SPELLS.has(e.data)) unknown.spell++;
   }
   for (const e of obj.heroes || []) {
     const slug = VILLAGE_HERO_IDS[e.data];
-    if (slug) { state.heroes[slug] = e.lvl; matched++; } else unknown.hero++;
+    if (slug) { state.heroes[slug] = e.lvl; addRun("builder", slug, e.lvl, e.timer); matched++; }
+    else unknown.hero++;
   }
   for (const e of obj.pets || []) {
     const slug = VILLAGE_PET_IDS[e.data];
-    if (slug && byId[slug]) { state.pets[slug] = e.lvl; matched++; } else unknown.pet++;
+    if (slug && byId[slug]) { state.pets[slug] = e.lvl; addRun("pet", slug, e.lvl, e.timer); matched++; }
+    else unknown.pet++;
   }
   for (const e of obj.equipment || []) {
     const slug = VILLAGE_EQUIP_IDS[e.data];
     if (slug && byId[slug]) { state.equip[slug] = e.lvl; matched++; } else unknown.equipment++;
   }
+  state.running = running;
   normalize(); save();
   const missed = Object.entries(unknown).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}${n > 1 ? "s" : ""}`);
   let msg = `Village imported (TH${state.th}): ${matched} entries matched, including buildings, walls, traps, heroes, lab and pets.`;
@@ -1239,7 +1463,9 @@ function renderIO() {
       <div class="io-row">
         <button class="btn" id="ioDownload">Download base.json</button>
         <button class="btn ghost" id="ioCopy">Copy to clipboard</button>
+        <button class="btn ghost" id="ioShare">Copy share link</button>
       </div>
+      <div id="shareMsg"></div>
     </div>
     <div class="card"><h2>My base, sample &amp; reset</h2>
       <div class="note">${window.MY_BASE ? `This site's default base is <b>${esc(window.MY_BASE.tag)}</b> (TH${window.MY_BASE.th}, snapshot baked into the page) — new visits start from it, and your edits stay saved in this browser on top.` : "The sample is a mid-progress TH13 so you can explore every tab."}</div>
@@ -1334,7 +1560,11 @@ function bindEvents() {
     else if (t.id === "lootGold") { state.settings.lootGold = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootElixir") { state.settings.lootElixir = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootDark") { state.settings.lootDark = Math.max(0, +t.value || 0); save(); renderActive(); }
-    else if (t.id === "wallRes") { state.settings.wallRes = t.value; save(); renderActive(); }
+    else if (t.id === "wallGoldDay") { state.settings.wallGoldDay = Math.max(0, +t.value || 0); save(); renderActive(); }
+    else if (t.id === "wallElixirDay") { state.settings.wallElixirDay = Math.max(0, +t.value || 0); save(); renderActive(); }
+    else if (t.id === "oreWeekShiny") { state.settings.oreWeekShiny = Math.max(0, +t.value || 0); save(); renderActive(); }
+    else if (t.id === "oreWeekGlowy") { state.settings.oreWeekGlowy = Math.max(0, +t.value || 0); save(); renderActive(); }
+    else if (t.id === "oreWeekStarry") { state.settings.oreWeekStarry = Math.max(0, +t.value || 0); save(); renderActive(); }
   });
 
   document.querySelector("main").addEventListener("click", async e => {
@@ -1373,6 +1603,26 @@ function bindEvents() {
       state.walls = { 1: WALLS.counts[state.th - 1] || 0 };
       normalize(); save(); renderActive();
     }
+    if (t.dataset.sq) {
+      const q = t.dataset.sq;
+      const cap = q === "builder" ? state.builders : 1;
+      if (state.running.filter(r => r.q === q).length >= cap) {
+        alert(q === "builder" ? "All builders are already busy — finish or cancel one first." : "That queue is already busy.");
+      } else {
+        state.running.push({ q, id: t.dataset.sid, to: +t.dataset.sto, endTs: Date.now() + (+t.dataset.stime) * 3600000 });
+        save(); renderActive();
+      }
+      return;
+    }
+    if (t.dataset.rdone !== undefined) {
+      const r = state.running[+t.dataset.rdone];
+      if (r) { completeRunning(r); state.running.splice(+t.dataset.rdone, 1); normalize(); save(); renderActive(); }
+      return;
+    }
+    if (t.dataset.rcancel !== undefined) {
+      state.running.splice(+t.dataset.rcancel, 1); save(); renderActive();
+      return;
+    }
     if (t.id === "ioImport") {
       const box = $("#ioMsg");
       try {
@@ -1391,6 +1641,13 @@ function bindEvents() {
     }
     if (t.id === "ioCopy") {
       try { await navigator.clipboard.writeText(exportState()); t.textContent = "Copied ✓"; setTimeout(() => t.textContent = "Copy to clipboard", 1500); } catch (e2) {}
+    }
+    if (t.id === "ioShare") {
+      shareLink().then(url => navigator.clipboard.writeText(url).then(() => url)).then(url => {
+        $("#shareMsg").innerHTML = `<div class="msg ok">Link copied (${url.length} chars) — anyone opening it sees a read-only copy of this base and can choose to keep it.</div>`;
+      }).catch(err => {
+        $("#shareMsg").innerHTML = `<div class="msg err">Couldn't build the link: ${esc(err.message)}</div>`;
+      });
     }
     if (t.id === "ioSample") { loadSample(); switchTab("overview"); }
     if (t.id === "ioMyBase") { loadMyBase(); switchTab("overview"); }
@@ -1427,24 +1684,90 @@ function bindEvents() {
   });
 }
 
+/* ---------------- share links ---------------- */
+let viewShared = false;
+const _save = save;
+save = function () { if (!viewShared) _save(); };
+
+async function shareLink() {
+  const json = JSON.stringify(state);
+  let bytes = new TextEncoder().encode(json);
+  let flag = "r";
+  if (typeof CompressionStream !== "undefined") {
+    const cs = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+    bytes = new Uint8Array(await new Response(cs).arrayBuffer());
+    flag = "d";
+  }
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  const b64 = btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return location.origin + location.pathname + "#b=" + flag + b64;
+}
+
+async function tryHashImport() {
+  const m = location.hash.match(/^#b=([dr])([A-Za-z0-9_-]+)$/);
+  if (!m) return false;
+  try {
+    const bin = atob(m[2].replace(/-/g, "+").replace(/_/g, "/"));
+    let bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+    if (m[1] === "d") {
+      const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      bytes = new Uint8Array(await new Response(ds).arrayBuffer());
+    }
+    const st = JSON.parse(new TextDecoder().decode(bytes));
+    if (st.v !== 1) return false;
+    state = st;
+    viewShared = true;
+    return true;
+  } catch (e) {
+    console.warn("share link decode failed", e);
+    return false;
+  }
+}
+
+function showSharedBanner() {
+  const banner = el(`<div class="msg info" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 14px">
+    <span style="flex:1">Viewing a <b>shared base</b> ${esc(state.tag || "")} (TH${state.th}) — nothing is saved unless you keep it.</span>
+    <button class="btn sm" id="shareKeep">Keep this base</button>
+    <button class="btn sm ghost" id="shareDismiss">✕ back to mine</button></div>`);
+  document.querySelector("main").before(banner);
+  banner.querySelector("#shareKeep").addEventListener("click", () => {
+    viewShared = false; save();
+    history.replaceState(null, "", location.pathname);
+    banner.remove(); renderActive();
+  });
+  banner.querySelector("#shareDismiss").addEventListener("click", () => {
+    viewShared = false;
+    history.replaceState(null, "", location.pathname);
+    state = load() || (window.MY_BASE ? JSON.parse(JSON.stringify(window.MY_BASE)) : freshState(11));
+    normalize(); banner.remove(); renderHeader(); renderActive();
+  });
+}
+
 /* ---------------- boot ---------------- */
 function loadMyBase() {
   state = JSON.parse(JSON.stringify(window.MY_BASE));
   normalize(); save();
 }
 
-function boot() {
+async function boot() {
   $("#dataDate").textContent = D.meta.generated;
   $("#dataMaxTH").textContent = D.meta.maxTH;
-  state = load();
-  const firstVisit = !state;
-  if (!state) state = freshState(11);
-  normalize();
+  const shared = await tryHashImport();
+  if (shared) {
+    normalize();
+  } else {
+    state = load();
+    const firstVisit = !state;
+    if (!state) state = freshState(11);
+    normalize();
+    if (firstVisit) {
+      if (window.MY_BASE) loadMyBase(); else loadSample();
+    }
+  }
   bindEvents();
   renderHeader();
-  if (firstVisit) {
-    if (window.MY_BASE) loadMyBase(); else loadSample();
-  }
+  if (shared) showSharedBanner();
   renderActive();
 }
 boot();
