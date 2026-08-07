@@ -434,6 +434,16 @@ function schedule(tasks, workers, boostPct, seeds) {
     lanes[i].items.push(item);
     instAvail[sd.key] = sd.end;
   });
+  // Resource balancing: each free builder takes the highest-priority job from
+  // whichever resource is least ahead of its farming budget (loot/day rates
+  // from To Max), so spending is spread across gold/elixir/dark instead of
+  // burning one resource first.
+  const rate = {
+    gold: Math.max(1, state.settings.lootGold || 0),
+    elixir: Math.max(1, state.settings.lootElixir || 0),
+    dark: Math.max(1, state.settings.lootDark || 0),
+  };
+  const spent = { gold: 0, elixir: 0, dark: 0 };
   const timeline = [];
   const pending = tasks.map(t => ({ ...t }));
   const started = {};
@@ -441,18 +451,30 @@ function schedule(tasks, workers, boostPct, seeds) {
   while (pending.length && guard++ < 30000) {
     let lane = lanes[0];
     for (const l of lanes) if (l.free < lane.free) lane = l;
-    // first eligible task whose instance is idle by the time this lane frees up;
-    // otherwise the eligible one that becomes available soonest
-    let idx = -1, fbIdx = -1, fbAvail = Infinity;
+    // gather every task whose instance is idle by the time this lane frees up
+    const nowIdx = [];
+    let fbIdx = -1, fbAvail = Infinity;
     for (let i = 0; i < pending.length; i++) {
       const t = pending[i];
       const key = t.id + ":" + t.inst;
       if ((started[key] || 0) !== t.seq) continue;
       const avail = instAvail[key] || 0;
-      if (avail <= lane.free) { idx = i; break; }
-      if (avail < fbAvail) { fbAvail = avail; fbIdx = i; }
+      if (avail <= lane.free) nowIdx.push(i);
+      else if (avail < fbAvail) { fbAvail = avail; fbIdx = i; }
     }
-    if (idx === -1) idx = fbIdx;
+    let idx = -1;
+    if (nowIdx.length) {
+      const day = lane.free / 24 + 1;
+      const resOrder = ["gold", "elixir", "dark"]
+        .sort((a, b) => spent[a] / (rate[a] * day) - spent[b] / (rate[b] * day));
+      for (const res of resOrder) {
+        const hit = nowIdx.find(i => pending[i].res === res);
+        if (hit !== undefined) { idx = hit; break; }
+      }
+      if (idx === -1) idx = nowIdx[0];
+    } else {
+      idx = fbIdx;
+    }
     if (idx === -1) break;
     const t = pending.splice(idx, 1)[0];
     const key = t.id + ":" + t.inst;
@@ -463,6 +485,7 @@ function schedule(tasks, workers, boostPct, seeds) {
     lane.free = item.end;
     lane.items.push(item);
     instAvail[key] = item.end;
+    spent[t.res] += t.cost;
     timeline.push(item);
   }
   timeline.sort((a, b) => a.start - b.start || a.end - b.end);
@@ -851,7 +874,7 @@ function renderPlan() {
   const A = analyze();
   const root = $("#tab-plan");
   const { tasks, seeds } = builderTasks(A);
-  const sched = schedule(tasks, state.builders, state.settings.buildBoost);
+  const sched = schedule(tasks, state.builders, state.settings.buildBoost, seeds);
   const lab = labQueue();
   const pets = petQueue();
   const labFactor = 1 - (state.settings.labBoost || 0) / 100;
@@ -939,9 +962,11 @@ function renderPlan() {
   ${state.running.length ? `<div class="card" style="margin-bottom:14px"><h2>Running now</h2>${runningRows}</div>` : ""}
   <div class="card" style="margin-bottom:14px"><h2>Timetable</h2>
     <div class="note">Every queue as a lane, every upgrade as a bar spanning its days — the selected range always
-    fills the width, so picking fewer weeks zooms in. Hover or tap a bar for full details. Builders follow the
-    priority order (heroes → army & unlocks → key defenses → splash → point → traps → resources); the Laboratory
-    and Pet House are single queues. Walls aren't scheduled — they're instant and only cost resources.</div>
+    fills the width, so picking fewer weeks zooms in. Hover or tap a bar for full details. Each free builder takes
+    the highest-priority job (heroes → army & unlocks → key defenses → splash → point → traps → resources) from
+    whichever resource is least ahead of your loot/day rates (set in To Max), so gold, elixir and dark elixir
+    spending stay balanced instead of burning one resource first. The Laboratory and Pet House are single queues.
+    Walls aren't scheduled — they're instant and only cost resources.</div>
     <div class="g-legend">
       <span><span class="dot gold"></span> costs gold</span>
       <span><span class="dot elixir"></span> costs elixir</span>
