@@ -130,45 +130,36 @@ function normalize() {
   const petsR = state.running.filter(r => r.q === "pet");
   const builds = state.running.filter(r => r.q === "builder");
   state.running = builds.slice(0, 6).concat(labs.slice(0, 1), petsR.slice(0, 1));
+  // Levels are stored raw and only clamped when read, so viewing a lower TH
+  // is a non-destructive preview — switching back restores everything.
   for (const b of BUILDINGS) {
     const n = effCount(b, th, "cur");
     let arr = (state.buildings[b.id] || []).slice();
-    const mx = maxLvlAt(b.rows, th);
-    arr = arr.map(l => Math.max(0, Math.min(l, mx)));
+    arr = arr.map(l => Math.max(0, Math.floor(l || 0)));
     arr.sort((a, bb) => bb - a);
-    if (arr.length > n) arr = arr.slice(0, n);
     while (arr.length < n) arr.push(0);
     state.buildings[b.id] = arr;
   }
-  const wMax = maxLvlAt(WALLS.rows, th);
   const wCount = WALLS.counts[th - 1] || 0;
-  let placed = 0;
   const walls = {};
-  for (let l = wMax; l >= 1; l--) {
-    let c = Math.max(0, Math.floor(state.walls[l] || 0));
-    c = Math.min(c, wCount - placed);
-    if (c > 0) walls[l] = c;
-    placed += c;
+  let placed = 0;
+  for (const [lvlStr, cnt] of Object.entries(state.walls)) {
+    const c = Math.max(0, Math.floor(cnt || 0));
+    const l = Math.floor(+lvlStr);
+    if (c > 0 && l >= 1) { walls[l] = (walls[l] || 0) + c; placed += c; }
   }
   if (placed < wCount) walls[1] = (walls[1] || 0) + (wCount - placed);
   state.walls = walls;
   for (const h of HEROES) {
-    const mx = maxLvlAt(h.rows, th);
-    state.heroes[h.id] = Math.max(0, Math.min(state.heroes[h.id] || 0, mx));
+    state.heroes[h.id] = Math.max(0, Math.floor(state.heroes[h.id] || 0));
   }
   for (const x of LAB) {
-    const mx = maxLvlAt(x.rows, th);
-    const unlocked = x.unlockTH <= th;
-    let l = state.lab[x.id] || 0;
-    if (unlocked && l < 1) l = 1;
-    state.lab[x.id] = Math.max(0, Math.min(l, mx));
+    let l = Math.max(0, Math.floor(state.lab[x.id] || 0));
+    if (x.unlockTH <= th && l < 1) l = 1;
+    state.lab[x.id] = l;
   }
   for (const p of PETS) {
-    const mx = maxLvlAt(p.rows, th);
-    const unlocked = p.unlockTH <= th;
-    let l = state.pets[p.id] || 0;
-    if (unlocked && l < 1) l = Math.max(l, 0);
-    state.pets[p.id] = Math.max(0, Math.min(l, mx));
+    state.pets[p.id] = Math.max(0, Math.floor(state.pets[p.id] || 0));
   }
   for (const id of Object.keys(state.equip)) {
     const e = byId[id];
@@ -211,13 +202,13 @@ function analyze(thArg) {
   // buildings
   for (const b of BUILDINGS) {
     const n = effCount(b, th, "max");
-    if (!n && !builtCount(b)) continue;
+    if (!n) continue;
     const mx = maxLvlAt(b.rows, th);
     const c = cat(b.cat);
-    const arr = (state.buildings[b.id] || []).slice();
+    const arr = (state.buildings[b.id] || []).slice().sort((x, y) => y - x);
     while (arr.length < n) arr.push(0);
-    for (let i = 0; i < arr.length; i++) {
-      const cur = arr[i];
+    for (let i = 0; i < n; i++) {
+      const cur = Math.min(arr[i], mx);
       c.spent += wcost(b.res, cumCost(b.rows, cur));
       c.total += wcost(b.res, cumCost(b.rows, mx));
       c.items++;
@@ -277,7 +268,7 @@ function analyze(thArg) {
     if (h.unlockTH > th) continue;
     const c = cat("heroes");
     const mx = maxLvlAt(h.rows, th);
-    const cur = state.heroes[h.id] || 0;
+    const cur = Math.min(state.heroes[h.id] || 0, mx);
     c.spent += wcost(h.res, cumCost(h.rows, cur));
     c.total += wcost(h.res, cumCost(h.rows, mx));
     c.items++;
@@ -293,7 +284,7 @@ function analyze(thArg) {
     if (x.unlockTH > th) continue;
     const c = cat("lab");
     const mx = maxLvlAt(x.rows, th);
-    const cur = Math.max(1, state.lab[x.id] || 1);
+    const cur = Math.min(Math.max(1, state.lab[x.id] || 1), mx);
     c.spent += wcost(x.res, cumCost(x.rows, cur));
     c.total += wcost(x.res, cumCost(x.rows, mx));
     c.items++;
@@ -309,7 +300,7 @@ function analyze(thArg) {
     if (p.unlockTH > th) continue;
     const c = cat("pets");
     const mx = maxLvlAt(p.rows, th);
-    const cur = Math.max(1, state.pets[p.id] || 1);
+    const cur = Math.min(Math.max(1, state.pets[p.id] || 1), mx);
     c.spent += wcost(p.res, cumCost(p.rows, cur));
     c.total += wcost(p.res, cumCost(p.rows, mx));
     c.items++;
@@ -393,7 +384,7 @@ function builderTasks(A) {
   for (const h of HEROES) {
     if (h.unlockTH > th) continue;
     const mx = maxLvlAt(h.rows, th);
-    let cur = state.heroes[h.id] || 0;
+    let cur = Math.min(state.heroes[h.id] || 0, mx);
     const seeded = consume(h.id, cur, h.id + ":0", h.name, h.res);
     stepsBetween(h.rows, cur + (seeded ? 1 : 0), mx).forEach((s, k) => {
       tasks.push({ kind: "hero", id: h.id, name: h.name, inst: 0, to: s.lvl, cost: s.cost, res: h.res,
@@ -404,10 +395,11 @@ function builderTasks(A) {
   for (const b of BUILDINGS) {
     const n = effCount(b, th, "max");
     const mx = maxLvlAt(b.rows, th);
-    const arr = (state.buildings[b.id] || []).slice();
+    const arr = (state.buildings[b.id] || []).slice().sort((x, y) => y - x);
     while (arr.length < n) arr.push(0);
     const tier = buildingTier(b);
-    arr.forEach((cur, i) => {
+    arr.slice(0, n).forEach((cur, i) => {
+      cur = Math.min(cur, mx);
       const seeded = consume(b.id, cur, b.id + ":" + i, b.name, b.res);
       if (seeded) cur += 1;
       stepsBetween(b.rows, cur, mx).forEach((s, k) => {
@@ -484,7 +476,7 @@ function labQueue() {
   for (const x of LAB) {
     if (x.unlockTH > th) continue;
     const mx = maxLvlAt(x.rows, th);
-    const cur = Math.max(1, state.lab[x.id] || 1);
+    const cur = Math.min(Math.max(1, state.lab[x.id] || 1), mx);
     stepsBetween(x.rows, cur, mx).forEach((s, k) => {
       const prevRow = x.rows.find(r => r.lvl === s.lvl - 1);
       const dDps = (s.dps || 0) - (prevRow && prevRow.dps || 0);
@@ -501,7 +493,7 @@ function petQueue() {
   for (const p of PETS) {
     if (p.unlockTH > th) continue;
     const mx = maxLvlAt(p.rows, th);
-    const cur = Math.max(1, state.pets[p.id] || 1);
+    const cur = Math.min(Math.max(1, state.pets[p.id] || 1), mx);
     stepsBetween(p.rows, cur, mx).forEach((s, k) => {
       items.push({ id: p.id, name: p.name, to: s.lvl, cost: s.cost, res: p.res, time: s.time, seq: k });
     });
@@ -810,20 +802,24 @@ function taskLabel(t) {
 }
 
 function ganttHTML(sched, labTL, petTL) {
-  const PX = 26;
   const finishH = Math.max(sched.finish,
     labTL.length ? labTL[labTL.length - 1].end : 0,
     petTL.length ? petTL[petTL.length - 1].end : 0);
   if (finishH <= 0) return '<p class="muted">Nothing left to schedule — this TH is done. 🎉</p>';
   const horizonD = ganttHorizon === 0 ? Math.ceil(finishH / 24) + 1 : ganttHorizon;
+  // zoom: the selected horizon always fills the available width
+  const mainW = (document.querySelector("main") || document.body).clientWidth || 1100;
+  const avail = Math.max(320, mainW - 36 /* card padding */ - 108 /* labels */ - 4);
+  const PX = Math.min(48, Math.max(7, Math.floor(avail / horizonD)));
   const width = horizonD * PX;
   const rows = [];
   for (let i = 0; i < state.builders; i++)
     rows.push({ label: "Builder " + (i + 1), items: (sched.lanes[i] || { items: [] }).items });
   rows.push({ label: "Laboratory", items: labTL });
   rows.push({ label: "Pet House", items: petTL });
+  const tickStep = horizonD > 90 ? 28 : horizonD > 45 ? 14 : 7;
   let ticks = "";
-  for (let d = 0; d < horizonD; d += 7) {
+  for (let d = 0; d < horizonD; d += tickStep) {
     const date = new Date(Date.now() + d * 86400000)
       .toLocaleDateString("en-US", { month: "short", day: "numeric" });
     ticks += `<div class="g-tick" style="left:${d * PX}px"><b>${d === 0 ? "today" : "day " + d}</b>${date}</div>`;
@@ -839,7 +835,7 @@ function ganttHTML(sched, labTL, petTL) {
         .toLocaleDateString("en-US", { month: "short", day: "numeric" });
       const title = `${label} · ${fmt(t.cost)} ${RES_LABEL[t.res]} · ${fmtH(t.end - t.start)} · day ${Math.floor(sD)}–${Math.ceil(eD)} (done ${endDate})`;
       return `<div class="g-block ${t.res === "dark" ? "dark" : t.res}${cut ? " cut" : ""}${t.running ? " running" : ""}" ` +
-        `style="left:${(sD * PX).toFixed(1)}px;width:${w.toFixed(1)}px" title="${esc((t.running ? "IN PROGRESS — " : "") + title)}">` +
+        `style="left:${(sD * PX).toFixed(1)}px;width:${w.toFixed(1)}px" data-tip="${esc((t.running ? "IN PROGRESS — " : "") + title)}">` +
         `${w > 68 ? (t.running ? "▶ " : "") + esc(label) : ""}</div>`;
     }).join("");
     return `<div class="g-track" style="width:${width}px">${blocks}</div>`;
@@ -855,10 +851,11 @@ function renderPlan() {
   const A = analyze();
   const root = $("#tab-plan");
   const { tasks, seeds } = builderTasks(A);
-  const sched = schedule(tasks, state.builders, state.settings.buildBoost, seeds);
+  const sched = schedule(tasks, state.builders, state.settings.buildBoost);
   const lab = labQueue();
   const pets = petQueue();
   const labFactor = 1 - (state.settings.labBoost || 0) / 100;
+  const bFactor = 1 - (state.settings.buildBoost || 0) / 100;
   const nowMs = Date.now();
   const runLab = state.running.find(r => r.q === "lab");
   let accL = 0;
@@ -886,46 +883,52 @@ function renderPlan() {
     const start = accPt; accPt += t.time * labFactor;
     petTL.push({ ...t, start, end: accPt });
   }
-  const bFactor = 1 - (state.settings.buildBoost || 0) / 100;
-  const runningRows = state.running.map((r, i) => {
+
+  const runningRows = state.running.map(r => {
     const item = byId[r.id];
     if (!item) return "";
     const remH = (r.endTs - nowMs) / 3.6e6;
     const icon = r.q === "lab" ? "🧪" : r.q === "pet" ? "🐾" : "🔨";
-    return `<div class="plan-item"><div class="idx">${icon}</div>
+    return `<div class="plan-item" style="grid-template-columns:34px 1fr auto">
+      <div class="idx">${icon}</div>
       <div class="what"><b>${esc(item.name)}</b> → L${r.to}
-        <div class="why">finishes ${new Date(r.endTs).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div></div>
-      <div class="cost">${fmtH(remH)} left</div>
-      <div class="dur"><button class="btn sm ghost" data-rdone="${i}">finish now</button></div>
-      <div class="when"><button class="btn sm ghost" data-rcancel="${i}">cancel</button></div></div>`;
+        <div class="why">imported from your village — the level applies automatically when the timer ends</div></div>
+      <div class="cost">${fmtH(remH)} left · done ${new Date(r.endTs).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>
+    </div>`;
   }).join("");
 
-  const planRows = sched.timeline.slice(0, 60).map((t, i) => `
-    <div class="plan-item">
-      <div class="idx">${i + 1}</div>
-      <div class="what"><b>${esc(t.name)}</b>${t.kind === "building" && (state.buildings[t.id] || []).length > 1 ? ` <span class="muted">#${t.inst + 1}</span>` : ""}
-        → L${t.to} <div class="why">${esc(t.why)}</div></div>
-      <div class="cost">${resTxt(t.res, t.cost)}</div>
-      <div class="dur">${t.seq === 0 ? `<button class="btn sm ghost" title="mark as started in game now" data-sq="builder" data-sid="${t.id}" data-sto="${t.to}" data-stime="${(t.time * bFactor).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.time * bFactor)}</div>
-      <div class="when" title="builder ${t.lane + 1}">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)} · B${t.lane + 1}</div>
-    </div>`).join("");
+  // ---- queue + category summaries instead of per-upgrade lists ----
+  const sumRes = list => {
+    const o = { n: 0, time: 0, gold: 0, elixir: 0, dark: 0 };
+    for (const t of list) { o.n++; o.time += t.time || 0; o[t.res] += t.cost || 0; }
+    return o;
+  };
+  const bSum = sumRes(tasks.map(t => ({ ...t, time: t.time * bFactor })));
+  const lSum = sumRes(lab.map(t => ({ ...t, time: t.time * labFactor })));
+  const pSum = sumRes(pets.map(t => ({ ...t, time: t.time * labFactor })));
+  const resCells = o => `<td>${o.gold ? fmt(o.gold) : "–"}</td><td>${o.elixir ? fmt(o.elixir) : "–"}</td><td>${o.dark ? fmt(o.dark) : "–"}</td>`;
+  const queueRows = `
+    <tr><td>Builders × ${state.builders}</td><td>${bSum.n}</td><td>${fmtDays(bSum.time)}</td>
+      <td>${fmtDays(sched.finish)}</td>${resCells(bSum)}</tr>
+    <tr><td>Laboratory</td><td>${lSum.n}</td><td>${fmtDays(lSum.time)}</td><td>${fmtDays(accL)}</td>${resCells(lSum)}</tr>
+    <tr><td>Pet House</td><td>${pSum.n}</td><td>${fmtDays(pSum.time)}</td><td>${fmtDays(accPt)}</td>${resCells(pSum)}</tr>`;
 
-  const labRows = labTL.slice(0, 40).map((t, i) => `<div class="plan-item"><div class="idx">${t.running ? "▶" : i + 1}</div>
-      <div class="what"><b>${esc(t.name)}</b> → L${t.to}<div class="why">${t.running ? "researching now" : "lab tier " + t.tier}</div></div>
-      <div class="cost">${t.running ? "" : resTxt(t.res, t.cost)}</div>
-      <div class="dur">${!t.running && i === (runLab ? 1 : 0) && !runLab ? `<button class="btn sm ghost" data-sq="lab" data-sid="${t.id}" data-sto="${t.to}" data-stime="${((t.end - t.start)).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.end - t.start)}</div>
-      <div class="when">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)}</div></div>`).join("");
-  const petRows = petTL.slice(0, 20).map((t, i) => `<div class="plan-item"><div class="idx">${t.running ? "▶" : i + 1}</div>
-      <div class="what"><b>${esc(t.name)}</b> → L${t.to}${t.running ? '<div class="why">upgrading now</div>' : ""}</div>
-      <div class="cost">${t.running ? "" : resTxt(t.res, t.cost)}</div>
-      <div class="dur">${!t.running && i === 0 && !runPet ? `<button class="btn sm ghost" data-sq="pet" data-sid="${t.id}" data-sto="${t.to}" data-stime="${(t.end - t.start).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.end - t.start)}</div>
-      <div class="when">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)}</div></div>`).join("");
+  const TIER_LABEL = { 0: "Heroes", 1: "Army, unlocks & gating storages", 2: "Key defenses",
+    3: "Splash defenses", 4: "Point defenses & huts", 5: "Traps", 6: "Storages", 7: "Collectors" };
+  const byTier = {};
+  for (const t of tasks) {
+    const g = byTier[t.tier] || (byTier[t.tier] = { n: 0, time: 0, gold: 0, elixir: 0, dark: 0 });
+    g.n++; g.time += t.time * bFactor; g[t.res] += t.cost;
+  }
+  const tierRows = Object.keys(byTier).sort((a, b) => a - b).map(k => {
+    const g = byTier[k];
+    return `<tr><td>${TIER_LABEL[k] || "Other"}</td><td>${g.n}</td><td>${fmtDays(g.time)}</td><td></td>${resCells(g)}</tr>`;
+  }).join("");
 
-  const labDays = accL / 24;
   root.innerHTML = `
   <div class="grid cols-4" style="margin-bottom:14px">
     ${tile("Builder queue", `${tasks.length} upgrades`, "time", `≈ ${fmtDays(sched.finish)} with ${state.builders} builders`)}
-    ${tile("Lab queue", `${lab.length} researches`, "time", `≈ ${fmtDays(labDays * 24)}`)}
+    ${tile("Lab queue", `${lab.length} researches`, "time", `≈ ${fmtDays(accL)}`)}
     ${tile("Pet queue", `${pets.length} upgrades`, "time", `≈ ${fmtDays(accPt)}`)}
     <div class="card tile"><div class="label"><span class="dot accent"></span>Boosts</div>
       <div class="io-row" style="margin:6px 0 0">
@@ -933,13 +936,12 @@ function renderPlan() {
         <label class="field small">lab −<select id="labBoost">${[0, 10, 15, 20].map(v => `<option ${v === state.settings.labBoost ? "selected" : ""}>${v}</option>`).join("")}</select>%</label>
       </div><div class="delta">Gold Pass / events time discount</div></div>
   </div>
-  ${state.running.length ? `<div class="card" style="margin-bottom:14px"><h2>Running now</h2>
-    <div class="note">Imported from your village export or marked started here. These occupy their lanes in the timetable; when a timer lapses, the level is applied automatically.</div>
-    ${runningRows}</div>` : ""}
+  ${state.running.length ? `<div class="card" style="margin-bottom:14px"><h2>Running now</h2>${runningRows}</div>` : ""}
   <div class="card" style="margin-bottom:14px"><h2>Timetable</h2>
-    <div class="note">Every queue as a lane, every upgrade as a bar spanning its days. Builders follow the
-    priority order below; the Laboratory and Pet House are single queues. Hover a bar for cost and finish date.
-    Walls aren't shown — they're instant. Change the builder count in the header to add or remove lanes.</div>
+    <div class="note">Every queue as a lane, every upgrade as a bar spanning its days — the selected range always
+    fills the width, so picking fewer weeks zooms in. Hover or tap a bar for full details. Builders follow the
+    priority order (heroes → army & unlocks → key defenses → splash → point → traps → resources); the Laboratory
+    and Pet House are single queues. Walls aren't scheduled — they're instant and only cost resources.</div>
     <div class="g-legend">
       <span><span class="dot gold"></span> costs gold</span>
       <span><span class="dot elixir"></span> costs elixir</span>
@@ -956,18 +958,17 @@ function renderPlan() {
     ${ganttHTML(sched, labTL, petTL)}
   </div>
   <div class="grid cols-2">
-    <div class="card"><h2>Builder schedule</h2>
-      <div class="note">Priority: heroes → army/unlock buildings → storages when gating → key defenses → splash → point → traps → resources.
-      Within a tier, best (ΔDPS + ΔHP/6) per cost first. Days assume builders never idle.
-      Walls aren't scheduled — they're instant and only cost resources.</div>
-      ${planRows || '<p class="muted">Nothing to upgrade — this TH is maxed. 🎉</p>'}
-      ${sched.timeline.length > 60 ? `<p class="small muted">…and ${sched.timeline.length - 60} more.</p>` : ""}</div>
-    <div>
-      <div class="card" style="margin-bottom:14px"><h2>Laboratory order</h2>
-        <div class="note">Single queue — meta troops and war spells first (tier 1 → 3), then value per cost.</div>
-        ${labRows || '<p class="muted">Lab is done for this TH.</p>'}
-        ${lab.length > 40 ? `<p class="small muted">…and ${lab.length - 40} more.</p>` : ""}</div>
-      <div class="card"><h2>Pet House order</h2>${petRows || '<p class="muted">No pet upgrades available.</p>'}</div>
+    <div class="card"><h2>Queue summary</h2>
+      <div class="table-scroll"><table class="data">
+        <thead><tr><th>Queue</th><th>Upgrades</th><th>Work</th><th>Calendar</th><th>Gold</th><th>Elixir</th><th>Dark</th></tr></thead>
+        <tbody>${queueRows}</tbody></table></div>
+      <p class="small muted">Work = summed upgrade time (boosts applied) · Calendar = when the queue actually finishes.</p>
+    </div>
+    <div class="card"><h2>Builder work by priority group</h2>
+      <div class="table-scroll"><table class="data">
+        <thead><tr><th>Group</th><th>Upgrades</th><th>Work</th><th></th><th>Gold</th><th>Elixir</th><th>Dark</th></tr></thead>
+        <tbody>${tierRows}</tbody></table></div>
+      <p class="small muted">Groups are scheduled top to bottom; the timetable shows the resulting order per builder.</p>
     </div>
   </div>`;
 }
@@ -1000,6 +1001,11 @@ function renderToMax() {
   const eta = new Date(Date.now() + Math.min(bottleneck, 36500) * 86400000);
   const wallEtaDate = isFinite(wallDays) ? new Date(Date.now() + wallDays * 86400000) : null;
   const segCost = A.wall.segsLeft ? A.wall.rem / A.wall.segsLeft : 0;
+  // split the wall bill across both currencies, following your daily budget ratio
+  const wg = s.wallGoldDay || 0, we = s.wallElixirDay || 0;
+  const ratioE = wg + we > 0 ? we / (wg + we) : 0.5;
+  const wallElixirShare = Math.min(A.wall.remElixirOk, Math.round(A.wall.rem * ratioE));
+  const wallGoldShare = A.wall.rem - wallElixirShare;
   const segsPerWeek = segCost > 0 ? 7 * ((s.wallGoldDay || 0) + (s.wallElixirDay || 0)) / segCost : 0;
 
   const catRows = Object.entries(A.cats).filter(([k, c]) => c.total > 0 && k !== "walls" && k !== "equipment").map(([k, c]) => {
@@ -1078,7 +1084,7 @@ function renderToMax() {
     ${tile("Gold to max TH" + state.th, fmt(A.totals.res.gold), "gold", "buildings + traps — walls tracked separately")}
     ${tile("Elixir to max TH" + state.th, fmt(A.totals.res.elixir), "elixir", "buildings + research")}
     ${tile("Dark Elixir to max TH" + state.th, fmt(A.totals.res.dark), "dark", "heroes + research")}
-    ${tile("Walls to max", fmt(A.wall.rem), "gold", `${A.wall.segsLeft} segments · payable with gold${A.wall.remElixirOk >= A.wall.rem ? " or elixir" : A.wall.remElixirOk > 0 ? " (partly elixir)" : ""}`)}
+    ${tile("Walls to max", fmt(A.wall.rem), "gold", A.wall.rem > 0 ? `${A.wall.segsLeft} segments ≈ <span class="res-txt"><span class="dot gold"></span>${fmt(wallGoldShare)}</span> + <span class="res-txt"><span class="dot elixir"></span>${fmt(wallElixirShare)}</span> at your split` : "done")}
   </div>
   ${thPreview}
   <div class="grid cols-2" style="margin-bottom:14px">
@@ -1118,7 +1124,9 @@ function renderToMax() {
         <label class="field">Elixir/day <input type="number" class="wide" id="wallElixirDay" value="${s.wallElixirDay}" step="500000"></label>
       </div>
       <p class="small" style="margin:6px 0 10px">≈ <b>${segsPerWeek.toFixed(1)}</b> walls/week →
-        done in <b>${isFinite(wallDays) ? Math.ceil(wallDays) + " days" : "∞"}</b>${wallEtaDate ? ` (<b>${wallEtaDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</b>)` : ""}.</p>` : ""}
+        done in <b>${isFinite(wallDays) ? Math.ceil(wallDays) + " days" : "∞"}</b>${wallEtaDate ? ` (<b>${wallEtaDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</b>)` : ""}.
+        Split at this budget: <span class="res-txt"><span class="dot gold"></span><b>${fmt(wallGoldShare)}</b> gold</span> +
+        <span class="res-txt"><span class="dot elixir"></span><b>${fmt(wallElixirShare)}</b> elixir</span>${wallElixirShare >= A.wall.remElixirOk && A.wall.remElixirOk < A.wall.rem ? " (elixir capped by eligibility)" : ""}.</p>` : ""}
       <div class="table-scroll"><table class="data">
         <thead><tr><th>Walls</th><th>Count</th><th>To max, each</th><th>Subtotal</th></tr></thead>
         <tbody>${wallRows}</tbody></table></div>
@@ -1520,7 +1528,45 @@ function loadSample() {
 }
 
 /* ---------------- events ---------------- */
+function bindTooltip() {
+  const tip = el('<div class="g-tip" hidden></div>');
+  document.body.appendChild(tip);
+  let pinned = false;
+  const place = (x, y) => {
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(6, Math.min(x + 12, innerWidth - w - 8)) + "px";
+    tip.style.top = (y + 16 + h > innerHeight ? y - h - 10 : y + 16) + "px";
+  };
+  const show = (b, x, y) => { tip.textContent = b.dataset.tip; place(x, y); };
+  const hide = () => { tip.hidden = true; pinned = false; };
+  const main = document.querySelector("main");
+  main.addEventListener("pointerover", e => {
+    if (pinned || e.pointerType === "touch") return;
+    const b = e.target.closest(".g-block[data-tip]");
+    if (b) show(b, e.clientX, e.clientY);
+  });
+  main.addEventListener("pointermove", e => {
+    if (pinned || tip.hidden || e.pointerType === "touch") return;
+    place(e.clientX, e.clientY);
+  });
+  main.addEventListener("pointerout", e => {
+    if (!pinned && e.target.closest && e.target.closest(".g-block[data-tip]")) tip.hidden = true;
+  });
+  document.addEventListener("click", e => {   // tap on mobile pins the tip; tap elsewhere closes it
+    const b = e.target.closest && e.target.closest(".g-block[data-tip]");
+    if (b) { pinned = true; show(b, e.clientX, e.clientY); }
+    else hide();
+  });
+}
+
 function bindEvents() {
+  bindTooltip();
+  const restore = $("#restoreBase");
+  if (restore) {
+    restore.hidden = !window.MY_BASE;
+    restore.addEventListener("click", () => { loadMyBase(); renderActive(); });
+  }
   $("#tabs").addEventListener("click", e => {
     const b = e.target.closest("button[data-tab]");
     if (b) switchTab(b.dataset.tab);
@@ -1557,7 +1603,8 @@ function bindEvents() {
       normalize(); save(); renderActive();
     } else if (t.dataset.eq) {
       state.equip[t.dataset.eq] = Math.max(1, +t.value || 1); normalize(); save(); renderActive();
-    } else if (t.id === "buildBoost") { state.settings.buildBoost = +t.value; save(); renderActive(); }
+    } else if (t.id === "ganttHorizon") { ganttHorizon = +t.value; renderPlan(); }
+    else if (t.id === "buildBoost") { state.settings.buildBoost = +t.value; save(); renderActive(); }
     else if (t.id === "labBoost") { state.settings.labBoost = +t.value; save(); renderActive(); }
     else if (t.id === "lootGold") { state.settings.lootGold = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootElixir") { state.settings.lootElixir = Math.max(0, +t.value || 0); save(); renderActive(); }
@@ -1605,26 +1652,6 @@ function bindEvents() {
     if (t.dataset.wallmin) {
       state.walls = { 1: WALLS.counts[state.th - 1] || 0 };
       normalize(); save(); renderActive();
-    }
-    if (t.dataset.sq) {
-      const q = t.dataset.sq;
-      const cap = q === "builder" ? state.builders : 1;
-      if (state.running.filter(r => r.q === q).length >= cap) {
-        alert(q === "builder" ? "All builders are already busy — finish or cancel one first." : "That queue is already busy.");
-      } else {
-        state.running.push({ q, id: t.dataset.sid, to: +t.dataset.sto, endTs: Date.now() + (+t.dataset.stime) * 3600000 });
-        save(); renderActive();
-      }
-      return;
-    }
-    if (t.dataset.rdone !== undefined) {
-      const r = state.running[+t.dataset.rdone];
-      if (r) { completeRunning(r); state.running.splice(+t.dataset.rdone, 1); normalize(); save(); renderActive(); }
-      return;
-    }
-    if (t.dataset.rcancel !== undefined) {
-      state.running.splice(+t.dataset.rcancel, 1); save(); renderActive();
-      return;
     }
     if (t.id === "ioImport") {
       const box = $("#ioMsg");
