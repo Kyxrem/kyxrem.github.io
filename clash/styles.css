@@ -157,12 +157,14 @@ button.btn.danger { background: var(--critical); }
 .b-card header .nm { font-weight: 600; font-size: 0.95rem; }
 .b-card header .mx { color: var(--ink-3); font-size: 0.78rem; margin-left: auto; }
 .inst-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-.inst-grid input {
-  width: 52px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 4px 6px; font: inherit; font-size: 0.9rem; text-align: center;
+.inst-grid input, .inst-grid select {
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 4px 6px; font: inherit; font-size: 0.9rem;
 }
-.inst-grid input.maxed { border-color: var(--good); color: var(--good); }
-.inst-grid input.zero { color: var(--ink-3); }
+.inst-grid input { width: 52px; text-align: center; }
+.inst-grid select { min-width: 84px; cursor: pointer; }
+.inst-grid input.maxed, .inst-grid select.maxed { border-color: var(--good); color: var(--good); }
+.inst-grid input.zero, .inst-grid select.zero { color: var(--ink-3); }
 .b-card .quick { display: flex; gap: 6px; margin-top: 8px; }
 .wall-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .wall-grid .wl { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-2); }

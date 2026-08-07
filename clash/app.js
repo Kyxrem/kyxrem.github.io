@@ -615,6 +615,13 @@ function renderOverview() {
 }
 
 /* ---------- Base editor ---------- */
+function lvlOptions(cur, mx, zeroLabel) {
+  let o = zeroLabel == null ? "" : `<option value="0"${cur === 0 ? " selected" : ""}>${zeroLabel}</option>`;
+  for (let l = 1; l <= mx; l++)
+    o += `<option value="${l}"${cur === l ? " selected" : ""}>L${l}${l === mx ? " · max" : ""}</option>`;
+  return o;
+}
+
 function renderBase() {
   const root = $("#tab-base");
   const th = state.th;
@@ -638,8 +645,8 @@ function renderBase() {
       if (!mx) continue;
       const arr = state.buildings[b.id] || [];
       const inputs = arr.map((l, i) =>
-        `<input type="number" min="0" max="${mx}" value="${l}" data-b="${b.id}" data-i="${i}"
-          class="${l >= mx ? "maxed" : l === 0 ? "zero" : ""}" aria-label="${esc(b.name)} #${i + 1}">`).join("");
+        `<select data-b="${b.id}" data-i="${i}" class="${l >= mx ? "maxed" : l === 0 ? "zero" : ""}"
+          aria-label="${esc(b.name)} #${i + 1}">${lvlOptions(l, mx, "not built")}</select>`).join("");
       const mergeNote = b.merge ? `<div class="note">merged defense — building one consumes ${b.merge.per ? b.merge.per + "× maxed " + byId[b.merge.source].name : "a maxed geared-up Cannon + Archer Tower"}</div>` : "";
       cards.push(`<div class="b-card"><header><span class="nm">${esc(b.name)}</span>
         <span class="mx">×${arr.length} · max L${mx}</span></header>
@@ -670,8 +677,8 @@ function renderBase() {
       const mx = maxLvlAt(h.rows, th);
       const cur = state.heroes[h.id] || 0;
       return `<div class="b-card"><header><span class="nm">${esc(h.name)}</span><span class="mx">max L${mx}</span></header>
-        <div class="inst-grid"><input type="number" min="0" max="${mx}" value="${cur}" data-hero="${h.id}"
-          class="${cur >= mx ? "maxed" : ""}" aria-label="${esc(h.name)} level"></div></div>`;
+        <div class="inst-grid"><select data-hero="${h.id}" class="${cur >= mx ? "maxed" : cur === 0 ? "zero" : ""}"
+          aria-label="${esc(h.name)} level">${lvlOptions(cur, mx, "not unlocked")}</select></div></div>`;
     });
     parts.push(`<div class="edit-cat"><h2>Heroes</h2><div class="grid cols-4">${cards.join("") || '<p class="muted">No heroes at this TH.</p>'}</div></div>`);
   }
@@ -683,8 +690,8 @@ function renderBase() {
         const mx = maxLvlAt(x.rows, th);
         const cur = Math.max(1, state.lab[x.id] || 1);
         return `<div class="b-card"><header><span class="nm">${esc(x.name)}</span><span class="mx">max L${mx}</span></header>
-          <div class="inst-grid"><input type="number" min="1" max="${mx}" value="${cur}" data-lab="${x.id}"
-            class="${cur >= mx ? "maxed" : ""}" aria-label="${esc(x.name)} level"></div></div>`;
+          <div class="inst-grid"><select data-lab="${x.id}" class="${cur >= mx ? "maxed" : ""}"
+            aria-label="${esc(x.name)} level">${lvlOptions(cur, mx, null)}</select></div></div>`;
       });
       if (cards.length) parts.push(`<div class="edit-cat"><h2>${label}</h2><div class="grid cols-4">${cards.join("")}</div></div>`);
     }
@@ -695,8 +702,8 @@ function renderBase() {
       const mx = maxLvlAt(p.rows, th);
       const cur = Math.max(1, state.pets[p.id] || 1);
       return `<div class="b-card"><header><span class="nm">${esc(p.name)}</span><span class="mx">max L${mx}</span></header>
-        <div class="inst-grid"><input type="number" min="1" max="${mx}" value="${cur}" data-pet="${p.id}"
-          class="${cur >= mx ? "maxed" : ""}" aria-label="${esc(p.name)} level"></div></div>`;
+        <div class="inst-grid"><select data-pet="${p.id}" class="${cur >= mx ? "maxed" : ""}"
+          aria-label="${esc(p.name)} level">${lvlOptions(cur, mx, null)}</select></div></div>`;
     });
     if (cards.length) parts.push(`<div class="edit-cat"><h2>Hero pets</h2><div class="grid cols-4">${cards.join("")}</div></div>`);
   }
@@ -712,7 +719,7 @@ function renderBase() {
           <span class="mx">${e.rarity} · cap L${cap}</span></header>
           <div class="inst-grid" style="align-items:center">
             <label class="small muted"><input type="checkbox" data-eqown="${e.id}" ${owned ? "checked" : ""}> owned</label>
-            ${owned ? `<input type="number" min="1" max="${cap}" value="${cur}" data-eq="${e.id}" class="${cur >= cap ? "maxed" : ""}">` : ""}
+            ${owned ? `<select data-eq="${e.id}" class="${cur >= cap ? "maxed" : ""}" aria-label="${esc(e.name)} level">${lvlOptions(cur, cap, null)}</select>` : ""}
           </div></div>`;
       });
       parts.push(`<div class="edit-cat"><h2>Hero equipment</h2>
@@ -1088,6 +1095,9 @@ function importVillage(obj) {
   // Town Hall level from the TH entry
   const thEntry = (obj.buildings || []).find(b => b.data === 1000001);
   if (thEntry) state.th = Math.min(MAX_TH, thEntry.lvl);
+  const hutEntry = (obj.buildings || []).find(b => b.data === 1000015);
+  const hasBob = (obj.buildings || []).some(b => b.data === 1000064);
+  if (hutEntry) state.builders = Math.min(6, (hutEntry.cnt || 1) + (hasBob ? 1 : 0));
   if (obj.tag && obj.tag !== state.tag) state.name = "";
   if (obj.tag) state.tag = obj.tag;
   state.buildings = {}; state.walls = {}; state.heroes = {}; state.lab = {}; state.pets = {};
@@ -1231,11 +1241,12 @@ function renderIO() {
         <button class="btn ghost" id="ioCopy">Copy to clipboard</button>
       </div>
     </div>
-    <div class="card"><h2>Sample & reset</h2>
-      <div class="note">The sample is a mid-progress TH13 so you can explore every tab before entering your own base.</div>
+    <div class="card"><h2>My base, sample &amp; reset</h2>
+      <div class="note">${window.MY_BASE ? `This site's default base is <b>${esc(window.MY_BASE.tag)}</b> (TH${window.MY_BASE.th}, snapshot baked into the page) — new visits start from it, and your edits stay saved in this browser on top.` : "The sample is a mid-progress TH13 so you can explore every tab."}</div>
       <div class="io-row">
-        <button class="btn" id="ioSample">Load sample TH13 base</button>
-        <button class="btn danger" id="ioReset">Reset everything</button>
+        ${window.MY_BASE ? `<button class="btn" id="ioMyBase">Reset to my base (${esc(window.MY_BASE.tag)})</button>` : ""}
+        <button class="btn ghost" id="ioSample">Load sample TH13 base</button>
+        <button class="btn danger" id="ioReset">Clear everything</button>
       </div>
     </div>
   </div>`;
@@ -1382,6 +1393,7 @@ function bindEvents() {
       try { await navigator.clipboard.writeText(exportState()); t.textContent = "Copied ✓"; setTimeout(() => t.textContent = "Copy to clipboard", 1500); } catch (e2) {}
     }
     if (t.id === "ioSample") { loadSample(); switchTab("overview"); }
+    if (t.id === "ioMyBase") { loadMyBase(); switchTab("overview"); }
     if (t.id === "ioReset") {
       if (confirm("Clear the saved base and start over?")) {
         state = freshState(11); save(); renderActive();
@@ -1416,6 +1428,11 @@ function bindEvents() {
 }
 
 /* ---------------- boot ---------------- */
+function loadMyBase() {
+  state = JSON.parse(JSON.stringify(window.MY_BASE));
+  normalize(); save();
+}
+
 function boot() {
   $("#dataDate").textContent = D.meta.generated;
   $("#dataMaxTH").textContent = D.meta.maxTH;
@@ -1425,7 +1442,9 @@ function boot() {
   normalize();
   bindEvents();
   renderHeader();
-  if (firstVisit) loadSample();
+  if (firstVisit) {
+    if (window.MY_BASE) loadMyBase(); else loadSample();
+  }
   renderActive();
 }
 boot();
