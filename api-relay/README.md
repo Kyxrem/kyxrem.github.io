@@ -45,20 +45,37 @@ Two ways to use it:
    browsing on the same machine) or an HTTPS URL — put the relay behind
    your reverse proxy (Caddy/nginx/Traefik) if you want phone + Pages.
 
-### Keep it running (systemd)
+### Raspberry Pi walkthrough
 
-```ini
-# /etc/systemd/system/supercell-relay.service
-[Unit]
-Description=Supercell API relay
-After=network-online.target
-[Service]
-ExecStart=/usr/bin/node /path/to/kyxrem.github.io/api-relay/server.js
-Restart=on-failure
-User=youruser
-[Install]
-WantedBy=multi-user.target
+```bash
+# 1. On the Pi (Raspberry Pi OS Bookworm ships Node 18+; older OS: see below)
+sudo apt update && sudo apt install -y git nodejs
+node --version          # needs v18 or newer
+
+# 2. Clone and configure
+git clone https://github.com/Kyxrem/kyxrem.github.io.git
+cd kyxrem.github.io/api-relay
+cp .env.example .env
+nano .env               # paste COC_TOKEN and CR_TOKEN
+
+# 3. Test run
+node server.js          # then open http://<pi-lan-ip>:8901/clash/ from another device
+
+# 4. Run on boot
+sudo cp supercell-relay.service /etc/systemd/system/   # adjust paths/User inside if needed
+sudo systemctl daemon-reload
+sudo systemctl enable --now supercell-relay
+systemctl status supercell-relay                        # journalctl -u supercell-relay -f for logs
 ```
+
+If `node --version` is older than 18 (32-bit Bullseye ships v12):
+`curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs`
+
+Give the Pi a fixed LAN address (DHCP reservation in the router) and, for
+access from outside your network, forward one TCP port (8901) to it. The IP
+to whitelist in both developer portals is your home's public IP —
+`curl ifconfig.me` on the Pi. To update later:
+`cd ~/kyxrem.github.io && git pull && sudo systemctl restart supercell-relay`
 
 ### Or Docker
 
