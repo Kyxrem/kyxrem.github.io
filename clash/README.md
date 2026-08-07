@@ -17,7 +17,11 @@ A fully client-side Clash of Clans base analyzer, hosted on GitHub Pages at
   (heroes → army/unlock buildings → storages when they gate affordability →
   key defenses → splash → point → traps → resources; ranked inside each tier
   by ΔDPS + ΔHP/6 per cost), plus separate single-queue Laboratory and Pet
-  House orders, with optional Gold-Pass style time discounts.
+  House orders, with optional Gold-Pass style time discounts. Each free
+  builder takes the top job from whichever resource is least ahead of your
+  loot/day rates, so gold/elixir/dark spending stays even — but an upgrade
+  chain long enough to set the finish date (usually a hero) always continues
+  immediately, so balancing never extends the plan.
 - **To Max** — gold / elixir / dark elixir / ore totals needed to max the
   current TH, time bottleneck analysis at your loot-per-day rates with an ETA
   date, and a reference table of what *every* TH costs from scratch.

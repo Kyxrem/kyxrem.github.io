@@ -446,6 +446,15 @@ function schedule(tasks, workers, boostPct, seeds) {
   const spent = { gold: 0, elixir: 0, dark: 0 };
   const timeline = [];
   const pending = tasks.map(t => ({ ...t }));
+  // remaining same-instance chain hours: a hero's queued levels can only run
+  // one after another, so a long chain is a hard lower bound on the finish date
+  const chainRem = {};
+  let workLeft = 0;
+  for (const t of pending) {
+    const dur = t.time * factor;
+    chainRem[t.id + ":" + t.inst] = (chainRem[t.id + ":" + t.inst] || 0) + dur;
+    workLeft += dur;
+  }
   const started = {};
   let guard = 0;
   while (pending.length && guard++ < 30000) {
@@ -464,14 +473,29 @@ function schedule(tasks, workers, boostPct, seeds) {
     }
     let idx = -1;
     if (nowIdx.length) {
-      const day = lane.free / 24 + 1;
-      const resOrder = ["gold", "elixir", "dark"]
-        .sort((a, b) => spent[a] / (rate[a] * day) - spent[b] / (rate[b] * day));
-      for (const res of resOrder) {
-        const hit = nowIdx.find(i => pending[i].res === res);
-        if (hit !== undefined) { idx = hit; break; }
+      // time comes first: if the longest startable chain is at least the
+      // average remaining load per builder, postponing it would push the whole
+      // finish date — continue that chain now. Resource balancing only gets to
+      // reorder work that has slack.
+      let busyBeyond = 0;
+      for (const l of lanes) busyBeyond += Math.max(0, l.free - lane.free);
+      let bestC = -1, bestH = 0;
+      for (const i of nowIdx) {
+        const h = chainRem[pending[i].id + ":" + pending[i].inst] || 0;
+        if (h > bestH) { bestH = h; bestC = i; }
       }
-      if (idx === -1) idx = nowIdx[0];
+      if (bestC !== -1 && bestH >= (workLeft + busyBeyond) / lanes.length) {
+        idx = bestC;
+      } else {
+        const day = lane.free / 24 + 1;
+        const resOrder = ["gold", "elixir", "dark"]
+          .sort((a, b) => spent[a] / (rate[a] * day) - spent[b] / (rate[b] * day));
+        for (const res of resOrder) {
+          const hit = nowIdx.find(i => pending[i].res === res);
+          if (hit !== undefined) { idx = hit; break; }
+        }
+        if (idx === -1) idx = nowIdx[0];
+      }
     } else {
       idx = fbIdx;
     }
@@ -485,6 +509,8 @@ function schedule(tasks, workers, boostPct, seeds) {
     lane.free = item.end;
     lane.items.push(item);
     instAvail[key] = item.end;
+    chainRem[key] = Math.max(0, (chainRem[key] || 0) - dur);
+    workLeft = Math.max(0, workLeft - dur);
     spent[t.res] += t.cost;
     timeline.push(item);
   }
@@ -965,7 +991,9 @@ function renderPlan() {
     fills the width, so picking fewer weeks zooms in. Hover or tap a bar for full details. Each free builder takes
     the highest-priority job (heroes → army & unlocks → key defenses → splash → point → traps → resources) from
     whichever resource is least ahead of your loot/day rates (set in To Max), so gold, elixir and dark elixir
-    spending stay balanced instead of burning one resource first. The Laboratory and Pet House are single queues.
+    spending stay balanced instead of burning one resource first — except when an upgrade chain is long enough
+    to set the finish date (usually a hero): that always continues immediately, so balancing never makes the
+    plan take longer. The Laboratory and Pet House are single queues.
     Walls aren't scheduled — they're instant and only cost resources.</div>
     <div class="g-legend">
       <span><span class="dot gold"></span> costs gold</span>
