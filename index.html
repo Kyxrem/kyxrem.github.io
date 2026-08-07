@@ -7,19 +7,28 @@
 <style>
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
          background: #0d0d0d; color: #fff; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { text-align: center; padding: 24px; }
+  main { text-align: center; padding: 24px; max-width: 560px; }
   h1 { font-size: 1.6rem; margin-bottom: 6px; }
   p { color: #c3c2b7; }
-  a.tool { display: inline-block; margin-top: 18px; padding: 12px 22px; background: #3987e5; color: #fff;
-           border-radius: 10px; text-decoration: none; font-weight: 600; }
-  a.tool:hover { filter: brightness(1.1); }
+  .tools { display: flex; flex-direction: column; gap: 12px; margin-top: 22px; }
+  a.tool { display: block; padding: 14px 22px; border-radius: 10px; text-decoration: none;
+           font-weight: 600; color: #fff; text-align: left; border: 1px solid rgba(255,255,255,.1); }
+  a.tool small { display: block; font-weight: 400; color: rgba(255,255,255,.75); margin-top: 2px; font-size: .85rem; }
+  a.clash { background: #1c5cab; }
+  a.royale { background: #4a3aa7; }
+  a.tool:hover { filter: brightness(1.15); }
 </style>
 </head>
 <body>
 <main>
   <h1>kyxrem</h1>
   <p>Hosted with GitHub Pages.</p>
-  <a class="tool" href="clash/">⚔️ Clash Analyzer — base progress, metrics &amp; upgrade planner</a>
+  <div class="tools">
+    <a class="tool clash" href="clash/">⚔️ Clash Analyzer
+      <small>Clash of Clans — base progress, upgrade timetable, walls, ores &amp; resources to max</small></a>
+    <a class="tool royale" href="royale/">👑 Royale Analyzer
+      <small>Clash Royale — card collection, upgrade costs, ready-now upgrades &amp; deck stats</small></a>
+  </div>
 </main>
 </body>
 </html>
