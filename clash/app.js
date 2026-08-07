@@ -1434,16 +1434,16 @@ function renderIO() {
   <div class="grid cols-2">
     <div class="card"><h2>Fetch by player tag</h2>
       <div class="note">Enter your tag and fetch straight from the official API — troops, heroes, spells, pets and
-      equipment come in by name. Needs the free 10-minute
-      <a href="https://github.com/Kyxrem/kyxrem.github.io/tree/claude/clash-of-clans-analyzer-l3aqze/api-worker" target="_blank" rel="noopener">API relay setup</a>
-      once (Supercell tokens are IP-locked and can't live in a public page); after that it's tag-only.
+      equipment come in by name. Needs the 5-minute self-hosted
+      <a href="https://github.com/Kyxrem/kyxrem.github.io/tree/claude/clash-of-clans-analyzer-l3aqze/api-relay" target="_blank" rel="noopener">API relay setup</a>
+      once — a tiny Node server at home holding your tokens in <code>api-relay/.env</code>; after that it's tag-only.
       Building levels still come from the village export / My Base.</div>
       <div class="io-row">
         <input class="txt" id="apiTag" placeholder="#QCPPQLQU" value="${esc(state.tag || "")}" style="max-width:180px">
         <button class="btn" id="apiGo">Fetch</button>
       </div>
       <div class="io-row small"><label class="field" style="flex:1;min-width:260px">Relay URL
-        <input class="txt" id="apiEndpoint" value="${esc(state.settings.apiEndpoint || "")}" placeholder="https://your-worker.workers.dev"></label></div>
+        <input class="txt" id="apiEndpoint" value="${esc(state.settings.apiEndpoint || "")}" placeholder="http://localhost:8901 or https://relay.your.domain"></label></div>
       <div id="apiMsg"></div>
     </div>
     <div class="card"><h2>Paste / upload JSON</h2>

@@ -1,0 +1,4 @@
+Supercell API relay listening on http://0.0.0.0:8904
+  COC_TOKEN: configured | CR_TOKEN: configured
+  upstream: http://127.0.0.1:9966 / http://127.0.0.1:9966 (direct — whitelist this host's public IP)
+  static site: /home/user/kyxrem.github.io

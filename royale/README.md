@@ -22,7 +22,7 @@ Analyzer's design system.
   into the Deck tab. Refresh the snapshot with `tools/scrape_decks.py`.
   Hero-version ownership (the 15 cards with /Hero variants on the wiki) is
   tracked per card in the Collection tab.
-- **Fetch by tag** — with the one-time [API relay setup](../api-worker/README.md)
+- **Fetch by tag** — with the one-time [API relay setup](../api-relay/README.md)
   (shared with the CoC tool), importing your profile is just entering your
   player tag. Meta decks also get a **"Copy to game"** button — the official
   `link.clashroyale.com` deep link that opens Clash Royale and copies the

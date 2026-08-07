@@ -50,8 +50,8 @@ Three paths, all on the **Import / Export** tab:
    MIT-licensed [`clash-of-clans-data`](https://www.npmjs.com/package/clash-of-clans-data)
    npm package; IDs the tables don't know (brand-new content) are counted in
    the import message rather than guessed.
-1. **Fetch by player tag** — after a one-time [API relay setup](../api-worker/README.md)
-   (a free Cloudflare Worker that holds your Supercell token, ~10 minutes),
+1. **Fetch by player tag** — after a one-time [API relay setup](../api-relay/README.md)
+   (a tiny self-hosted Node server; tokens live in `api-relay/.env` at home),
    the tool needs only a tag. The relay serves both this tool and the Royale
    one. Without a relay, use option 0 or 2 — Supercell's API blocks browsers
    directly (no CORS, IP-locked tokens).
