@@ -85,11 +85,15 @@ for rar, cat in RARITY_CATS:
 tower_troops = [t for t in category_members("Category:Tower Troop Cards")
                 if "/" not in t and t not in NOT_CARDS]
 evolutions = set()
+hero_variants = set()
 for t in category_members("Category:Troop Cards") + category_members("Category:Spell Cards") + \
          category_members("Category:Building Cards"):
     if t.endswith("/Evolution"):
         evolutions.add(t.split("/")[0])
-print(f"cards by rarity: {len(rarity_of)}, tower troops: {len(tower_troops)}, evolutions: {len(evolutions)}")
+    if t.endswith("/Hero"):
+        hero_variants.add(t.split("/")[0])
+print(f"cards by rarity: {len(rarity_of)}, tower troops: {len(tower_troops)}, "
+      f"evolutions: {len(evolutions)}, hero variants: {len(hero_variants)}: {sorted(hero_variants)}")
 
 
 def parse_infobox(soup):
@@ -157,6 +161,7 @@ def scrape_card(name, rar, ctype):
     if stats:
         out["stats"] = stats
     out["evo"] = name in evolutions
+    out["hero"] = name in hero_variants
     return out
 
 

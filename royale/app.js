@@ -39,6 +39,7 @@ function normalize() {
     if (c.lvl > 0) c.lvl = Math.max(c.lvl, startLvl(card));
     c.count = Math.max(0, Math.floor(c.count || 0));
     c.evo = card.evo ? (c.evo ? 1 : 0) : 0;
+    c.hero = card.hero ? (c.hero ? 1 : 0) : 0;
   }
   state.deck = (state.deck || []).filter(id => byId[id]).slice(0, 8);
 }
@@ -63,6 +64,7 @@ function cardsToMax(card, lvl) {
 function analyze() {
   const A = { found: 0, total: CARDS.length, maxed: 0, evoOwned: 0,
     evoTotal: CARDS.filter(c => c.evo).length,
+    heroOwned: 0, heroTotal: CARDS.filter(c => c.hero).length,
     goldRem: 0, goldSpent: 0, goldAll: 0, ready: [], lvlSum: 0,
     byRar: {} };
   for (const r of RARS.concat("tower")) {
@@ -87,6 +89,7 @@ function analyze() {
       R.have += st.count || 0;
       if (lvl >= MAXL) { A.maxed++; R.maxed++; }
       if (st.evo) A.evoOwned++;
+      if (st.hero) A.heroOwned++;
       const nx = nextRow(card, lvl);
       if (nx && (st.count || 0) >= nx.cards) {
         A.ready.push({ id: card.id, name: card.name, rarity: grp, to: lvl + 1,
@@ -130,7 +133,9 @@ function progRow(name, a, b, extra) {
 }
 
 /* ---------------- tabs ---------------- */
-const TABS = ["overview", "collection", "deck", "stats", "io"];
+const TABS = ["overview", "collection", "deck", "meta", "stats", "io"];
+const DECKS = window.CR_DECKS || { updated: "", groups: [] };
+let metaFilter = { group: "ranked", cards: false, evo: false, hero: false };
 let activeTab = "overview";
 let collFilter = { q: "", rar: "all", sort: "level" };
 let statsCard = "knight";
@@ -146,6 +151,7 @@ function renderActive() {
   if (activeTab === "overview") renderOverview();
   if (activeTab === "collection") renderCollection();
   if (activeTab === "deck") renderDeck();
+  if (activeTab === "meta") renderMeta();
   if (activeTab === "stats") renderStats();
   if (activeTab === "io") renderIO();
 }
@@ -192,6 +198,7 @@ function renderOverview() {
           ${progRow("Cards found", A.found, A.total, `${A.total - A.found} missing`)}
           ${progRow("Cards maxed", A.maxed, A.total, "")}
           ${progRow("Evolutions", A.evoOwned, A.evoTotal, "")}
+          ${progRow("Hero versions", A.heroOwned, A.heroTotal, "")}
         </div>
       </div>
     </div>
@@ -263,6 +270,7 @@ function renderCollection() {
       <td>${nx ? fmt(nx.gold) : "–"}</td>
       <td>${lvl >= MAXL && lvl > 0 ? "–" : fmt(goldToMax(c, lvl))}</td>
       <td>${c.evo ? `<input type="checkbox" data-cevo="${c.id}" ${st && st.evo ? "checked" : ""} ${lvl === 0 ? "disabled" : ""}>` : ""}</td>
+      <td>${c.hero ? `<input type="checkbox" data-chero="${c.id}" ${st && st.hero ? "checked" : ""} ${lvl === 0 ? "disabled" : ""}>` : ""}</td>
     </tr>`;
   }).join("");
   root.innerHTML = `
@@ -284,7 +292,7 @@ function renderCollection() {
       <span class="muted small">${list.length} cards</span>
     </div>
     <div class="table-scroll"><table class="data">
-      <thead><tr><th>Card</th><th>Level</th><th>Copies</th><th>To next level</th><th>Gold next</th><th>Gold to max</th><th>Evo</th></tr></thead>
+      <thead><tr><th>Card</th><th>Level</th><th>Copies</th><th>To next level</th><th>Gold next</th><th>Gold to max</th><th>Evo</th><th>Hero</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -328,6 +336,81 @@ function renderDeck() {
   <div class="card"><h2>Current deck</h2>
     <div class="note">Imported from your profile, or build one here — stats show at your card levels.</div>
     <div class="deck-grid">${slots}</div>
+  </div>`;
+}
+
+/* ---------- Meta decks ---------- */
+function deckOwnership(d) {
+  const cards = d.cards.map(id => ({ id, card: byId[id], st: state.cards[id] }));
+  const missing = cards.filter(x => !x.card || !x.st || x.st.lvl <= 0).map(x => x.card ? x.card.name : x.id + " (new card)");
+  const missEvo = d.evo.filter(id => !(state.cards[id] && state.cards[id].evo))
+    .map(id => byId[id] ? byId[id].name : id);
+  const heroIds = d.cards.filter(id => byId[id] && byId[id].hero);
+  const missHero = heroIds.filter(id => !(state.cards[id] && state.cards[id].hero))
+    .map(id => byId[id].name);
+  const elix = cards.filter(x => x.card && x.card.elixir != null);
+  const avgElixir = elix.length ? elix.reduce((sm, x) => sm + x.card.elixir, 0) / elix.length : 0;
+  const lvls = cards.filter(x => x.st && x.st.lvl > 0).map(x => x.st.lvl);
+  const avgLvl = lvls.length ? lvls.reduce((a, b) => a + b, 0) / lvls.length : 0;
+  return { missing, missEvo, missHero, heroCount: heroIds.length, avgElixir, avgLvl };
+}
+
+function renderMeta() {
+  const root = $("#tab-meta");
+  const group = DECKS.groups.find(g => g.key === metaFilter.group) || DECKS.groups[0];
+  if (!group) {
+    root.innerHTML = '<div class="card"><p class="muted">No deck snapshot bundled — run tools/scrape_decks.py.</p></div>';
+    return;
+  }
+  let shown = 0;
+  const rows = group.decks.map((d, di) => {
+    const o = deckOwnership(d);
+    if (metaFilter.cards && o.missing.length) return "";
+    if (metaFilter.evo && o.missEvo.length) return "";
+    if (metaFilter.hero && o.missHero.length) return "";
+    shown++;
+    const chips = d.cards.map(id => {
+      const c = byId[id];
+      const owned = state.cards[id] && state.cards[id].lvl > 0;
+      const isEvo = d.evo.includes(id);
+      return `<span class="deck-chip${isEvo ? " evo" : ""}${owned ? "" : " miss"}"
+        title="${c ? esc(c.name) + (isEvo ? " (evolution slot)" : "") + (owned ? " · yours: L" + state.cards[id].lvl : " · not owned") : "new card not in database yet"}">
+        ${isEvo ? "⚡" : ""}${c ? esc(c.name) : "🆕 " + esc(id)}</span>`;
+    }).join("");
+    const probs = [];
+    if (o.missing.length) probs.push(`missing: ${o.missing.map(esc).join(", ")}`);
+    if (o.missEvo.length) probs.push(`evo needed: ${o.missEvo.map(esc).join(", ")}`);
+    if (o.missHero.length) probs.push(`hero versions: ${o.missHero.map(esc).join(", ")}`);
+    return `<div class="meta-deck${o.missing.length || o.missEvo.length ? "" : " playable"}">
+      <div class="meta-head">
+        <b>#${di + 1}</b>
+        <span class="muted small">${o.avgElixir.toFixed(1)}⧫ avg</span>
+        ${o.avgLvl ? `<span class="muted small">· your avg L${o.avgLvl.toFixed(1)}</span>` : ""}
+        ${!o.missing.length && !o.missEvo.length && !o.missHero.length ? '<span class="pill good">fully yours</span>'
+          : !o.missing.length && !o.missEvo.length ? '<span class="pill acc">cards + evos ✓</span>'
+          : !o.missing.length ? '<span class="pill warn">evos missing</span>' : '<span class="pill crit">cards missing</span>'}
+        <span class="spacer"></span>
+        <button class="btn sm ghost" data-usedeck="${group.key}:${di}">Use in Deck tab</button>
+      </div>
+      <div class="meta-chips">${chips}</div>
+      ${probs.length ? `<div class="small muted" style="margin-top:6px">${probs.join(" · ")}</div>` : ""}
+    </div>`;
+  }).join("");
+  root.innerHTML = `
+  <div class="card">
+    <h2>Meta decks</h2>
+    <div class="note">Snapshot of the current meta from
+      <a href="https://www.deckshop.pro/best-decks/" target="_blank" rel="noopener">DeckShop</a>
+      (${esc(DECKS.updated)}). ⚡ marks the deck's evolution slots. Rerun <code>tools/scrape_decks.py</code> to refresh.</div>
+    <div class="coll-controls">
+      ${DECKS.groups.map(g => `<button class="btn sm ${metaFilter.group === g.key ? "" : "ghost"}" data-metagroup="${g.key}">${esc(g.label)}</button>`).join("")}
+      <span class="spacer"></span>
+      <label class="field small"><input type="checkbox" id="mfCards" ${metaFilter.cards ? "checked" : ""}> I have all cards</label>
+      <label class="field small"><input type="checkbox" id="mfEvo" ${metaFilter.evo ? "checked" : ""}> …and the evolutions</label>
+      <label class="field small"><input type="checkbox" id="mfHero" ${metaFilter.hero ? "checked" : ""}> …and the hero versions</label>
+    </div>
+    ${rows || `<p class="muted">None of the ${group.decks.length} ${esc(group.label)} decks match your filters — untick something, or check the Collection tab for what to unlock next.</p>`}
+    ${rows ? `<p class="small muted">${shown} of ${group.decks.length} decks shown.</p>` : ""}
   </div>`;
 }
 
@@ -453,7 +536,7 @@ function loadSample() {
     let lvl = Math.max(startLvl(c), Math.min(MAXL, base[grp] + Math.floor(rnd() * 3) - 1));
     const nx = rarRows(c).find(r => r.lvl === lvl + 1);
     state.cards[c.id] = { lvl, count: nx ? Math.floor(rnd() * nx.cards * 1.4) : 0,
-      evo: c.evo && rnd() < 0.3 ? 1 : 0 };
+      evo: c.evo && rnd() < 0.3 ? 1 : 0, hero: c.hero && rnd() < 0.35 ? 1 : 0 };
   }
   state.deck = ["knight", "archers", "fireball", "the_log", "hog_rider", "musketeer",
     "ice_spirit", "cannon"].filter(id => byId[id]);
@@ -483,6 +566,9 @@ function bindEvents() {
     } else if (t.dataset.cevo) {
       const st = state.cards[t.dataset.cevo];
       if (st) { st.evo = t.checked ? 1 : 0; save(); renderActive(); }
+    } else if (t.dataset.chero) {
+      const st = state.cards[t.dataset.chero];
+      if (st) { st.hero = t.checked ? 1 : 0; save(); renderActive(); }
     } else if (t.dataset.deck !== undefined) {
       state.deck[+t.dataset.deck] = t.value || "";
       state.deck = state.deck.map(x => x || "").slice(0, 8);
@@ -491,6 +577,9 @@ function bindEvents() {
     else if (t.id === "collRar") { collFilter.rar = t.value; renderCollection(); }
     else if (t.id === "collSort") { collFilter.sort = t.value; renderCollection(); }
     else if (t.id === "statsCard") { statsCard = t.value; renderStats(); }
+    else if (t.id === "mfCards") { metaFilter.cards = t.checked; renderMeta(); }
+    else if (t.id === "mfEvo") { metaFilter.evo = t.checked; renderMeta(); }
+    else if (t.id === "mfHero") { metaFilter.hero = t.checked; renderMeta(); }
     else if (t.id === "ioFile" && t.files[0]) {
       t.files[0].text().then(txt => {
         try {
@@ -521,6 +610,14 @@ function bindEvents() {
     }
     if (t.id === "ioCopy") {
       try { await navigator.clipboard.writeText(exportState()); t.textContent = "Copied ✓"; setTimeout(() => t.textContent = "Copy to clipboard", 1500); } catch (e2) {}
+    }
+    if (t.dataset.metagroup) { metaFilter.group = t.dataset.metagroup; renderMeta(); return; }
+    if (t.dataset.usedeck) {
+      const [gk, di] = t.dataset.usedeck.split(":");
+      const g = DECKS.groups.find(x => x.key === gk);
+      const d = g && g.decks[+di];
+      if (d) { state.deck = d.cards.filter(id => byId[id]).slice(0, 8); save(); switchTab("deck"); }
+      return;
     }
     if (t.id === "ioSample") { loadSample(); switchTab("overview"); }
     if (t.id === "ioReset") {
