@@ -19,14 +19,14 @@ ITEMS = {
                  "Air Sweeper", "Hidden Tesla", "Bomb Tower", "X-Bow", "Inferno Tower",
                  "Eagle Artillery", "Scattershot", "Spell Tower", "Monolith",
                  "Multi-Archer Tower", "Ricochet Cannon", "Multi-Gear Tower",
-                 "Firespitter", "Builder's Hut"],
+                 "Firespitter", "Builder's Hut", "Revenge Tower"],
     "trap": ["Bomb", "Spring Trap", "Air Bomb", "Giant Bomb", "Seeking Air Mine",
               "Skeleton Trap", "Tornado Trap", "Giga Bomb"],
     "resource": ["Gold Mine", "Elixir Collector", "Dark Elixir Drill", "Gold Storage",
                   "Elixir Storage", "Dark Elixir Storage"],
     "army": ["Army Camp", "Barracks", "Dark Barracks", "Laboratory", "Spell Factory",
               "Dark Spell Factory", "Clan Castle", "Workshop", "Pet House",
-              "Blacksmith", "Hero Hall"],
+              "Blacksmith", "Hero Hall", "Crafting Station"],
     "troop": ["Barbarian", "Archer", "Giant", "Goblin", "Wall Breaker", "Balloon",
                "Wizard", "Healer", "Dragon", "P.E.K.K.A", "Baby Dragon", "Miner",
                "Electro Dragon", "Yeti", "Dragon Rider", "Electro Titan", "Root Rider",
@@ -38,7 +38,7 @@ ITEMS = {
                "Freeze Spell", "Clone Spell", "Invisibility Spell", "Recall Spell",
                "Revive Spell"],
     "dark_spell": ["Poison Spell", "Earthquake Spell", "Haste Spell", "Skeleton Spell",
-                    "Bat Spell", "Overgrowth Spell"],
+                    "Bat Spell", "Overgrowth Spell", "Ice Block Spell"],
     "siege": ["Wall Wrecker", "Battle Blimp", "Stone Slammer", "Siege Barracks",
                "Log Launcher", "Flame Flinger", "Battle Drill", "Troop Launcher",
                "Sky Wagon"],
@@ -46,7 +46,7 @@ ITEMS = {
              "Poison Lizard", "Phoenix", "Spirit Fox", "Angry Jelly", "Sneezy",
              "Greedy Raven"],
     "hero": ["Barbarian King", "Archer Queen", "Minion Prince", "Grand Warden",
-              "Royal Champion"],
+              "Royal Champion", "Dragon Duke"],
     "wall": ["Walls"],
     "townhall": ["Town Hall"],
 }
@@ -418,7 +418,7 @@ def equipment_names():
     names = []
     for m in d.get("query", {}).get("categorymembers", []):
         t = m["title"]
-        if m.get("ns", 0) != 0 or ":" in t or t in ("Hero Equipment", "Noble Iron"):
+        if m.get("ns", 0) != 0 or ":" in t or t == "Hero Equipment":
             continue
         names.append(t)
     return names

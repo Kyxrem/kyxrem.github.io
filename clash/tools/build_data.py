@@ -172,7 +172,7 @@ LAB_ORDER = {"troop": 0, "dark_troop": 1, "spell": 2, "dark_spell": 3, "siege": 
 data["labItems"].sort(key=lambda x: (LAB_ORDER[x["cat"]], x["unlockTH"], x["name"]))
 data["pets"].sort(key=lambda x: (x["unlockTH"], x["name"]))
 HERO_ORDER = ["barbarian_king", "archer_queen", "minion_prince", "grand_warden", "royal_champion"]
-data["heroes"].sort(key=lambda h: HERO_ORDER.index(h["id"]))
+data["heroes"].sort(key=lambda h: HERO_ORDER.index(h["id"]) if h["id"] in HERO_ORDER else 99)
 
 # ---- report ----
 def fmt(n):

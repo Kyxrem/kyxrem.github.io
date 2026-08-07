@@ -152,6 +152,10 @@ function equipCapAt(bsLvl, rarity) {
 
 /* ---------------- analysis ---------------- */
 function emptyRes() { return { gold: 0, elixir: 0, dark: 0 }; }
+// Progress weighting: dark elixir is ~100x scarcer per unit of farming effort,
+// so cost-weighted percentages value it accordingly (raw totals stay unweighted).
+const RES_W = { gold: 1, elixir: 1, dark: 100 };
+function wcost(res, v) { return v * (RES_W[res] || 1); }
 
 function analyze() {
   const th = state.th;
@@ -174,8 +178,8 @@ function analyze() {
     while (arr.length < n) arr.push(0);
     for (let i = 0; i < arr.length; i++) {
       const cur = arr[i];
-      c.spent += cumCost(b.rows, cur);
-      c.total += cumCost(b.rows, mx);
+      c.spent += wcost(b.res, cumCost(b.rows, cur));
+      c.total += wcost(b.res, cumCost(b.rows, mx));
       c.items++;
       if (cur >= mx) c.maxed++;
       for (const s of stepsBetween(b.rows, cur, mx)) {
@@ -227,8 +231,8 @@ function analyze() {
     const c = cat("heroes");
     const mx = maxLvlAt(h.rows, th);
     const cur = state.heroes[h.id] || 0;
-    c.spent += cumCost(h.rows, cur);
-    c.total += cumCost(h.rows, mx);
+    c.spent += wcost(h.res, cumCost(h.rows, cur));
+    c.total += wcost(h.res, cumCost(h.rows, mx));
     c.items++;
     if (cur >= mx) { c.maxed++; A.counts.done++; }
     for (const s of stepsBetween(h.rows, cur, mx)) {
@@ -243,8 +247,8 @@ function analyze() {
     const c = cat("lab");
     const mx = maxLvlAt(x.rows, th);
     const cur = Math.max(1, state.lab[x.id] || 1);
-    c.spent += cumCost(x.rows, cur);
-    c.total += cumCost(x.rows, mx);
+    c.spent += wcost(x.res, cumCost(x.rows, cur));
+    c.total += wcost(x.res, cumCost(x.rows, mx));
     c.items++;
     if (cur >= mx) { c.maxed++; A.counts.done++; }
     for (const s of stepsBetween(x.rows, cur, mx)) {
@@ -259,8 +263,8 @@ function analyze() {
     const c = cat("pets");
     const mx = maxLvlAt(p.rows, th);
     const cur = Math.max(1, state.pets[p.id] || 1);
-    c.spent += cumCost(p.rows, cur);
-    c.total += cumCost(p.rows, mx);
+    c.spent += wcost(p.res, cumCost(p.rows, cur));
+    c.total += wcost(p.res, cumCost(p.rows, mx));
     c.items++;
     if (cur >= mx) { c.maxed++; A.counts.done++; }
     for (const s of stepsBetween(p.rows, cur, mx)) {
@@ -551,7 +555,8 @@ function renderActive() {
 
 function renderHeader() {
   $("#thBadge").textContent = "TH " + state.th;
-  $("#playerName").textContent = state.name ? `${state.name} ${state.tag || ""}` : "no base loaded — try the sample";
+  $("#playerName").textContent = state.name ? `${state.name} ${state.tag || ""}`
+    : state.tag ? state.tag : "no base loaded — try the sample";
   const sel = $("#thSelect");
   if (!sel.options.length) {
     for (let t = 2; t <= MAX_TH; t++) sel.add(new Option("TH " + t, t));
@@ -585,7 +590,7 @@ function renderOverview() {
   root.innerHTML = `
   <div class="grid cols-2" style="margin-bottom:14px">
     <div class="card"><h2>Overall progress</h2>
-      <div class="note">Cost-weighted share of everything your TH${state.th} can build, upgrade and research.</div>
+      <div class="note">Cost-weighted share of everything your TH${state.th} can build, upgrade and research (dark elixir weighted &times;100).</div>
       <div class="ring-wrap">${ringSVG(pct(A.overall.spent, A.overall.total))}
         <div style="flex:1;min-width:220px">
           ${progRow("Upgrades done", A.counts.done, A.counts.done + A.counts.todo, `${A.counts.todo} to go`)}
@@ -944,7 +949,136 @@ function renderMetrics() {
 }
 
 /* ---------- Import / Export ---------- */
+/* Supercell internal data IDs, as used by the in-game village export
+   ("buildings"/"units"/... arrays of {data, lvl, cnt}). ID tables from the
+   MIT-licensed clash-of-clans-data npm package, cross-checked against real
+   exports; unknown IDs are counted and reported, never guessed. */
+const VILLAGE_BUILDING_IDS = {
+  1000000: "army_camp", 1000002: "elixir_collector", 1000003: "elixir_storage",
+  1000004: "gold_mine", 1000005: "gold_storage", 1000006: "barracks", 1000007: "laboratory",
+  1000008: "cannon", 1000009: "archer_tower", 1000011: "wizard_tower", 1000012: "air_defense",
+  1000013: "mortar", 1000014: "clan_castle", 1000015: "builder_s_hut", 1000019: "hidden_tesla",
+  1000020: "spell_factory", 1000021: "x_bow", 1000023: "dark_elixir_drill",
+  1000024: "dark_elixir_storage", 1000026: "dark_barracks", 1000027: "inferno_tower",
+  1000028: "air_sweeper", 1000029: "dark_spell_factory", 1000031: "eagle_artillery",
+  1000032: "bomb_tower", 1000059: "workshop", 1000067: "scattershot", 1000068: "pet_house",
+  1000070: "blacksmith", 1000071: "hero_hall", 1000072: "spell_tower", 1000077: "monolith",
+  1000079: "multi_gear_tower", 1000084: "multi_archer_tower", 1000085: "ricochet_cannon",
+  1000086: "revenge_tower", 1000089: "firespitter",
+};
+const VILLAGE_IGNORE_BUILDINGS = new Set([1000016, 1000017, 1000018, 1000064, 1000093]); // B.O.B's Hut, Helper Hut, unused
+const VILLAGE_TRAP_IDS = {
+  12000000: "bomb", 12000001: "spring_trap", 12000002: "giant_bomb", 12000005: "air_bomb",
+  12000006: "seeking_air_mine", 12000008: "skeleton_trap", 12000016: "tornado_trap",
+  12000020: "giga_bomb",
+};
+const VILLAGE_UNIT_IDS = {
+  4000000: "barbarian", 4000001: "archer", 4000002: "goblin", 4000003: "giant",
+  4000004: "wall_breaker", 4000005: "balloon", 4000006: "wizard", 4000007: "healer",
+  4000008: "dragon", 4000009: "p_e_k_k_a", 4000010: "minion", 4000011: "hog_rider",
+  4000012: "valkyrie", 4000013: "golem", 4000015: "witch", 4000017: "lava_hound",
+  4000022: "bowler", 4000023: "baby_dragon", 4000024: "miner",
+  4000051: "wall_wrecker", 4000052: "battle_blimp", 4000053: "yeti",
+  4000058: "ice_golem", 4000059: "electro_dragon", 4000062: "stone_slammer",
+  4000065: "dragon_rider", 4000075: "siege_barracks", 4000082: "headhunter",
+  4000087: "log_launcher", 4000091: "flame_flinger", 4000092: "battle_drill",
+  4000095: "electro_titan", 4000097: "apprentice_warden", 4000110: "root_rider",
+  4000123: "druid", 4000132: "thrower", 4000135: "troop_launcher", 4000150: "furnace",
+};
+const VILLAGE_IGNORE_UNITS = new Set([4000177]); // temporary event troops (Meteor Golem)
+const VILLAGE_SPELL_IDS = {
+  26000000: "lightning_spell", 26000001: "healing_spell", 26000002: "rage_spell",
+  26000003: "jump_spell", 26000005: "freeze_spell", 26000009: "poison_spell",
+  26000010: "earthquake_spell", 26000011: "haste_spell", 26000016: "clone_spell",
+  26000017: "skeleton_spell", 26000028: "bat_spell", 26000035: "invisibility_spell",
+  26000053: "recall_spell", 26000070: "overgrowth_spell", 26000098: "revive_spell",
+  26000109: "ice_block_spell",
+};
+const VILLAGE_IGNORE_SPELLS = new Set([26000120]); // temporary event spells (Totem)
+const VILLAGE_HERO_IDS = {
+  28000000: "barbarian_king", 28000001: "archer_queen", 28000002: "grand_warden",
+  28000004: "royal_champion", 28000006: "minion_prince", 28000007: "dragon_duke",
+};
+const VILLAGE_PET_IDS = {
+  73000000: "l_a_s_s_i", 73000001: "mighty_yak", 73000002: "electro_owl", 73000003: "unicorn",
+  73000004: "phoenix", 73000007: "poison_lizard", 73000008: "diggy", 73000009: "frosty",
+  73000010: "spirit_fox", 73000011: "angry_jelly", 73000016: "sneezy", 73000017: "greedy_raven",
+};
+const VILLAGE_EQUIP_IDS = {
+  90000000: "barbarian_puppet", 90000001: "rage_vial", 90000002: "archer_puppet",
+  90000003: "invisibility_vial", 90000004: "eternal_tome", 90000005: "life_gem",
+  90000006: "seeking_shield", 90000007: "royal_gem", 90000008: "earthquake_boots",
+  90000009: "hog_rider_puppet", 90000010: "giant_gauntlet", 90000011: "vampstache",
+  90000012: "haste_vial", 90000013: "rocket_spear", 90000014: "spiky_ball",
+  90000015: "frozen_arrow", 90000017: "giant_arrow", 90000019: "heroic_torch",
+  90000020: "healer_puppet", 90000022: "fireball", 90000024: "rage_gem",
+  90000032: "snake_bracelet", 90000034: "healing_tome", 90000035: "dark_crown",
+  90000039: "magic_mirror", 90000040: "electro_boots", 90000041: "lavaloon_puppet",
+  90000042: "henchmen_puppet", 90000043: "dark_orb", 90000044: "metal_pants",
+  90000047: "noble_iron", 90000048: "action_figure", 90000049: "meteor_staff",
+  90000050: "frost_flake", 90000051: "stick_horse", 90000052: "fire_heart",
+  90000053: "rocket_backpack", 90000056: "stun_blaster", 90000057: "flame_blower",
+};
+
+function importVillage(obj) {
+  const unknown = { building: 0, trap: 0, unit: 0, spell: 0, hero: 0, pet: 0, equipment: 0 };
+  let matched = 0;
+  // Town Hall level from the TH entry
+  const thEntry = (obj.buildings || []).find(b => b.data === 1000001);
+  if (thEntry) state.th = Math.min(MAX_TH, thEntry.lvl);
+  if (obj.tag && obj.tag !== state.tag) state.name = "";
+  if (obj.tag) state.tag = obj.tag;
+  state.buildings = {}; state.walls = {}; state.heroes = {}; state.lab = {}; state.pets = {};
+  // equipment is merged, not reset — a prior API import may already name items exactly
+  const addInstances = (slug, lvl, cnt) => {
+    const arr = state.buildings[slug] || (state.buildings[slug] = []);
+    for (let i = 0; i < cnt; i++) arr.push(lvl);
+  };
+  for (const e of (obj.buildings || []).concat(obj.traps || [])) {
+    const cnt = e.cnt || 1;
+    if (e.data === 1000001) continue;
+    if (e.data === 1000010) { state.walls[e.lvl] = (state.walls[e.lvl] || 0) + cnt; matched++; continue; }
+    const slug = VILLAGE_BUILDING_IDS[e.data] || VILLAGE_TRAP_IDS[e.data];
+    if (slug && byId[slug]) { addInstances(slug, e.lvl, cnt); matched++; }
+    else if (!VILLAGE_IGNORE_BUILDINGS.has(e.data)) unknown[e.data >= 12000000 ? "trap" : "building"]++;
+  }
+  for (const e of (obj.units || []).concat(obj.siege_machines || [])) {
+    const slug = VILLAGE_UNIT_IDS[e.data];
+    if (slug && byId[slug]) { state.lab[slug] = e.lvl; matched++; }
+    else if (!VILLAGE_IGNORE_UNITS.has(e.data)) unknown.unit++;
+  }
+  for (const e of obj.spells || []) {
+    const slug = VILLAGE_SPELL_IDS[e.data];
+    if (slug && byId[slug]) { state.lab[slug] = e.lvl; matched++; }
+    else if (!VILLAGE_IGNORE_SPELLS.has(e.data)) unknown.spell++;
+  }
+  for (const e of obj.heroes || []) {
+    const slug = VILLAGE_HERO_IDS[e.data];
+    if (slug) { state.heroes[slug] = e.lvl; matched++; } else unknown.hero++;
+  }
+  for (const e of obj.pets || []) {
+    const slug = VILLAGE_PET_IDS[e.data];
+    if (slug && byId[slug]) { state.pets[slug] = e.lvl; matched++; } else unknown.pet++;
+  }
+  for (const e of obj.equipment || []) {
+    const slug = VILLAGE_EQUIP_IDS[e.data];
+    if (slug && byId[slug]) { state.equip[slug] = e.lvl; matched++; } else unknown.equipment++;
+  }
+  normalize(); save();
+  const missed = Object.entries(unknown).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}${n > 1 ? "s" : ""}`);
+  let msg = `Village imported (TH${state.th}): ${matched} entries matched, including buildings, walls, traps, heroes, lab and pets.`;
+  if (missed.length) {
+    msg += ` Couldn't identify ${missed.join(", ")} (newer game content uses IDs this tool doesn't know yet) — ` +
+      `check “My Base” and fill any gaps, and consider also importing your player payload from the official API, ` +
+      `which names troops/heroes/equipment exactly.`;
+  }
+  return msg;
+}
+
 function detectAndImport(obj) {
+  if (obj && Array.isArray(obj.buildings) && obj.buildings.length && obj.buildings[0] && typeof obj.buildings[0].data === "number") {
+    return importVillage(obj);   // in-game village export (ID-based)
+  }
   if (obj && obj.format === "clash-analyzer-base" && obj.state) {
     const s = obj.state;
     if (s.v !== 1) throw new Error("Unsupported base file version.");
@@ -980,7 +1114,7 @@ function detectAndImport(obj) {
     return `Player imported: ${esc(obj.name || obj.tag || "")} (TH${state.th}) — ${matched} units/heroes/spells/equipment matched. ` +
       `Building levels aren't in the API: set them in “My Base” (start from “Everything → TH${state.th - 1} max” and adjust).`;
   }
-  throw new Error("Unrecognized JSON. Paste a player payload from the Clash of Clans API or a file exported by this tool.");
+  throw new Error("Unrecognized JSON. Accepted: an in-game village export ({\"buildings\":[{\"data\":100...}]}), a player payload from the Clash of Clans API ({\"townHallLevel\":...}), or a base file exported by this tool.");
 }
 
 function exportState() {
@@ -1015,10 +1149,13 @@ function renderIO() {
       <div id="apiMsg"></div>
     </div>
     <div class="card"><h2>Paste / upload JSON</h2>
-      <div class="note">Accepts either an <b>official API player payload</b> (from the developer portal's “Try it”, or
-      <code>curl -H "Authorization: Bearer TOKEN" https://api.clashofclans.com/v1/players/%23YOURTAG</code>)
-      or a <b>base file exported by this tool</b> (full base incl. buildings).</div>
-      <textarea class="io" id="ioPaste" placeholder='{"tag":"#...","townHallLevel":13,...}  or  {"format":"clash-analyzer-base",...}'></textarea>
+      <div class="note">Accepts three formats, auto-detected:
+      <b>an in-game village export</b> (<code>{"buildings":[{"data":1000001,...}]}</code> — the only format that
+      includes building levels and walls), <b>an official API player payload</b> (from the developer portal's “Try it”, or
+      <code>curl -H "Authorization: Bearer TOKEN" https://api.clashofclans.com/v1/players/%23YOURTAG</code> —
+      troops/heroes/spells/equipment by name), or <b>a base file exported by this tool</b>.
+      Importing both of the first two gives the most complete picture.</div>
+      <textarea class="io" id="ioPaste" placeholder='{"tag":"#...","buildings":[{"data":1000001,"lvl":14,...}]}  ·  {"tag":"#...","townHallLevel":14,...}  ·  {"format":"clash-analyzer-base",...}'></textarea>
       <div class="io-row">
         <button class="btn" id="ioImport">Import</button>
         <label class="btn ghost" style="cursor:pointer">Upload file<input type="file" id="ioFile" accept=".json,application/json" hidden></label>

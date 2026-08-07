@@ -25,8 +25,15 @@ A fully client-side Clash of Clans base analyzer, hosted on GitHub Pages at
 
 ## Importing your base
 
-Two paths, both on the **Import / Export** tab:
+Three paths, all on the **Import / Export** tab:
 
+0. **In-game village export JSON** (recommended) — the ID-based snapshot that
+   starts `{"tag":"#...","buildings":[{"data":1000001,...}]}`. This is the only
+   format that includes building levels, walls and traps, so paste or upload it
+   if you have it. Internal `data` IDs are resolved via tables from the
+   MIT-licensed [`clash-of-clans-data`](https://www.npmjs.com/package/clash-of-clans-data)
+   npm package; IDs the tables don't know (brand-new content) are counted in
+   the import message rather than guessed.
 1. **Clash of Clans API** — enter your player tag and a token from
    [developer.clashofclans.com](https://developer.clashofclans.com). Note the
    official API does not send CORS headers and pins keys to IPs, so calling it
@@ -61,6 +68,9 @@ Notes on modeling:
   removed from the max configuration, and merge level 1 carries the merge cost.
 - TH18 **supercharges** and Builder-Base **gear-ups** are excluded.
 - Wall costs count as gold by default (switchable to elixir in *To Max*).
+- Progress percentages are cost-weighted with dark elixir valued at 100×
+  gold/elixir (it's roughly that much scarcer per raid); raw resource totals
+  are always shown unweighted.
 - Equipment ore totals count **owned** equipment only, capped by the
   Blacksmith level your TH allows.
 
