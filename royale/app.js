@@ -21,7 +21,7 @@ let state = null;
 
 function freshState() {
   return { v: 1, tag: "", name: "", king: 0, trophies: 0, best: 0,
-    cards: {}, deck: [], settings: {} };
+    cards: {}, deck: [], settings: { apiEndpoint: "" } };
 }
 function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
 function load() {
@@ -32,6 +32,7 @@ function load() {
   return null;
 }
 function normalize() {
+  state.settings = { ...freshState().settings, ...(state.settings || {}) };
   for (const [id, c] of Object.entries(state.cards)) {
     const card = byId[id];
     if (!card) { delete state.cards[id]; continue; }
@@ -391,6 +392,8 @@ function renderMeta() {
           : !o.missing.length ? '<span class="pill warn">evos missing</span>' : '<span class="pill crit">cards missing</span>'}
         <span class="spacer"></span>
         <button class="btn sm ghost" data-usedeck="${group.key}:${di}">Use in Deck tab</button>
+        ${d.link ? `<a class="btn sm" style="text-decoration:none" href="${esc(d.link)}" target="_blank" rel="noopener"
+          title="opens Clash Royale and copies this deck into a free slot">Copy to game ↗</a>` : ""}
       </div>
       <div class="meta-chips">${chips}</div>
       ${probs.length ? `<div class="small muted" style="margin-top:6px">${probs.join(" · ")}</div>` : ""}
@@ -490,10 +493,35 @@ function exportState() {
   return JSON.stringify({ format: "royale-analyzer", exported: new Date().toISOString(), state }, null, 2);
 }
 
+async function fetchByTag(tag) {
+  const ep = (state.settings.apiEndpoint || "").trim().replace(/\/+$/, "");
+  if (!ep) throw new Error("Set your relay URL once (see the setup note in this card)");
+  const t = (tag || "").trim().replace(/^#/, "").toUpperCase();
+  if (!t) throw new Error("Enter a player tag");
+  const res = await fetch(`${ep}/cr/players/${encodeURIComponent(t)}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Relay responded ${res.status}: ${body.error || body.reason || body.message || "unknown error"}`);
+  return body;
+}
+
 function renderIO() {
   const root = $("#tab-io");
   root.innerHTML = `
   <div class="grid cols-2">
+    <div class="card"><h2>Fetch by player tag</h2>
+      <div class="note">Enter your tag and pull your whole profile from the official API — card levels, copies,
+      evolutions, tower troops and your current deck. Needs the free 10-minute
+      <a href="https://github.com/Kyxrem/kyxrem.github.io/tree/claude/clash-of-clans-analyzer-l3aqze/api-worker" target="_blank" rel="noopener">API relay setup</a>
+      once (Supercell tokens are IP-locked and can't live in a public page); after that it's tag-only.
+      The same relay serves the CoC tool.</div>
+      <div class="io-row">
+        <input class="txt" id="apiTag" placeholder="#XXXXXXXX" value="${esc(state.tag || "")}" style="max-width:180px">
+        <button class="btn" id="apiGo">Fetch</button>
+      </div>
+      <div class="io-row small"><label class="field" style="flex:1;min-width:260px">Relay URL
+        <input class="txt" id="apiEndpoint" value="${esc(state.settings.apiEndpoint || "")}" placeholder="https://your-worker.workers.dev"></label></div>
+      <div id="apiMsg"></div>
+    </div>
     <div class="card"><h2>Paste / upload your profile</h2>
       <div class="note">Get your player JSON from <a href="https://developer.clashroyale.com" target="_blank" rel="noopener">developer.clashroyale.com</a>
       (“Try it” on <code>/v1/players/%23YOURTAG</code>) or
@@ -577,6 +605,7 @@ function bindEvents() {
     else if (t.id === "collRar") { collFilter.rar = t.value; renderCollection(); }
     else if (t.id === "collSort") { collFilter.sort = t.value; renderCollection(); }
     else if (t.id === "statsCard") { statsCard = t.value; renderStats(); }
+    else if (t.id === "apiEndpoint") { state.settings.apiEndpoint = t.value.trim(); save(); }
     else if (t.id === "mfCards") { metaFilter.cards = t.checked; renderMeta(); }
     else if (t.id === "mfEvo") { metaFilter.evo = t.checked; renderMeta(); }
     else if (t.id === "mfHero") { metaFilter.hero = t.checked; renderMeta(); }
@@ -610,6 +639,18 @@ function bindEvents() {
     }
     if (t.id === "ioCopy") {
       try { await navigator.clipboard.writeText(exportState()); t.textContent = "Copied ✓"; setTimeout(() => t.textContent = "Copy to clipboard", 1500); } catch (e2) {}
+    }
+    if (t.id === "apiGo") {
+      const box = $("#apiMsg");
+      box.innerHTML = `<div class="msg info">Fetching…</div>`;
+      fetchByTag($("#apiTag").value).then(data => {
+        const msg = detectAndImport(data);
+        box.innerHTML = `<div class="msg ok">${msg}</div>`;
+        renderHeader();
+      }).catch(err => {
+        box.innerHTML = `<div class="msg err">${esc(err.message)}. No relay yet? Do the one-time setup, or paste your JSON — same data.</div>`;
+      });
+      return;
     }
     if (t.dataset.metagroup) { metaFilter.group = t.dataset.metagroup; renderMeta(); return; }
     if (t.dataset.usedeck) {

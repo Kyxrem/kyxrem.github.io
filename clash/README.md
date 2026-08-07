@@ -50,14 +50,11 @@ Three paths, all on the **Import / Export** tab:
    MIT-licensed [`clash-of-clans-data`](https://www.npmjs.com/package/clash-of-clans-data)
    npm package; IDs the tables don't know (brand-new content) are counted in
    the import message rather than guessed.
-1. **Clash of Clans API** — enter your player tag and a token from
-   [developer.clashofclans.com](https://developer.clashofclans.com). Note the
-   official API does not send CORS headers and pins keys to IPs, so calling it
-   straight from a browser page usually fails. Options:
-   - run a local proxy (e.g. `cocproxy`) and put its URL in the *API base* box;
-   - create your key whitelisting the RoyaleAPI proxy IP `45.79.218.79` and use
-     that proxy as the base URL;
-   - or skip straight to option 2.
+1. **Fetch by player tag** — after a one-time [API relay setup](../api-worker/README.md)
+   (a free Cloudflare Worker that holds your Supercell token, ~10 minutes),
+   the tool needs only a tag. The relay serves both this tool and the Royale
+   one. Without a relay, use option 0 or 2 — Supercell's API blocks browsers
+   directly (no CORS, IP-locked tokens).
 2. **Paste / upload JSON** — paste the player payload from the developer
    portal's "Try it" button or from
    `curl -H "Authorization: Bearer TOKEN" "https://api.clashofclans.com/v1/players/%23YOURTAG"`.

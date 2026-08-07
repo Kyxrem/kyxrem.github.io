@@ -37,7 +37,7 @@ function freshState(th) {
     buildings: {}, walls: {}, heroes: {}, lab: {}, pets: {}, equip: {}, running: [],
     settings: { buildBoost: 0, labBoost: 0,
       lootGold: 12000000, lootElixir: 12000000, lootDark: 60000,
-      wallGoldDay: 3000000, wallElixirDay: 3000000,
+      wallGoldDay: 3000000, wallElixirDay: 3000000, apiEndpoint: "",
       oreWeekShiny: 6500, oreWeekGlowy: 550, oreWeekStarry: 15 },
   };
 }
@@ -1417,31 +1417,33 @@ function exportState() {
   return JSON.stringify({ format: "clash-analyzer-base", exported: new Date().toISOString(), state }, null, 2);
 }
 
-async function fetchFromAPI(tag, token, base) {
-  const t = tag.trim().replace(/^#/, "").toUpperCase();
-  const b = (base || "https://api.clashofclans.com").replace(/\/+$/, "");
-  const url = `${b}/v1/players/%23${encodeURIComponent(t)}`;
-  const res = await fetch(url, { headers: token ? { Authorization: "Bearer " + token.trim() } : {} });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`API responded ${res.status}. ${body.slice(0, 160)}`);
-  }
-  return res.json();
+async function fetchByTag(game, tag) {
+  const ep = (state.settings.apiEndpoint || "").trim().replace(/\/+$/, "");
+  if (!ep) throw new Error("Set your relay URL once (see the setup note in this card)");
+  const t = (tag || "").trim().replace(/^#/, "").toUpperCase();
+  if (!t) throw new Error("Enter a player tag");
+  const res = await fetch(`${ep}/${game}/players/${encodeURIComponent(t)}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Relay responded ${res.status}: ${body.error || body.reason || body.message || "unknown error"}`);
+  return body;
 }
 
 function renderIO() {
   const root = $("#tab-io");
   root.innerHTML = `
   <div class="grid cols-2">
-    <div class="card"><h2>Fetch from the Clash of Clans API</h2>
-      <div class="note">Needs a token from <a href="https://developer.clashofclans.com" target="_blank" rel="noopener">developer.clashofclans.com</a>.
-      The official API blocks browsers (no CORS) and pins your IP, so from this page you usually need a proxy you trust —
-      e.g. run <code>cocproxy</code> locally, or use the RoyaleAPI proxy IP (<code>45.79.218.79</code>) when creating the key and
-      set the proxy base URL below. If it fails, use “Paste JSON” instead — same data.</div>
-      <div class="io-row"><input class="txt" id="apiTag" placeholder="Player tag, e.g. #2PP0J0LL" style="max-width:220px">
-        <input class="txt" id="apiBase" placeholder="API base (default: https://api.clashofclans.com — or your proxy)" ></div>
-      <textarea class="io" id="apiToken" placeholder="API token (kept only in this browser)" style="min-height:70px"></textarea>
-      <div class="io-row"><button class="btn" id="apiGo">Fetch player</button></div>
+    <div class="card"><h2>Fetch by player tag</h2>
+      <div class="note">Enter your tag and fetch straight from the official API — troops, heroes, spells, pets and
+      equipment come in by name. Needs the free 10-minute
+      <a href="https://github.com/Kyxrem/kyxrem.github.io/tree/claude/clash-of-clans-analyzer-l3aqze/api-worker" target="_blank" rel="noopener">API relay setup</a>
+      once (Supercell tokens are IP-locked and can't live in a public page); after that it's tag-only.
+      Building levels still come from the village export / My Base.</div>
+      <div class="io-row">
+        <input class="txt" id="apiTag" placeholder="#QCPPQLQU" value="${esc(state.tag || "")}" style="max-width:180px">
+        <button class="btn" id="apiGo">Fetch</button>
+      </div>
+      <div class="io-row small"><label class="field" style="flex:1;min-width:260px">Relay URL
+        <input class="txt" id="apiEndpoint" value="${esc(state.settings.apiEndpoint || "")}" placeholder="https://your-worker.workers.dev"></label></div>
       <div id="apiMsg"></div>
     </div>
     <div class="card"><h2>Paste / upload JSON</h2>
@@ -1560,6 +1562,7 @@ function bindEvents() {
     else if (t.id === "lootGold") { state.settings.lootGold = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootElixir") { state.settings.lootElixir = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootDark") { state.settings.lootDark = Math.max(0, +t.value || 0); save(); renderActive(); }
+    else if (t.id === "apiEndpoint") { state.settings.apiEndpoint = t.value.trim(); save(); }
     else if (t.id === "wallGoldDay") { state.settings.wallGoldDay = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "wallElixirDay") { state.settings.wallElixirDay = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "oreWeekShiny") { state.settings.oreWeekShiny = Math.max(0, +t.value || 0); save(); renderActive(); }
@@ -1660,12 +1663,12 @@ function bindEvents() {
       const box = $("#apiMsg");
       box.innerHTML = `<div class="msg info">Fetching…</div>`;
       try {
-        const data = await fetchFromAPI($("#apiTag").value, $("#apiToken").value, $("#apiBase").value);
+        const data = await fetchByTag("coc", $("#apiTag").value);
         const msg = detectAndImport(data);
         box.innerHTML = `<div class="msg ok">${msg}</div>`;
         renderHeader();
       } catch (err) {
-        box.innerHTML = `<div class="msg err">${esc(err.message)} — browsers are usually blocked by the API's CORS policy; use a proxy base URL or the “Paste JSON” box instead.</div>`;
+        box.innerHTML = `<div class="msg err">${esc(err.message)}. No relay yet? Do the one-time setup, or use “Paste JSON” — same data.</div>`;
       }
     }
   });

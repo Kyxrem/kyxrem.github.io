@@ -71,6 +71,36 @@ def parse_sections(html, wanted):
 
 html = fetch(URL)
 groups = parse_sections(html, {"New Meta! decks": "ranked", "Top Ladder decks": "ladder"})
+
+# fetch each deck's detail page for the official in-game copy link
+# (contains numeric card ids + evolution slots + tower troop)
+import time
+link_cache = {}
+for decks in groups.values():
+    for d in decks:
+        slug_path = ",".join(
+            ("evo-" if c in d["evo"] else "") + c.replace("_", "-").replace("p-e-k-k-a", "pekka").replace("mini-pekka", "mini-pekka")
+            for c in d["cards"])
+        # rebuild deckshop slugs: reverse the special-case mapping
+        rev = {"p_e_k_k_a": "pekka", "mini_p_e_k_k_a": "mini-pekka"}
+        slug_path = ",".join(("evo-" if c in d["evo"] else "") + rev.get(c, c.replace("_", "-")) for c in d["cards"])
+        if slug_path in link_cache:
+            d["link"] = link_cache[slug_path]
+            continue
+        try:
+            dhtml = fetch("https://www.deckshop.pro/deck/detail/" + slug_path)
+            m = re.search(r'(?:https?://)?link\.clashroyale\.com/[^"\s]*copyDeck[^"\s]*', dhtml)
+            if m:
+                link = m.group(0)
+                if not link.startswith("http"):
+                    link = "https://" + link
+                link = link.replace("&amp;", "&")
+                d["link"] = link
+                link_cache[slug_path] = link
+        except Exception as e:
+            print("  ! detail fetch failed:", slug_path, e)
+        time.sleep(0.6)
+print(f"copy links captured: {sum(1 for g in groups.values() for d in g if d.get('link'))}")
 for k, decks in groups.items():
     print(f"{k}: {len(decks)} decks")
     for d in decks[:3]:
