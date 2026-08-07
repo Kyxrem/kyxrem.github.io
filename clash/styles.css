@@ -179,6 +179,34 @@ button.btn.danger { background: var(--critical); }
 .res-txt { white-space: nowrap; }
 .res-txt .dot { width: 8px; height: 8px; margin-right: 4px; }
 
+/* ---------- gantt timetable ---------- */
+.gantt { --px: 26px; display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.g-labels { flex: none; width: 108px; border-right: 1px solid var(--grid); background: var(--surface); }
+.g-labels .g-corner { height: 34px; border-bottom: 1px solid var(--grid); }
+.g-label { height: 38px; display: flex; align-items: center; padding: 0 10px; font-size: 0.82rem;
+  color: var(--ink-2); border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.g-label:last-child { border-bottom: none; }
+.g-scroll { overflow-x: auto; flex: 1; }
+.g-head { position: relative; height: 34px; border-bottom: 1px solid var(--grid); }
+.g-tick { position: absolute; top: 4px; font-size: 0.7rem; color: var(--ink-3); border-left: 1px solid var(--grid);
+  padding-left: 4px; height: 26px; line-height: 1.15; }
+.g-tick b { color: var(--ink-2); display: block; font-weight: 600; }
+.g-track { position: relative; height: 38px; border-bottom: 1px solid var(--grid);
+  background:
+    repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px calc(var(--px) * 7)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 1px, transparent 1px var(--px)); }
+.g-track:last-child { border-bottom: none; }
+.g-block { position: absolute; top: 5px; height: 28px; border-radius: 5px; color: #0d0d0d;
+  font-size: 0.72rem; font-weight: 700; padding: 0 6px; overflow: hidden; white-space: nowrap;
+  display: flex; align-items: center; min-width: 3px; box-sizing: border-box; }
+.g-block.gold { background: var(--gold); }
+.g-block.elixir { background: var(--elixir); }
+.g-block.dark { background: var(--dark-elixir); }
+.g-block.cut { -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent); mask-image: linear-gradient(90deg, #000 82%, transparent); }
+.g-legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 10px 0 12px;
+  color: var(--ink-2); font-size: 0.82rem; }
+.g-legend .spacer { flex: 1; }
+
 /* ---------- import ---------- */
 textarea.io {
   width: 100%; min-height: 150px; background: var(--surface-2); color: var(--ink);

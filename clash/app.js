@@ -535,6 +535,7 @@ function progRow(name, spent, total, extra) {
 /* ---------------- tabs ---------------- */
 const TABS = ["overview", "base", "plan", "tomax", "metrics", "io"];
 let activeTab = "overview";
+let ganttHorizon = 56; // days shown in the plan timetable; 0 = everything
 function switchTab(t) {
   activeTab = t;
   for (const name of TABS) {
@@ -723,6 +724,53 @@ function renderBase() {
 }
 
 /* ---------- Plan ---------- */
+function taskLabel(t) {
+  const multi = t.kind === "building" && (state.buildings[t.id] || []).length > 1;
+  return `${t.name}${multi ? " #" + (t.inst + 1) : ""} → L${t.to}`;
+}
+
+function ganttHTML(sched, labTL, petTL) {
+  const PX = 26;
+  const finishH = Math.max(sched.finish,
+    labTL.length ? labTL[labTL.length - 1].end : 0,
+    petTL.length ? petTL[petTL.length - 1].end : 0);
+  if (finishH <= 0) return '<p class="muted">Nothing left to schedule — this TH is done. 🎉</p>';
+  const horizonD = ganttHorizon === 0 ? Math.ceil(finishH / 24) + 1 : ganttHorizon;
+  const width = horizonD * PX;
+  const rows = [];
+  for (let i = 0; i < state.builders; i++)
+    rows.push({ label: "Builder " + (i + 1), items: (sched.lanes[i] || { items: [] }).items });
+  rows.push({ label: "Laboratory", items: labTL });
+  rows.push({ label: "Pet House", items: petTL });
+  let ticks = "";
+  for (let d = 0; d < horizonD; d += 7) {
+    const date = new Date(Date.now() + d * 86400000)
+      .toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    ticks += `<div class="g-tick" style="left:${d * PX}px"><b>${d === 0 ? "today" : "day " + d}</b>${date}</div>`;
+  }
+  const tracks = rows.map(r => {
+    const blocks = r.items.map(t => {
+      const sD = t.start / 24, eD = t.end / 24;
+      if (sD >= horizonD || t.end <= t.start) return "";
+      const cut = eD > horizonD;
+      const w = Math.max(3, (Math.min(eD, horizonD) - sD) * PX - 2);
+      const label = taskLabel(t);
+      const endDate = new Date(Date.now() + t.end * 3600000)
+        .toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const title = `${label} · ${fmt(t.cost)} ${RES_LABEL[t.res]} · ${fmtH(t.end - t.start)} · day ${Math.floor(sD)}–${Math.ceil(eD)} (done ${endDate})`;
+      return `<div class="g-block ${t.res === "dark" ? "dark" : t.res}${cut ? " cut" : ""}" ` +
+        `style="left:${(sD * PX).toFixed(1)}px;width:${w.toFixed(1)}px" title="${esc(title)}">` +
+        `${w > 68 ? esc(label) : ""}</div>`;
+    }).join("");
+    return `<div class="g-track" style="width:${width}px">${blocks}</div>`;
+  }).join("");
+  const labels = rows.map(r => `<div class="g-label">${r.label}</div>`).join("");
+  return `<div class="gantt" style="--px:${PX}px">
+    <div class="g-labels"><div class="g-corner"></div>${labels}</div>
+    <div class="g-scroll"><div class="g-head" style="width:${width}px">${ticks}</div>${tracks}</div>
+  </div>`;
+}
+
 function renderPlan() {
   const A = analyze();
   const root = $("#tab-plan");
@@ -731,6 +779,10 @@ function renderPlan() {
   const lab = labQueue();
   const pets = petQueue();
   const labFactor = 1 - (state.settings.labBoost || 0) / 100;
+  let accL = 0;
+  const labTL = lab.map(t => { const start = accL; accL += t.time * labFactor; return { ...t, start, end: accL }; });
+  let accPt = 0;
+  const petTL = pets.map(t => { const start = accPt; accPt += t.time * labFactor; return { ...t, start, end: accPt }; });
 
   const planRows = sched.timeline.slice(0, 60).map((t, i) => `
     <div class="plan-item">
@@ -742,37 +794,47 @@ function renderPlan() {
       <div class="when" title="builder ${t.lane + 1}">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)} · B${t.lane + 1}</div>
     </div>`).join("");
 
-  let acc = 0;
-  const labRows = lab.slice(0, 40).map((t, i) => {
-    const start = acc; acc += t.time * labFactor;
-    return `<div class="plan-item"><div class="idx">${i + 1}</div>
+  const labRows = labTL.slice(0, 40).map((t, i) => `<div class="plan-item"><div class="idx">${i + 1}</div>
       <div class="what"><b>${esc(t.name)}</b> → L${t.to}<div class="why">lab tier ${t.tier}</div></div>
       <div class="cost">${resTxt(t.res, t.cost)}</div>
-      <div class="dur">${fmtH(t.time * labFactor)}</div>
-      <div class="when">day ${Math.floor(start / 24)}–${Math.ceil((start + t.time * labFactor) / 24)}</div></div>`;
-  }).join("");
-  let accP = 0;
-  const petRows = pets.slice(0, 20).map((t, i) => {
-    const start = accP; accP += t.time;
-    return `<div class="plan-item"><div class="idx">${i + 1}</div>
+      <div class="dur">${fmtH(t.end - t.start)}</div>
+      <div class="when">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)}</div></div>`).join("");
+  const petRows = petTL.slice(0, 20).map((t, i) => `<div class="plan-item"><div class="idx">${i + 1}</div>
       <div class="what"><b>${esc(t.name)}</b> → L${t.to}</div>
       <div class="cost">${resTxt(t.res, t.cost)}</div>
-      <div class="dur">${fmtH(t.time)}</div>
-      <div class="when">day ${Math.floor(start / 24)}–${Math.ceil(accP / 24)}</div></div>`;
-  }).join("");
+      <div class="dur">${fmtH(t.end - t.start)}</div>
+      <div class="when">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)}</div></div>`).join("");
 
-  const finishDays = sched.finish / 24;
-  const labDays = lab.reduce((s, t) => s + t.time * labFactor, 0) / 24;
+  const labDays = accL / 24;
   root.innerHTML = `
   <div class="grid cols-4" style="margin-bottom:14px">
     ${tile("Builder queue", `${tasks.length} upgrades`, "time", `≈ ${fmtDays(sched.finish)} with ${state.builders} builders`)}
     ${tile("Lab queue", `${lab.length} researches`, "time", `≈ ${fmtDays(labDays * 24)}`)}
-    ${tile("Pet queue", `${pets.length} upgrades`, "time", `≈ ${fmtDays(accP)}`)}
+    ${tile("Pet queue", `${pets.length} upgrades`, "time", `≈ ${fmtDays(accPt)}`)}
     <div class="card tile"><div class="label"><span class="dot accent"></span>Boosts</div>
       <div class="io-row" style="margin:6px 0 0">
         <label class="field small">builder −<select id="buildBoost">${[0, 10, 15, 20].map(v => `<option ${v === state.settings.buildBoost ? "selected" : ""}>${v}</option>`).join("")}</select>%</label>
         <label class="field small">lab −<select id="labBoost">${[0, 10, 15, 20].map(v => `<option ${v === state.settings.labBoost ? "selected" : ""}>${v}</option>`).join("")}</select>%</label>
       </div><div class="delta">Gold Pass / events time discount</div></div>
+  </div>
+  <div class="card" style="margin-bottom:14px"><h2>Timetable</h2>
+    <div class="note">Every queue as a lane, every upgrade as a bar spanning its days. Builders follow the
+    priority order below; the Laboratory and Pet House are single queues. Hover a bar for cost and finish date.
+    Walls aren't shown — they're instant. Change the builder count in the header to add or remove lanes.</div>
+    <div class="g-legend">
+      <span><span class="dot gold"></span> costs gold</span>
+      <span><span class="dot elixir"></span> costs elixir</span>
+      <span><span class="dot dark"></span> costs dark elixir</span>
+      <span class="spacer"></span>
+      <label class="field small">show
+        <select id="ganttHorizon">
+          <option value="28"${ganttHorizon === 28 ? " selected" : ""}>4 weeks</option>
+          <option value="56"${ganttHorizon === 56 ? " selected" : ""}>8 weeks</option>
+          <option value="84"${ganttHorizon === 84 ? " selected" : ""}>12 weeks</option>
+          <option value="0"${ganttHorizon === 0 ? " selected" : ""}>everything</option>
+        </select></label>
+    </div>
+    ${ganttHTML(sched, labTL, petTL)}
   </div>
   <div class="grid cols-2">
     <div class="card"><h2>Builder schedule</h2>
