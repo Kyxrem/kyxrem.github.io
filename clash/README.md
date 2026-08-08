@@ -29,9 +29,13 @@ A fully client-side Clash of Clans base analyzer, hosted on GitHub Pages at
   building counts for that TH on the 44×44 grid, click/drag placement, wall
   painting, and a coverage overlay showing which tiles your defenses can
   actually hit — toggle **ground / air / both** (X-Bow modes, Air Sweeper push
-  cones and the TH12+ Town Hall weapon included). Multiple saved layouts,
-  PNG and JSON export. Footprints/ranges/targets come from the wiki via
-  `tools/scrape_layout.py` (`layout-data.js`).
+  cones and the TH12+ Town Hall weapon included). A layout **library** holds
+  a whole collection of bases across TH levels: paste an in-game share link
+  (`link.clashofclans.com … OpenLayout&id=TH15:HV:…`) to file it under its TH
+  with a one-tap "open in game" button — the link itself is an opaque pointer
+  to Supercell's servers, so the grid is for sketching/analyzing the design.
+  PNG and JSON export per layout. Footprints/ranges/targets come from the
+  wiki via `tools/scrape_layout.py` (`layout-data.js`).
 - **Metrics** — total defensive DPS/HP vs. TH max, storage capacity, a
   per-defense matrix (counts, level ranges, remaining cost/time), a
   "best value right now" ranking of every available defense upgrade, and a

@@ -285,3 +285,17 @@ footer.app p { margin: 4px 0; }
   .b-main { grid-template-columns: 1fr; }
   .b-palette { max-height: 235px; }
 }
+
+/* ---- base builder library ---- */
+.b-linkbox { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex: 1; min-width: 0; }
+.b-linkbox input { flex: 1; min-width: 220px; }
+.b-lib { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.b-card { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+  padding: 6px; cursor: pointer; width: 148px; }
+.b-card:hover { border-color: var(--ink-3); }
+.b-card.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.b-card canvas { width: 100%; border-radius: 4px; display: block; }
+.b-card-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center;
+  margin-top: 6px; font-size: 0.8rem; }
+.b-card-meta b { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-card-meta a { font-size: 0.78rem; }

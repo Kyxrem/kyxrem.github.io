@@ -1750,7 +1750,11 @@ function bShellHTML() {
     <b>ground</b> or <b>air</b> — X-Bows use their set mode (click one), and the Town Hall weapon counts from
     TH12. Air Sweepers show their push cone (rotate via the selection bar) but deal no damage, so they aren't
     counted; Spell Towers, the Builder's Hut turret, Clan Castle troops and traps aren't counted either.
-    Ranges are wiki values, measured building center → tile center.</div>
+    Ranges are wiki values, measured building center → tile center. In-game layout links
+    (link.clashofclans.com … OpenLayout) are pointers to layouts stored on Supercell's servers — nothing
+    outside the game can turn one into tile positions, and the village export has none either. Attach links
+    to saved layouts to build your per-TH collection and reopen any of them in the game with one tap; the
+    grid is for sketching and analyzing the design itself.</div>
     <div class="b-toolbar">
       <label class="field">Layout <select id="bSlotSel"></select></label>
       <button class="btn sm ghost" id="bDup" title="copy this layout into a new slot">⧉ duplicate</button>
@@ -1764,6 +1768,12 @@ function bShellHTML() {
         <option value="a">air</option><option value="b">ground + air</option></select></label>
       <button class="btn sm ghost" id="bPng">⬇ PNG</button>
     </div>
+    <div class="b-toolbar">
+      <label class="field">Name <input id="bName" maxlength="40"></label>
+      <span class="b-linkbox" id="bLinkBox"></span>
+    </div>
+    <div class="b-cat" style="margin:2px 2px 6px">Library — click a base to edit it</div>
+    <div class="b-lib" id="bLib"></div>
     <div class="b-main">
       <div class="b-palette" id="bPalette"></div>
       <div class="b-canvas-wrap">
@@ -1784,12 +1794,78 @@ function bShellHTML() {
   </div>`;
 }
 
+function bLinkHref(id) {
+  return "https://link.clashofclans.com/en?action=OpenLayout&id=" + encodeURIComponent(id);
+}
+// accepts a full share URL or a raw id like TH15:HV:AAAA… (HV = home village)
+function bParseLink(txt) {
+  try { txt = decodeURIComponent(txt); } catch (e) {}
+  const m = String(txt).match(/TH(\d+):(HV|BB\d*):([A-Za-z0-9_-]{8,})/i);
+  if (!m) return null;
+  if (!/^HV$/i.test(m[2])) return { bb: true };
+  const th = +m[1];
+  if (th < 2 || th > MAX_TH) return null;
+  return { th, id: `TH${th}:HV:${m[3]}` };
+}
+function bThumbCanvas(slot, px) {
+  const cv = document.createElement("canvas");
+  const n = BGRID * px;
+  cv.width = n; cv.height = n;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#161615"; ctx.fillRect(0, 0, n, n);
+  ctx.fillStyle = "#8e8b80";
+  for (const [x, y] of slot.walls) ctx.fillRect(x * px, y * px, px, px);
+  for (const it of slot.items) {
+    const sz = bSizeOf(it.b);
+    const cat = it.b === "town_hall" ? "other" : (byId[it.b] || {}).cat || "other";
+    ctx.fillStyle = B_COLOR[cat];
+    ctx.fillRect(it.x * px + 0.5, it.y * px + 0.5, sz[0] * px - 1, sz[1] * px - 1);
+  }
+  return cv;
+}
+function bUpdateLibrary() {
+  const lib = $("#bLib");
+  lib.innerHTML = "";
+  const order = layouts.slots.map((sl, i) => ({ sl, i }))
+    .sort((a, c) => c.sl.th - a.sl.th || a.sl.name.localeCompare(c.sl.name));
+  for (const { sl, i } of order) {
+    const card = document.createElement("div");
+    card.className = "b-card" + (i === layouts.cur ? " cur" : "");
+    card.dataset.bslot = i;
+    card.appendChild(bThumbCanvas(sl, 3));
+    const meta = document.createElement("div");
+    meta.className = "b-card-meta";
+    meta.innerHTML = `<span class="th-badge">TH ${sl.th}</span><b>${esc(sl.name)}</b>
+      <span class="muted small">${sl.items.length} bld · ${sl.walls.length} walls</span>
+      ${sl.link ? `<a href="${bLinkHref(sl.link)}" target="_blank" rel="noopener"
+        title="opens Clash of Clans and offers to save this layout">▶ open in game</a>` : ""}`;
+    card.appendChild(meta);
+    lib.appendChild(card);
+  }
+}
 function bUpdateToolbar() {
   const sel = $("#bSlotSel");
-  sel.innerHTML = layouts.slots.map((s, i) =>
-    `<option value="${i}"${i === layouts.cur ? " selected" : ""}>${esc(s.name)} (TH${s.th})</option>`).join("");
+  const byTH = {};
+  layouts.slots.forEach((sl, i) => (byTH[sl.th] = byTH[sl.th] || []).push(i));
+  sel.innerHTML = Object.keys(byTH).sort((a, c) => c - a).map(th =>
+    `<optgroup label="TH ${th}">` + byTH[th].map(i =>
+      `<option value="${i}"${i === layouts.cur ? " selected" : ""}>${esc(layouts.slots[i].name)}</option>`).join("") +
+    "</optgroup>").join("");
   $("#bCoverSel").value = bCover;
   $("#bDel").textContent = bDelArm ? "sure? click again" : "✕ delete";
+  const slot = bSlot();
+  const nameEl = $("#bName");
+  if (nameEl && document.activeElement !== nameEl) nameEl.value = slot.name;
+  const box = $("#bLinkBox");
+  if (box) box.innerHTML = (slot.link
+    ? `<a class="btn sm" href="${bLinkHref(slot.link)}" target="_blank" rel="noopener">▶ open in game</a>
+       <button class="btn sm ghost" id="bUnlink" title="detach the in-game link from this layout">unlink</button>`
+    : "") +
+    `<input id="bLink" placeholder="paste an in-game layout link (…OpenLayout&amp;id=TH15:HV:…)">
+     <button class="btn sm" id="bLinkAdd" title="attach the pasted link to this layout">⚲ attach here</button>
+     <button class="btn sm ghost" id="bLinkNew" title="start a new library entry from the pasted link">+ new from link</button>
+     <span id="bLinkMsg" class="muted small"></span>`;
+  bUpdateLibrary();
 }
 
 function bUpdatePalette() {
@@ -2164,6 +2240,8 @@ function bImportJSON(txt) {
   const th = Math.min(Math.max(2, +s.th || 0), MAX_TH);
   if (!th || !Array.isArray(s.items) || !Array.isArray(s.walls)) return "missing th / items / walls";
   const slot = { name: String(s.name || `TH${th} import`).slice(0, 40), th, items: [], walls: [] };
+  const pl = bParseLink(String(s.link || ""));
+  if (pl && pl.id) slot.link = pl.id;
   const inv = bInventory(th);
   const caps = {}; inv.forEach(x => caps[x.id] = x.count);
   let dropped = 0;
@@ -2262,8 +2340,49 @@ function bBindShell() {
       if (it) { it.d = ((it.d || 0) + 1) & 7; bRefresh(true); }
       return;
     }
+    if (e.target.id === "bLinkAdd" || e.target.id === "bLinkNew") {
+      const raw = ($("#bLink").value || "").trim();
+      const pl = bParseLink(raw);
+      const msg = $("#bLinkMsg");
+      if (!raw) { msg.textContent = "paste a link first"; return; }
+      if (!pl) { msg.textContent = "that doesn't look like a layout link (expected …id=TH##:HV:…)"; return; }
+      if (pl.bb) { msg.textContent = "that's a Builder Base link — only home-village layouts are supported"; return; }
+      if (e.target.id === "bLinkAdd") {
+        const slot = bSlot();
+        slot.link = pl.id;
+        bRefresh(true);
+        $("#bLinkMsg").textContent = pl.th !== slot.th
+          ? `attached — note: the link says TH${pl.th} but this layout is set up for TH${slot.th}`
+          : "attached ✓";
+      } else {
+        const n = layouts.slots.filter(sl => sl.th === pl.th).length + 1;
+        layouts.slots.push({ name: `TH${pl.th} base ${n}`, th: pl.th, items: [], walls: [], link: pl.id });
+        layouts.cur = layouts.slots.length - 1;
+        bSel = -1; bTool = null;
+        bRefresh(true);
+        $("#bLinkMsg").textContent = `added to the library — sketch it on the grid or just keep the link`;
+      }
+      return;
+    }
+    if (e.target.id === "bUnlink") {
+      delete bSlot().link;
+      bRefresh(true);
+      return;
+    }
+    const card = e.target.closest("[data-bslot]");
+    if (card && !e.target.closest("a")) {
+      layouts.cur = +card.dataset.bslot;
+      bSel = -1; bTool = null;
+      bRefresh(true);
+      return;
+    }
   });
   root.addEventListener("change", e => {
+    if (e.target.id === "bName") {
+      const v = e.target.value.trim();
+      if (v) { bSlot().name = v.slice(0, 40); bRefresh(true); }
+      return;
+    }
     if (e.target.id === "bSlotSel") {
       layouts.cur = +e.target.value;
       bSel = -1; bTool = null; bRefresh(true);
