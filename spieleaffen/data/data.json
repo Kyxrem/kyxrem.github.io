@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "settings": {
+    "placementPoints": [5, 3, 1],
+    "attendancePoints": 1,
+    "tipBonus": 3,
+    "tipExactBonus": 5
+  },
+  "players": [
+    { "id": "maik",   "name": "Maik",   "monkey": "🦍", "active": true },
+    { "id": "mattes", "name": "Mattes", "monkey": "🐵", "active": true },
+    { "id": "bene",   "name": "Bene",   "monkey": "🦧", "active": true },
+    { "id": "torben", "name": "Torben", "monkey": "🙉", "active": true },
+    { "id": "benni",  "name": "Benni",  "monkey": "🙈", "active": true },
+    { "id": "tobi",   "name": "Tobi",   "monkey": "🙊", "active": true }
+  ],
+  "seasons": [
+    { "id": "s1", "name": "Saison 1", "label": "Herbst 26", "start": "2026-08-01", "end": "2026-11-30" }
+  ],
+  "activeSeasonId": "s1",
+  "next": null,
+  "evenings": [],
+  "audit": []
+}

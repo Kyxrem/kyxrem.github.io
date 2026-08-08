@@ -1,0 +1,3 @@
+Barlow Condensed (Jeremy Tribby) und IBM Plex Mono (IBM) —
+beide unter der SIL Open Font License 1.1 (https://openfontlicense.org).
+Latin-Subsets, bezogen über Google Fonts.
