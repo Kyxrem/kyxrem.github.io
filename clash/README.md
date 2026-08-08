@@ -25,6 +25,13 @@ A fully client-side Clash of Clans base analyzer, hosted on GitHub Pages at
 - **To Max** — gold / elixir / dark elixir / ore totals needed to max the
   current TH, time bottleneck analysis at your loot-per-day rates with an ETA
   date, and a reference table of what *every* TH costs from scratch.
+- **Base Builder** — a layout creator for every Town Hall level: the exact
+  building counts for that TH on the 44×44 grid, click/drag placement, wall
+  painting, and a coverage overlay showing which tiles your defenses can
+  actually hit — toggle **ground / air / both** (X-Bow modes, Air Sweeper push
+  cones and the TH12+ Town Hall weapon included). Multiple saved layouts,
+  PNG and JSON export. Footprints/ranges/targets come from the wiki via
+  `tools/scrape_layout.py` (`layout-data.js`).
 - **Metrics** — total defensive DPS/HP vs. TH max, storage capacity, a
   per-defense matrix (counts, level ranges, remaining cost/time), a
   "best value right now" ranking of every available defense upgrade, and a
@@ -98,6 +105,7 @@ cd clash/tools
 pip install beautifulsoup4 lxml
 python3 scrape.py          # scrapes the wiki into raw.json (cached per page)
 python3 build_data.py ../data.js
+python3 scrape_layout.py ../layout-data.js   # sizes/ranges/targets for the Base Builder
 ```
 
 `build_data.py` prints a validation report (level continuity, missing

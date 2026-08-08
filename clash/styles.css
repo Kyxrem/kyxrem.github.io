@@ -247,3 +247,41 @@ footer.app p { margin: 4px 0; }
   padding: 6px 10px; font-size: 0.8rem; color: var(--ink); line-height: 1.35;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
 }
+
+/* ---- base builder ---- */
+.b-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 10px 0; }
+.b-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+.b-main { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 14px; }
+.b-palette { max-height: 645px; overflow: auto; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px; background: var(--surface-2); }
+.b-tools { display: flex; gap: 6px; margin-bottom: 6px; }
+.b-cat { font-size: 0.76rem; color: var(--ink-3); text-transform: uppercase;
+  letter-spacing: 0.4px; margin: 9px 2px 4px; }
+.b-pal { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+  background: none; border: 1px solid transparent; border-radius: 6px; color: var(--ink-2);
+  padding: 4px 6px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+.b-pal:hover { background: var(--surface); border-color: var(--border); }
+.b-pal.armed { background: rgba(57, 135, 229, 0.16); border-color: var(--accent); color: var(--ink); }
+.b-pal.done { opacity: 0.45; }
+.b-pal b { margin-left: auto; color: var(--ink); }
+.b-pal .b-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.b-tgt { font-size: 0.66rem; color: var(--ink-3); border: 1px solid var(--border);
+  border-radius: 4px; padding: 0 3px; flex: none; }
+.b-canvas-wrap { min-width: 0; }
+#bCanvas { display: block; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  touch-action: none; cursor: crosshair; max-width: 100%; }
+.b-selbar { min-height: 30px; display: flex; align-items: center; gap: 8px;
+  margin-bottom: 6px; flex-wrap: wrap; }
+.b-status { color: var(--ink-3); font-size: 0.82rem; margin-top: 6px; min-height: 1.2em; }
+.b-cover-stats { color: var(--ink-2); font-size: 0.85rem; margin-top: 2px; }
+.b-io { margin-top: 10px; }
+.b-io textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem; background: var(--surface-2); color: var(--ink-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; }
+.b-io summary { cursor: pointer; color: var(--ink-2); }
+.b-io .io-row { margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 860px) {
+  .b-main { grid-template-columns: 1fr; }
+  .b-palette { max-height: 235px; }
+}

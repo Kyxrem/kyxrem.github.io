@@ -647,7 +647,7 @@ function progRow(name, spent, total, extra) {
 }
 
 /* ---------------- tabs ---------------- */
-const TABS = ["overview", "base", "plan", "tomax", "metrics", "io"];
+const TABS = ["overview", "base", "plan", "tomax", "metrics", "builder", "io"];
 let activeTab = "overview";
 let ganttHorizon = 56; // days shown in the plan timetable; 0 = everything
 function switchTab(t) {
@@ -665,6 +665,7 @@ function renderActive() {
   if (activeTab === "plan") renderPlan();
   if (activeTab === "tomax") renderToMax();
   if (activeTab === "metrics") renderMetrics();
+  if (activeTab === "builder") renderBuilder();
   if (activeTab === "io") renderIO();
 }
 
@@ -1611,6 +1612,694 @@ function bindTooltip() {
     if (b) { pinned = true; show(b, e.clientX, e.clientY); }
     else hide();
   });
+}
+
+/* ---------- Base Builder (layout creator with ground/air coverage) ---------- */
+const LAY = window.COC_LAYOUT || { grid: 44, sizes: {}, defs: {}, thWeapon: {} };
+const BGRID = LAY.grid || 44;
+const BLS_KEY = "clashLayoutsV1";
+const B_ABBR = {
+  cannon: "Ca", archer_tower: "AT", mortar: "Mo", air_defense: "AD", wizard_tower: "WT",
+  air_sweeper: "AS", hidden_tesla: "Te", bomb_tower: "BT", x_bow: "XB", inferno_tower: "IT",
+  eagle_artillery: "EA", scattershot: "Sc", spell_tower: "SpT", monolith: "Mn",
+  multi_archer_tower: "MA", ricochet_cannon: "RC", multi_gear_tower: "MG", firespitter: "FS",
+  builder_s_hut: "BH", revenge_tower: "RT",
+  bomb: "b", spring_trap: "sp", air_bomb: "ab", giant_bomb: "GB", seeking_air_mine: "sam",
+  skeleton_trap: "sk", tornado_trap: "to", giga_bomb: "GB!",
+  gold_mine: "GM", elixir_collector: "EC", dark_elixir_drill: "DD", gold_storage: "GS",
+  elixir_storage: "ES", dark_elixir_storage: "DS",
+  army_camp: "Camp", barracks: "Br", dark_barracks: "DBr", laboratory: "Lab",
+  spell_factory: "SF", dark_spell_factory: "DSF", clan_castle: "CC", workshop: "WS",
+  pet_house: "PH", blacksmith: "BS", hero_hall: "HH", crafting_station: "CS", town_hall: "TH",
+};
+const B_COLOR = { defense: "#d95926", trap: "#57534e", resource: "#c98500",
+  army: "#9085e9", other: "#3987e5", wall: "#c3c2b7" };
+
+let layouts = null;
+let bTool = null;      // {mode:"place", id} | {mode:"erase"} | null = select/move
+let bSel = -1;         // selected item index in slot.items
+let bCover = "off";    // off | g | a | b
+let bHover = null;     // hovered tile {x,y}
+let bDrag = null;      // {i, ox, oy, gx, gy, moved}
+let bPaint = false;    // painting walls / erasing during drag
+let bShellBuilt = false;
+let bDelArm = 0;
+let bPx = 12;
+
+function bLoad() {
+  try {
+    const s = JSON.parse(localStorage.getItem(BLS_KEY));
+    if (s && s.v === 1 && Array.isArray(s.slots)) return s;
+  } catch (e) {}
+  return { v: 1, cur: 0, slots: [] };
+}
+function bSaveL() { try { localStorage.setItem(BLS_KEY, JSON.stringify(layouts)); } catch (e) {} }
+function bSlot() {
+  if (!layouts.slots.length) {
+    layouts.slots.push({ name: "TH" + state.th + " layout 1", th: state.th, items: [], walls: [] });
+    layouts.cur = 0;
+    bSaveL();
+  }
+  layouts.cur = Math.min(Math.max(0, layouts.cur), layouts.slots.length - 1);
+  return layouts.slots[layouts.cur];
+}
+
+function bSizeOf(id) { return LAY.sizes[id] || [1, 1]; }
+function bInventory(th) {
+  const inv = [{ id: "town_hall", name: "Town Hall", cat: "other", count: 1 }];
+  const order = { defense: 1, trap: 2, resource: 3, army: 4 };
+  const rest = [];
+  for (const b of BUILDINGS) {
+    const n = effCount(b, th, "max");
+    if (n && LAY.sizes[b.id]) rest.push({ id: b.id, name: b.name, cat: b.cat, count: n });
+  }
+  rest.sort((a, c) => order[a.cat] - order[c.cat] || a.name.localeCompare(c.name));
+  inv.push(...rest);
+  const wallN = WALLS.counts[th - 1] || 0;
+  if (wallN) inv.push({ id: "wall", name: "Walls", cat: "wall", count: wallN });
+  return inv;
+}
+function bPlacedCounts(slot) {
+  const m = { wall: slot.walls.length };
+  for (const it of slot.items) m[it.b] = (m[it.b] || 0) + 1;
+  return m;
+}
+function bRect(it) { const s = bSizeOf(it.b); return { x: it.x, y: it.y, w: s[0], h: s[1] }; }
+function bItemAt(slot, x, y) {
+  for (let i = slot.items.length - 1; i >= 0; i--) {
+    const r = bRect(slot.items[i]);
+    if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return i;
+  }
+  return -1;
+}
+function bWallAt(slot, x, y) { return slot.walls.findIndex(w => w[0] === x && w[1] === y); }
+function bCollide(slot, id, x, y, skip) {
+  const s = bSizeOf(id);
+  if (x < 0 || y < 0 || x + s[0] > BGRID || y + s[1] > BGRID) return true;
+  for (let i = 0; i < slot.items.length; i++) {
+    if (i === skip) continue;
+    const r = bRect(slot.items[i]);
+    if (x < r.x + r.w && x + s[0] > r.x && y < r.y + r.h && y + s[1] > r.y) return true;
+  }
+  for (const [wx, wy] of slot.walls)
+    if (wx >= x && wx < x + s[0] && wy >= y && wy < y + s[1]) return true;
+  return false;
+}
+
+// effective combat reach of a placed item (null = doesn't count for coverage)
+function bDefOf(it, th) {
+  if (it.b === "town_hall") return LAY.thWeapon[th] || null;
+  const d = LAY.defs[it.b];
+  if (!d || d.trap || d.push) return null; // traps trigger, sweepers push — not damage coverage
+  if (it.b === "x_bow" && d.modes) {
+    const m = it.m === "g" ? "g" : "b";
+    return { min: d.min, max: d.modes[m], t: m };
+  }
+  return d;
+}
+function bCoverage(slot) {
+  const g = new Uint8Array(BGRID * BGRID), a = new Uint8Array(BGRID * BGRID);
+  for (const it of slot.items) {
+    const d = bDefOf(it, slot.th);
+    if (!d) continue;
+    const s = bSizeOf(it.b);
+    const cx = it.x + s[0] / 2, cy = it.y + s[1] / 2;
+    const min2 = d.min * d.min, max2 = d.max * d.max;
+    const x0 = Math.max(0, Math.floor(cx - d.max)), x1 = Math.min(BGRID - 1, Math.ceil(cx + d.max));
+    const y0 = Math.max(0, Math.floor(cy - d.max)), y1 = Math.min(BGRID - 1, Math.ceil(cy + d.max));
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        const dx = tx + 0.5 - cx, dy = ty + 0.5 - cy, dd = dx * dx + dy * dy;
+        if (dd < min2 || dd > max2) continue;
+        const k = ty * BGRID + tx;
+        if (d.t !== "a" && g[k] < 250) g[k]++;
+        if (d.t !== "g" && a[k] < 250) a[k]++;
+      }
+    }
+  }
+  return { g, a };
+}
+
+function bShellHTML() {
+  let ths = "";
+  for (let t = 2; t <= MAX_TH; t++) ths += `<option${t === state.th ? " selected" : ""}>${t}</option>`;
+  return `<div class="card" style="margin-bottom:14px">
+    <h2>Base Builder</h2>
+    <div class="note">Design a layout for any Town Hall with that TH's real building counts, then check which
+    tiles your defenses can actually hit. Coverage counts every damage-dealing defense that targets
+    <b>ground</b> or <b>air</b> — X-Bows use their set mode (click one), and the Town Hall weapon counts from
+    TH12. Air Sweepers show their push cone (rotate via the selection bar) but deal no damage, so they aren't
+    counted; Spell Towers, the Builder's Hut turret, Clan Castle troops and traps aren't counted either.
+    Ranges are wiki values, measured building center → tile center.</div>
+    <div class="b-toolbar">
+      <label class="field">Layout <select id="bSlotSel"></select></label>
+      <button class="btn sm ghost" id="bDup" title="copy this layout into a new slot">⧉ duplicate</button>
+      <button class="btn sm ghost" id="bDel" title="delete this layout">✕ delete</button>
+      <span class="b-sep"></span>
+      <label class="field">TH <select id="bNewTH">${ths}</select></label>
+      <button class="btn sm" id="bNew">+ new layout</button>
+      <span class="b-sep"></span>
+      <label class="field">Coverage <select id="bCoverSel">
+        <option value="off">off</option><option value="g">ground</option>
+        <option value="a">air</option><option value="b">ground + air</option></select></label>
+      <button class="btn sm ghost" id="bPng">⬇ PNG</button>
+    </div>
+    <div class="b-main">
+      <div class="b-palette" id="bPalette"></div>
+      <div class="b-canvas-wrap">
+        <div class="b-selbar" id="bSelbar"></div>
+        <canvas id="bCanvas"></canvas>
+        <div class="b-status" id="bStatus">select a building in the palette, then click the map to place it</div>
+        <div class="b-cover-stats" id="bCoverStats"></div>
+      </div>
+    </div>
+    <details class="b-io"><summary>Layout JSON (backup / share)</summary>
+      <textarea id="bJson" rows="4" spellcheck="false" placeholder="export fills this box — or paste a layout here and load it"></textarea>
+      <div class="io-row">
+        <button class="btn sm" id="bJsonOut">→ export to box</button>
+        <button class="btn sm" id="bJsonIn">← load from box</button>
+        <span id="bJsonMsg" class="muted small"></span>
+      </div>
+    </details>
+  </div>`;
+}
+
+function bUpdateToolbar() {
+  const sel = $("#bSlotSel");
+  sel.innerHTML = layouts.slots.map((s, i) =>
+    `<option value="${i}"${i === layouts.cur ? " selected" : ""}>${esc(s.name)} (TH${s.th})</option>`).join("");
+  $("#bCoverSel").value = bCover;
+  $("#bDel").textContent = bDelArm ? "sure? click again" : "✕ delete";
+}
+
+function bUpdatePalette() {
+  const slot = bSlot();
+  const inv = bInventory(slot.th);
+  const placed = bPlacedCounts(slot);
+  const cats = [["other", "Town Hall"], ["defense", "Defenses"], ["trap", "Traps"],
+    ["resource", "Resources"], ["army", "Army & support"], ["wall", "Walls"]];
+  let html = `<div class="b-tools">
+    <button class="b-pal${!bTool ? " armed" : ""}" data-btool="select">🖱 select / move</button>
+    <button class="b-pal${bTool && bTool.mode === "erase" ? " armed" : ""}" data-btool="erase">⌫ eraser</button>
+  </div>`;
+  for (const [cat, label] of cats) {
+    const rows = inv.filter(x => x.cat === cat);
+    if (!rows.length) continue;
+    html += `<div class="b-cat">${label}</div>`;
+    for (const x of rows) {
+      const left = x.count - (placed[x.id] || 0);
+      const armed = bTool && bTool.mode === "place" && bTool.id === x.id;
+      const d = LAY.defs[x.id];
+      const tgt = x.id === "town_hall" ? (LAY.thWeapon[slot.th] ? "g+a" : "")
+        : d && !d.trap ? (d.t === "b" ? "g+a" : d.t === "g" ? "gnd" : "air") : "";
+      const size = bSizeOf(x.id);
+      html += `<button class="b-pal${armed ? " armed" : ""}${left ? "" : " done"}" data-bid="${x.id}"
+        title="${esc(x.name)} — ${size[0]}×${size[1]}${d ? ` · range ${d.min ? d.min + "–" : ""}${d.max}` : ""}">
+        <span class="b-chip" style="background:${B_COLOR[x.cat]}"></span>
+        <span class="b-nm">${esc(x.name)}</span>
+        ${tgt ? `<span class="b-tgt">${tgt}</span>` : ""}
+        <b>${left}</b></button>`;
+    }
+  }
+  $("#bPalette").innerHTML = html;
+}
+
+function bUpdateSelbar() {
+  const bar = $("#bSelbar");
+  const slot = bSlot();
+  const it = slot.items[bSel];
+  if (!it) {
+    const name = bTool && bTool.mode === "place" ? (bTool.id === "wall" ? "Walls" : (byId[bTool.id] || { name: "Town Hall" }).name) : null;
+    bar.innerHTML = name
+      ? `<span class="muted">placing: <b>${esc(name)}</b> — click the map (walls: click-drag paints), Esc to stop</span>`
+      : bTool && bTool.mode === "erase" ? `<span class="muted">eraser — click or drag over buildings and walls</span>`
+      : `<span class="muted">nothing selected</span>`;
+    return;
+  }
+  const nm = it.b === "town_hall" ? "Town Hall" : (byId[it.b] || { name: it.b }).name;
+  const d = LAY.defs[it.b];
+  let extra = "";
+  if (it.b === "x_bow" && d && d.modes)
+    extra += `<button class="btn sm" id="bMode">mode: ${it.m === "g" ? `Ground · ${d.modes.g}` : `Ground & Air · ${d.modes.b}`} ⇄</button>`;
+  if (d && d.push)
+    extra += `<button class="btn sm" id="bRot">⟳ rotate</button>`;
+  bar.innerHTML = `<b>${esc(nm)}</b>
+    ${d && !d.trap ? `<span class="muted small">range ${d.min ? d.min + "–" : ""}${it.b === "x_bow" && d.modes ? d.modes[it.m === "g" ? "g" : "b"] : d.max}</span>` : ""}
+    ${extra}<button class="btn sm ghost" id="bRemove">✕ remove (Del)</button>`;
+}
+
+function bCoverStats(slot, maps) {
+  const el = $("#bCoverStats");
+  if (bCover === "off") { el.textContent = ""; return; }
+  const tot = BGRID * BGRID;
+  let cg = 0, ca = 0;
+  for (let k = 0; k < tot; k++) { if (maps.g[k]) cg++; if (maps.a[k]) ca++; }
+  const parts = [];
+  if (bCover !== "a") parts.push(`ground-covered: ${cg} tiles (${Math.round(cg / tot * 100)}%)`);
+  if (bCover !== "g") parts.push(`air-covered: ${ca} tiles (${Math.round(ca / tot * 100)}%)`);
+  el.textContent = parts.join(" · ");
+}
+
+function bDraw() {
+  const cv = $("#bCanvas");
+  if (!cv) return;
+  const slot = bSlot();
+  const wrap = cv.parentElement;
+  bPx = Math.max(9, Math.min(16, Math.floor((wrap.clientWidth - 2) / BGRID)));
+  const cw = bPx * BGRID;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== cw * dpr) { cv.width = cw * dpr; cv.height = cw * dpr; }
+  cv.style.width = cw + "px"; cv.style.height = cw + "px";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, cw);
+  ctx.fillStyle = "#161615";
+  ctx.fillRect(0, 0, cw, cw);
+
+  const maps = bCoverage(slot);
+  if (bCover !== "off") {
+    for (let ty = 0; ty < BGRID; ty++) {
+      for (let tx = 0; tx < BGRID; tx++) {
+        const k = ty * BGRID + tx;
+        if (bCover !== "a" && maps.g[k]) {
+          ctx.fillStyle = `rgba(201,133,0,${Math.min(0.12 + 0.09 * maps.g[k], 0.55)})`;
+          ctx.fillRect(tx * bPx, ty * bPx, bPx, bPx);
+        }
+        if (bCover !== "g" && maps.a[k]) {
+          ctx.fillStyle = `rgba(57,135,229,${Math.min(0.12 + 0.09 * maps.a[k], 0.55) * (bCover === "b" ? 0.75 : 1)})`;
+          ctx.fillRect(tx * bPx, ty * bPx, bPx, bPx);
+        }
+      }
+    }
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.045)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= BGRID; i++) {
+    ctx.moveTo(i * bPx + 0.5, 0); ctx.lineTo(i * bPx + 0.5, cw);
+    ctx.moveTo(0, i * bPx + 0.5); ctx.lineTo(cw, i * bPx + 0.5);
+  }
+  ctx.stroke();
+
+  // sweeper push cones (air modes)
+  if (bCover === "a" || bCover === "b") {
+    for (const it of slot.items) {
+      const d = LAY.defs[it.b];
+      if (!d || !d.push) continue;
+      const s = bSizeOf(it.b);
+      const cx = (it.x + s[0] / 2) * bPx, cy = (it.y + s[1] / 2) * bPx;
+      const a0 = (-90 + (it.d || 0) * 45 - (d.cone || 120) / 2) * Math.PI / 180;
+      const a1 = (-90 + (it.d || 0) * 45 + (d.cone || 120) / 2) * Math.PI / 180;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, d.max * bPx, a0, a1);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(57,135,229,0.10)";
+      ctx.strokeStyle = "rgba(57,135,229,0.45)";
+      ctx.fill(); ctx.stroke();
+    }
+  }
+
+  for (const [wx, wy] of slot.walls) {
+    ctx.fillStyle = "#8e8b80";
+    ctx.fillRect(wx * bPx + 1.5, wy * bPx + 1.5, bPx - 3, bPx - 3);
+  }
+
+  slot.items.forEach((it, i) => {
+    if (bDrag && bDrag.i === i && bDrag.moved) return; // drawn as ghost below
+    bDrawItem(ctx, it, i === bSel);
+  });
+
+  // selected: range rings
+  const sel = slot.items[bSel];
+  if (sel) {
+    const d = bDefOf(sel, slot.th) || (LAY.defs[sel.b] && !LAY.defs[sel.b].trap ? LAY.defs[sel.b] : null);
+    if (d) {
+      const s = bSizeOf(sel.b);
+      const cx = (sel.x + s[0] / 2) * bPx, cy = (sel.y + s[1] / 2) * bPx;
+      ctx.strokeStyle = "rgba(255,255,255,0.65)";
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(cx, cy, d.max * bPx, 0, 7); ctx.stroke();
+      if (d.min) {
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.arc(cx, cy, d.min * bPx, 0, 7); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  // ghost: placement preview or drag target
+  let ghost = null;
+  if (bDrag && bDrag.moved) {
+    const it = slot.items[bDrag.i];
+    ghost = { id: it.b, x: bDrag.gx, y: bDrag.gy, ok: !bCollide(slot, it.b, bDrag.gx, bDrag.gy, bDrag.i), it };
+  } else if (bTool && bTool.mode === "place" && bTool.id !== "wall" && bHover) {
+    const s = bSizeOf(bTool.id);
+    const x = bHover.x - ((s[0] - 1) >> 1), y = bHover.y - ((s[1] - 1) >> 1);
+    ghost = { id: bTool.id, x, y, ok: !bCollide(slot, bTool.id, x, y, -1) };
+  }
+  if (ghost) {
+    const s = bSizeOf(ghost.id);
+    ctx.globalAlpha = 0.75;
+    bDrawItem(ctx, { b: ghost.id, x: ghost.x, y: ghost.y, m: ghost.it && ghost.it.m, d: ghost.it && ghost.it.d }, false);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = ghost.ok ? "rgba(12,163,12,0.9)" : "rgba(208,59,59,0.95)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ghost.x * bPx + 1, ghost.y * bPx + 1, s[0] * bPx - 2, s[1] * bPx - 2);
+    ctx.lineWidth = 1;
+    const gd = ghost.id === "town_hall" ? LAY.thWeapon[slot.th] : LAY.defs[ghost.id];
+    if (gd && !gd.trap && ghost.ok) {
+      const cx = (ghost.x + s[0] / 2) * bPx, cy = (ghost.y + s[1] / 2) * bPx;
+      ctx.strokeStyle = "rgba(255,255,255,0.35)";
+      ctx.beginPath(); ctx.arc(cx, cy, (gd.push || !gd.modes ? gd.max : gd.modes.b) * bPx, 0, 7); ctx.stroke();
+    }
+  }
+
+  bCoverStats(slot, maps);
+}
+
+function bDrawItem(ctx, it, selected) {
+  const s = bSizeOf(it.b);
+  const x = it.x * bPx, y = it.y * bPx, w = s[0] * bPx, h = s[1] * bPx;
+  const cat = it.b === "town_hall" ? "other" : (byId[it.b] || {}).cat || "other";
+  const d = LAY.defs[it.b];
+  ctx.fillStyle = B_COLOR[cat] + (cat === "trap" ? "88" : "cc");
+  if (ctx.roundRect) {
+    ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 3); ctx.fill();
+  } else ctx.fillRect(x + 1.5, y + 1.5, w - 3, h - 3);
+  if (cat === "trap") {
+    ctx.setLineDash([3, 2]);
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+    ctx.setLineDash([]);
+  }
+  if (selected) {
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.lineWidth = 1;
+  }
+  const label = B_ABBR[it.b] || "?";
+  if (w >= 18) {
+    ctx.fillStyle = cat === "trap" ? "#e7e5df" : "#0d0d0d";
+    ctx.font = `bold ${Math.min(11, Math.floor(bPx * 0.75))}px system-ui`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
+  }
+  // sweeper facing arrow
+  if (d && d.push) {
+    const ang = (-90 + (it.d || 0) * 45) * Math.PI / 180;
+    const cx = x + w / 2, cy = y + h / 2, r = Math.min(w, h) * 0.42;
+    ctx.strokeStyle = "#0d0d0d";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+  // x-bow ground-mode marker
+  if (it.b === "x_bow" && it.m === "g") {
+    ctx.fillStyle = "#0d0d0d";
+    ctx.fillRect(x + w - 7, y + 3, 4, 4);
+  }
+}
+
+function bStatusMsg(msg) { $("#bStatus").textContent = msg; }
+
+function bRefresh(saveIt) {
+  if (saveIt) bSaveL();
+  bUpdateToolbar(); bUpdatePalette(); bUpdateSelbar(); bDraw();
+}
+
+function bTileFromEvent(e) {
+  const cv = $("#bCanvas");
+  const r = cv.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) / bPx), y = Math.floor((e.clientY - r.top) / bPx);
+  if (x < 0 || y < 0 || x >= BGRID || y >= BGRID) return null;
+  return { x, y };
+}
+
+function bPlaceAt(t) {
+  const slot = bSlot();
+  const inv = bInventory(slot.th);
+  const placed = bPlacedCounts(slot);
+  const entry = inv.find(x => x.id === bTool.id);
+  const left = entry ? entry.count - (placed[bTool.id] || 0) : 0;
+  if (bTool.id === "wall") {
+    if (left <= 0) { bStatusMsg("no wall pieces left at TH" + slot.th); return; }
+    if (bWallAt(slot, t.x, t.y) >= 0 || bItemAt(slot, t.x, t.y) >= 0) return;
+    slot.walls.push([t.x, t.y]);
+    bRefresh(true);
+    return;
+  }
+  const s = bSizeOf(bTool.id);
+  const x = t.x - ((s[0] - 1) >> 1), y = t.y - ((s[1] - 1) >> 1);
+  if (left <= 0) { bStatusMsg("all placed — none left at TH" + slot.th); bTool = null; bRefresh(false); return; }
+  if (bCollide(slot, bTool.id, x, y, -1)) { bStatusMsg("doesn't fit there"); return; }
+  slot.items.push({ b: bTool.id, x, y });
+  if (left - 1 <= 0) { bTool = null; bSel = slot.items.length - 1; }
+  bRefresh(true);
+}
+
+function bEraseAt(t) {
+  const slot = bSlot();
+  const wi = bWallAt(slot, t.x, t.y);
+  if (wi >= 0) { slot.walls.splice(wi, 1); bRefresh(true); return; }
+  const ii = bItemAt(slot, t.x, t.y);
+  if (ii >= 0) {
+    slot.items.splice(ii, 1);
+    if (bSel === ii) bSel = -1; else if (bSel > ii) bSel--;
+    bRefresh(true);
+  }
+}
+
+function bHoverInfo(t) {
+  const slot = bSlot();
+  const ii = bItemAt(slot, t.x, t.y);
+  if (ii >= 0) {
+    const it = slot.items[ii];
+    const nm = it.b === "town_hall" ? "Town Hall" : (byId[it.b] || { name: it.b }).name;
+    const s = bSizeOf(it.b);
+    const d = it.b === "town_hall" ? LAY.thWeapon[slot.th] : LAY.defs[it.b];
+    const T = { g: "ground", a: "air", b: "ground & air" };
+    bStatusMsg(`${nm} — ${s[0]}×${s[1]}` +
+      (d ? ` · ${d.trap ? "trigger" : "range"} ${d.min ? d.min + "–" : ""}${it.b === "x_bow" && d.modes ? d.modes[it.m === "g" ? "g" : "b"] : d.max} · ${d.push ? "pushes air" : "hits " + T[it.b === "x_bow" ? (it.m === "g" ? "g" : "b") : d.t]}` : "") +
+      ` · tile ${t.x},${t.y}`);
+  } else if (bWallAt(slot, t.x, t.y) >= 0) bStatusMsg(`Wall · tile ${t.x},${t.y}`);
+  else bStatusMsg(`tile ${t.x},${t.y}`);
+}
+
+function bBindCanvas() {
+  const cv = $("#bCanvas");
+  cv.addEventListener("pointerdown", e => {
+    const t = bTileFromEvent(e);
+    if (!t) return;
+    e.preventDefault();
+    cv.setPointerCapture(e.pointerId);
+    const slot = bSlot();
+    if (bTool && bTool.mode === "place") {
+      bPlaceAt(t);
+      if (bTool && bTool.id === "wall") bPaint = true;
+      return;
+    }
+    if (bTool && bTool.mode === "erase") { bEraseAt(t); bPaint = true; return; }
+    const ii = bItemAt(slot, t.x, t.y);
+    if (ii >= 0) {
+      bSel = ii;
+      const it = slot.items[ii];
+      bDrag = { i: ii, ox: t.x - it.x, oy: t.y - it.y, gx: it.x, gy: it.y, moved: false };
+    } else bSel = -1;
+    bRefresh(false);
+  });
+  cv.addEventListener("pointermove", e => {
+    const t = bTileFromEvent(e);
+    if (!t) return;
+    const changed = !bHover || bHover.x !== t.x || bHover.y !== t.y;
+    bHover = t;
+    if (bPaint && bTool) {
+      if (bTool.mode === "erase") bEraseAt(t);
+      else if (bTool.id === "wall") bPlaceAt(t);
+      return;
+    }
+    if (bDrag) {
+      const gx = t.x - bDrag.ox, gy = t.y - bDrag.oy;
+      if (gx !== bDrag.gx || gy !== bDrag.gy || !bDrag.moved) {
+        bDrag.gx = gx; bDrag.gy = gy;
+        bDrag.moved = bDrag.moved || gx !== bSlot().items[bDrag.i].x || gy !== bSlot().items[bDrag.i].y;
+        bDraw();
+      }
+      return;
+    }
+    if (changed) {
+      bHoverInfo(t);
+      if (bTool && bTool.mode === "place") bDraw();
+    }
+  });
+  cv.addEventListener("pointerup", e => {
+    bPaint = false;
+    if (bDrag) {
+      const slot = bSlot();
+      const it = slot.items[bDrag.i];
+      if (bDrag.moved && !bCollide(slot, it.b, bDrag.gx, bDrag.gy, bDrag.i)) {
+        it.x = bDrag.gx; it.y = bDrag.gy;
+        bDrag = null;
+        bRefresh(true);
+      } else {
+        bDrag = null;
+        bDraw();
+      }
+    }
+  });
+  cv.addEventListener("pointerleave", () => {
+    bHover = null; bPaint = false;
+    if (!bDrag) bDraw();
+  });
+}
+
+function bImportJSON(txt) {
+  let s;
+  try { s = JSON.parse(txt); } catch (e) { return "not valid JSON"; }
+  const th = Math.min(Math.max(2, +s.th || 0), MAX_TH);
+  if (!th || !Array.isArray(s.items) || !Array.isArray(s.walls)) return "missing th / items / walls";
+  const slot = { name: String(s.name || `TH${th} import`).slice(0, 40), th, items: [], walls: [] };
+  const inv = bInventory(th);
+  const caps = {}; inv.forEach(x => caps[x.id] = x.count);
+  let dropped = 0;
+  for (const raw of s.items) {
+    const it = { b: String(raw.b), x: raw.x | 0, y: raw.y | 0 };
+    if (raw.m === "g") it.m = "g";
+    if (raw.d) it.d = raw.d & 7;
+    const used = slot.items.filter(z => z.b === it.b).length;
+    if (!LAY.sizes[it.b] || !(caps[it.b] > used) || bCollide(slot, it.b, it.x, it.y, -1)) { dropped++; continue; }
+    slot.items.push(it);
+  }
+  for (const raw of s.walls) {
+    const x = raw[0] | 0, y = raw[1] | 0;
+    if (x < 0 || y < 0 || x >= BGRID || y >= BGRID || slot.walls.length >= (caps.wall || 0)
+      || bWallAt(slot, x, y) >= 0 || bItemAt(slot, x, y) >= 0) { dropped++; continue; }
+    slot.walls.push([x, y]);
+  }
+  layouts.slots.push(slot);
+  layouts.cur = layouts.slots.length - 1;
+  bSel = -1; bTool = null;
+  bRefresh(true);
+  return `loaded "${slot.name}"` + (dropped ? ` — ${dropped} entr${dropped === 1 ? "y" : "ies"} dropped (over count / collision / unknown)` : "");
+}
+
+function bBindShell() {
+  const root = $("#tab-builder");
+  root.addEventListener("click", e => {
+    const tool = e.target.closest("[data-btool]");
+    if (tool) {
+      bTool = tool.dataset.btool === "erase" ? { mode: "erase" } : null;
+      bSel = -1; bRefresh(false); return;
+    }
+    const pal = e.target.closest("[data-bid]");
+    if (pal) {
+      const id = pal.dataset.bid;
+      bTool = bTool && bTool.mode === "place" && bTool.id === id ? null : { mode: "place", id };
+      bSel = -1; bRefresh(false); return;
+    }
+    if (e.target.id === "bNew") {
+      const th = +$("#bNewTH").value;
+      const n = layouts.slots.filter(s => s.th === th).length + 1;
+      layouts.slots.push({ name: `TH${th} layout ${n}`, th, items: [], walls: [] });
+      layouts.cur = layouts.slots.length - 1;
+      bSel = -1; bTool = null; bRefresh(true); return;
+    }
+    if (e.target.id === "bDup") {
+      const cur = bSlot();
+      layouts.slots.push(JSON.parse(JSON.stringify({ ...cur, name: cur.name.slice(0, 34) + " copy" })));
+      layouts.cur = layouts.slots.length - 1;
+      bSel = -1; bRefresh(true); return;
+    }
+    if (e.target.id === "bDel") {
+      if (!bDelArm) {
+        bDelArm = 1; bUpdateToolbar();
+        setTimeout(() => { bDelArm = 0; const d = $("#bDel"); if (d) bUpdateToolbar(); }, 2500);
+        return;
+      }
+      bDelArm = 0;
+      layouts.slots.splice(layouts.cur, 1);
+      layouts.cur = Math.max(0, layouts.cur - 1);
+      bSel = -1; bTool = null; bRefresh(true); return;
+    }
+    if (e.target.id === "bPng") {
+      const cv = $("#bCanvas");
+      const name = bSlot().name.replace(/[^\w-]+/g, "-");
+      cv.toBlob(bl => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(bl);
+        a.download = name + ".png";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      });
+      return;
+    }
+    if (e.target.id === "bJsonOut") {
+      $("#bJson").value = JSON.stringify(bSlot());
+      $("#bJsonMsg").textContent = "copy the box contents somewhere safe";
+      return;
+    }
+    if (e.target.id === "bJsonIn") {
+      $("#bJsonMsg").textContent = bImportJSON($("#bJson").value.trim());
+      return;
+    }
+    if (e.target.id === "bRemove") {
+      const slot = bSlot();
+      if (bSel >= 0) { slot.items.splice(bSel, 1); bSel = -1; bRefresh(true); }
+      return;
+    }
+    if (e.target.id === "bMode") {
+      const it = bSlot().items[bSel];
+      if (it) { it.m = it.m === "g" ? "b" : "g"; bRefresh(true); }
+      return;
+    }
+    if (e.target.id === "bRot") {
+      const it = bSlot().items[bSel];
+      if (it) { it.d = ((it.d || 0) + 1) & 7; bRefresh(true); }
+      return;
+    }
+  });
+  root.addEventListener("change", e => {
+    if (e.target.id === "bSlotSel") {
+      layouts.cur = +e.target.value;
+      bSel = -1; bTool = null; bRefresh(true);
+    } else if (e.target.id === "bCoverSel") {
+      bCover = e.target.value; bDraw();
+    }
+  });
+  bBindCanvas();
+  window.addEventListener("resize", () => { if (activeTab === "builder") bDraw(); });
+  document.addEventListener("keydown", e => {
+    if (activeTab !== "builder") return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName || "")) return;
+    if (e.key === "Escape") { bTool = null; bDrag = null; bRefresh(false); }
+    else if ((e.key === "Delete" || e.key === "Backspace") && bSel >= 0) {
+      e.preventDefault();
+      const slot = bSlot();
+      slot.items.splice(bSel, 1); bSel = -1; bRefresh(true);
+    } else if ((e.key === "r" || e.key === "R") && bSel >= 0) {
+      const it = bSlot().items[bSel];
+      const d = LAY.defs[it.b];
+      if (d && d.push) { it.d = ((it.d || 0) + 1) & 7; bRefresh(true); }
+      else if (it.b === "x_bow") { it.m = it.m === "g" ? "b" : "g"; bRefresh(true); }
+    }
+  });
+}
+
+function renderBuilder() {
+  const root = $("#tab-builder");
+  if (!root) return;
+  layouts = layouts || bLoad();
+  if (!bShellBuilt) {
+    root.innerHTML = bShellHTML();
+    bBindShell();
+    bShellBuilt = true;
+  }
+  bRefresh(false);
 }
 
 function bindEvents() {
