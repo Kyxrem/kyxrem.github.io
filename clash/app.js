@@ -505,7 +505,7 @@ function schedule(tasks, workers, boostPct, seeds) {
     started[key] = (started[key] || 0) + 1;
     const start = Math.max(lane.free, instAvail[key] || 0);
     const dur = t.time * factor;
-    const item = { ...t, start, end: start + dur, lane: lanes.indexOf(lane) };
+    const item = { ...t, start, end: start + dur, lane: lanes.indexOf(lane), ord: timeline.length };
     lane.free = item.end;
     lane.items.push(item);
     instAvail[key] = item.end;
@@ -947,6 +947,31 @@ function renderPlan() {
     </div>`;
   }).join("");
 
+  // ---- next up: the first builder jobs to queue, with their price tags ----
+  const nextUp = sched.timeline.filter(t => !t.running)
+    .sort((a, b) => a.start - b.start || a.ord - b.ord).slice(0, state.builders);
+  const nuTotal = { gold: 0, elixir: 0, dark: 0, time: 0 };
+  const nextRows = nextUp.map((t, i) => {
+    nuTotal[t.res] += t.cost; nuTotal.time += t.end - t.start;
+    const startTxt = t.start < 1 ? "start now"
+      : `in ${fmtH(t.start)} (${new Date(Date.now() + t.start * 3.6e6).toLocaleDateString("en-US", { month: "short", day: "numeric" })})`;
+    return `<div class="plan-item" style="grid-template-columns:34px 1fr auto">
+      <div class="idx">${i + 1}</div>
+      <div class="what"><b>${esc(t.name)}</b> → L${t.to}
+        <div class="why">${esc(t.why || "")}</div></div>
+      <div class="cost"><span class="dot ${t.res === "dark" ? "dark" : t.res}"></span> ${fmt(t.cost)} ${RES_LABEL[t.res]}
+        · ${fmtH((t.end - t.start))} · ${startTxt}</div>
+    </div>`;
+  }).join("");
+  const nuParts = ["gold", "elixir", "dark"].filter(r => nuTotal[r])
+    .map(r => `<b>${fmt(nuTotal[r])}</b> ${RES_LABEL[r]}`);
+  const nuLab = labTL.find(t => !t.running);
+  const nuPet = petTL.find(t => !t.running);
+  const nuSide = [
+    nuLab ? `Laboratory: <b>${esc(nuLab.name)}</b> → L${nuLab.to} (${fmt(nuLab.cost)} ${RES_LABEL[nuLab.res]})` : "",
+    nuPet ? `Pet House: <b>${esc(nuPet.name)}</b> → L${nuPet.to} (${fmt(nuPet.cost)} ${RES_LABEL[nuPet.res]})` : "",
+  ].filter(Boolean).join(" · ");
+
   // ---- queue + category summaries instead of per-upgrade lists ----
   const sumRes = list => {
     const o = { n: 0, time: 0, gold: 0, elixir: 0, dark: 0 };
@@ -987,6 +1012,14 @@ function renderPlan() {
       </div><div class="delta">Gold Pass / events time discount</div></div>
   </div>
   ${state.running.length ? `<div class="card" style="margin-bottom:14px"><h2>Running now</h2>${runningRows}</div>` : ""}
+  <div class="card" style="margin-bottom:14px"><h2>Next up — fill your queue</h2>
+    <div class="note">The first ${nextUp.length} builder jobs from the timetable, in order. "Start now" rows fit a
+    free builder today; the others begin when a builder (or that building's own running upgrade) frees up.</div>
+    ${nextRows || '<p class="muted">Nothing left to build — this TH is done. 🎉</p>'}
+    ${nextUp.length ? `<div class="nu-total">Together they'll take ${nuParts.join(" + ")}
+      · ${fmtDays(nuTotal.time)} of builder time</div>` : ""}
+    ${nuSide ? `<div class="nu-side">Also queue — ${nuSide}</div>` : ""}
+  </div>
   <div class="card" style="margin-bottom:14px"><h2>Timetable</h2>
     <div class="note">Every queue as a lane, every upgrade as a bar spanning its days — the selected range always
     fills the width, so picking fewer weeks zooms in. Hover or tap a bar for full details. Each free builder takes
