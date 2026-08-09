@@ -59,6 +59,12 @@
     <div class="bar" role="progressbar" aria-label="Anteil gefundener Kennzeichen"><div id="bar-codes"></div></div>
     <div class="stat"><span class="num sm" id="stat-area">0&nbsp;%</span><span class="of">der Fläche Deutschlands abgedeckt</span></div>
     <div class="bar" role="progressbar" aria-label="Abgedeckte Fläche"><div id="bar-area"></div></div>
+    <h2 class="rar-head">Raritäten</h2>
+    <div id="rar-grid" class="rar-grid"></div>
+    <details id="rar-details">
+      <summary>Wie werden Raritäten berechnet?</summary>
+      <p class="rar-explain">Je <b>weniger Einwohner</b> im Zulassungsgebiet eines Kürzels leben, desto seltener siehst du es auf der Autobahn – und desto höher die Stufe (ab&nbsp;300.000&nbsp;= Gewöhnlich, unter 50.000&nbsp;= Legendär). <b>Altkennzeichen</b> (Zweitkürzel wie WOR oder AIB) bekommen +1&nbsp;Stufe, weil sie nur ein Teil des Bezirks fährt. <b>Mythisch</b> ist einzig BÜS – die Exklave Büsingen mit 1.440 Einwohnern.</p>
+    </details>
     <details id="land-details">
       <summary>Nach Bundesland</summary>
       <div id="land-grid" class="land-grid"></div>
@@ -69,7 +75,7 @@
     <div class="coll-head">
       <h2>Deine Sammlung</h2>
       <span id="coll-sort-wrap"><label for="coll-sort" class="visually-hidden">Sortierung</label>
-        <select id="coll-sort"><option value="new">Neueste zuerst</option><option value="abc">A–Z</option></select>
+        <select id="coll-sort"><option value="new">Neueste zuerst</option><option value="rar">Seltenste zuerst</option><option value="abc">A–Z</option></select>
       </span>
     </div>
     <div id="collection" class="collection"></div>
@@ -80,11 +86,12 @@
 
 <footer>
   <div class="tools">
-    <button id="export-btn" type="button">⬇ Export</button>
+    <button id="sync-btn" type="button" class="primary-btn">🔗 Sync-Link kopieren</button>
+    <button id="export-btn" type="button">⬇ Backup</button>
     <label class="btn" for="import-file">⬆ Import<input type="file" id="import-file" accept=".json,application/json" hidden></label>
     <button id="reset-btn" type="button" class="danger-btn">Zurücksetzen</button>
   </div>
-  <p class="attribution">Sammlung wird nur lokal in deinem Browser gespeichert.<br>
+  <p class="attribution">Dein Fortschritt wird automatisch im Browser gespeichert – ganz ohne Download. Mit dem <b>Sync-Link</b> nimmst du ihn auf ein anderes Gerät mit: Link kopieren, dort öffnen, fertig (funktioniert auch als Lesezeichen oder per WhatsApp an dich selbst).<br>
   Kartengrundlage: <a href="http://www.bkg.bund.de" rel="noopener">© Bundesamt für Kartographie und Geodäsie 2024</a>, Datenquelle: Kraftfahrt-Bundesamt · Datensatz KFZ250 (Geometrie vereinfacht) · <a href="https://www.govdata.de/dl-de/by-2-0" rel="noopener">dl-de/by-2-0</a></p>
 </footer>
 

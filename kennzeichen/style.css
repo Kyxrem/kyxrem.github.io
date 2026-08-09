@@ -46,15 +46,26 @@ h1, h2, h3 { margin: 0; }
   border: 2px solid #0b0d12; border-radius: 7px; overflow: hidden;
   font-family: "DIN Alternate", "Franklin Gothic Medium", "Arial Narrow", Arial, sans-serif;
   font-weight: 700; letter-spacing: .04em; line-height: 1;
-  box-shadow: 0 1px 0 rgba(255,255,255,.25) inset, 0 2px 6px rgba(0,0,0,.45);
+  vertical-align: middle; /* sitzt sonst versetzt auf der Text-Grundlinie */
+  box-shadow: 0 0 0 2px var(--rc, transparent), 0 1px 0 rgba(255,255,255,.25) inset, 0 2px 6px rgba(0,0,0,.45);
 }
 .pl-eu {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   background: var(--eu-blue); color: #fff; font-size: .52em; padding: 2px 4px; gap: 1px;
 }
 .pl-stars { color: #ffd617; font-size: .8em; line-height: 1; }
-.pl-txt { padding: 4px 8px; display: flex; align-items: center; font-size: 1em; }
-.plate.logo { font-size: 1rem; vertical-align: middle; }
+.pl-txt { padding: .28em .5em .22em; display: flex; align-items: center; font-size: 1em; }
+.plate.logo { font-size: 1rem; }
+
+/* Raritäts-Ringe (Fortnite-Stil) */
+.plate.r0 { --rc: #a8b0bb; }
+.plate.r1 { --rc: #2fce4f; }
+.plate.r2 { --rc: #37a6ff; }
+.plate.r3 { --rc: #c95cff; }
+.plate.r4 { --rc: #ff9d2e; }
+.plate.r5 { --rc: #ffd83d; }
+.plate.r4 { box-shadow: 0 0 0 2px var(--rc), 0 0 9px color-mix(in srgb, var(--rc) 70%, transparent), 0 1px 0 rgba(255,255,255,.25) inset; }
+.plate.r5 { box-shadow: 0 0 0 2px var(--rc), 0 0 13px color-mix(in srgb, var(--rc) 85%, transparent), 0 1px 0 rgba(255,255,255,.25) inset; }
 
 /* ---------- Eingabe ---------- */
 .entry {
@@ -175,6 +186,20 @@ h1, h2, h3 { margin: 0; }
 .bar { height: 10px; background: var(--none); border-radius: 999px; overflow: hidden; margin-top: 6px; }
 .bar > div { height: 100%; width: 0; background: var(--acc); border-radius: 999px; transition: width .5s ease; min-width: 0; }
 #bar-area { background: var(--acc-dim); }
+.rar-head { margin-top: 18px; }
+.rar-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-top: 10px; }
+.rar-row { display: flex; align-items: center; gap: 7px; font-size: .84rem; color: var(--ink2); }
+.rar-dot { width: 11px; height: 11px; border-radius: 4px; background: var(--rc); flex-shrink: 0; }
+.rar-row .rar-name { flex: 1; }
+.rar-row .rar-count { font-variant-numeric: tabular-nums; color: var(--ink3); }
+.rar-pill {
+  display: inline-block; border: 1px solid var(--rc); color: var(--rc);
+  border-radius: 999px; padding: 1px 9px; font-size: .75rem; font-weight: 700;
+}
+.rar-why { color: var(--ink3); font-size: .78rem; }
+#rar-details { margin-top: 10px; color: var(--ink2); }
+#rar-details summary { cursor: pointer; font-size: .85rem; color: var(--ink3); }
+.rar-explain { font-size: .84rem; color: var(--ink2); margin: 8px 0 0; }
 #land-details { margin-top: 14px; color: var(--ink2); }
 #land-details summary { cursor: pointer; font-size: .9rem; }
 .land-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; margin-top: 10px; }
@@ -234,6 +259,8 @@ footer { max-width: 1280px; margin: 0 auto; padding: 8px 18px 40px; }
   border-radius: 8px; padding: 7px 14px; font-size: .85rem; cursor: pointer; display: inline-block;
 }
 .tools button:hover, .tools .btn:hover { color: var(--ink); border-color: var(--ink3); }
+.tools .primary-btn { background: var(--acc); color: #06281c; border-color: var(--acc); font-weight: 700; }
+.tools .primary-btn:hover { color: #06281c; border-color: var(--acc); filter: brightness(1.1); }
 .tools .danger-btn:hover { color: var(--danger); border-color: var(--danger); }
 .attribution { color: var(--ink3); font-size: .75rem; margin-top: 14px; }
 .attribution a { color: var(--ink3); }
