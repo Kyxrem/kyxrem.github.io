@@ -1,4 +1,4 @@
-/* Clash Analyzer — dark-first UI. Palette: validated dark steps (see tools/scraper). */
+/* Royale Analyzer — dark-first UI sharing the Clash Analyzer system; violet accent. */
 :root {
   color-scheme: dark;
   --page: #0d0d0d;
@@ -9,7 +9,7 @@
   --ink-3: #898781;
   --grid: #2c2c2a;
   --border: rgba(255, 255, 255, 0.10);
-  --accent: #3987e5;      /* progress / links / actions */
+  --accent: #9085e9;      /* progress / links / actions (CR violet) */
   --time: #d95926;        /* builder & lab time */
   --gold: #c98500;
   --elixir: #d55181;
@@ -240,62 +240,42 @@ footer.app p { margin: 4px 0; }
   background-image: repeating-linear-gradient(45deg, rgba(13, 13, 13, 0.16) 0 5px, transparent 5px 10px);
 }
 
-/* custom gantt tooltip (hover on desktop, tap on mobile) */
-.g-tip {
-  position: fixed; z-index: 60; max-width: 300px; pointer-events: none;
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 6px 10px; font-size: 0.8rem; color: var(--ink); line-height: 1.35;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-}
 
-/* ---- base builder ---- */
-.b-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 10px 0; }
-.b-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
-.b-main { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 14px; }
-.b-palette { max-height: 645px; overflow: auto; border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 8px; background: var(--surface-2); }
-.b-tools { display: flex; gap: 6px; margin-bottom: 6px; }
-.b-cat { font-size: 0.76rem; color: var(--ink-3); text-transform: uppercase;
-  letter-spacing: 0.4px; margin: 9px 2px 4px; }
-.b-pal { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
-  background: none; border: 1px solid transparent; border-radius: 6px; color: var(--ink-2);
-  padding: 4px 6px; cursor: pointer; font: inherit; font-size: 0.85rem; }
-.b-pal:hover { background: var(--surface); border-color: var(--border); }
-.b-pal.armed { background: rgba(57, 135, 229, 0.16); border-color: var(--accent); color: var(--ink); }
-.b-pal.done { opacity: 0.45; }
-.b-pal b { margin-left: auto; color: var(--ink); }
-.b-pal .b-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.b-chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-.b-tgt { font-size: 0.66rem; color: var(--ink-3); border: 1px solid var(--border);
-  border-radius: 4px; padding: 0 3px; flex: none; }
-.b-canvas-wrap { min-width: 0; }
-#bCanvas { display: block; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  touch-action: none; cursor: crosshair; max-width: 100%; }
-.b-selbar { min-height: 30px; display: flex; align-items: center; gap: 8px;
-  margin-bottom: 6px; flex-wrap: wrap; }
-.b-status { color: var(--ink-3); font-size: 0.82rem; margin-top: 6px; min-height: 1.2em; }
-.b-cover-stats { color: var(--ink-2); font-size: 0.85rem; margin-top: 2px; }
-.b-io { margin-top: 10px; }
-.b-io textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.78rem; background: var(--surface-2); color: var(--ink-2);
-  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; }
-.b-io summary { cursor: pointer; color: var(--ink-2); }
-.b-io .io-row { margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-@media (max-width: 860px) {
-  .b-main { grid-template-columns: 1fr; }
-  .b-palette { max-height: 235px; }
+/* ---------- Clash Royale specifics ---------- */
+button.btn { color: #0d0d0d; }
+button.btn.ghost { color: var(--ink-2); }
+button.btn.danger { color: #fff; }
+.rar { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 600; }
+.rar.common { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border); }
+.rar.rare { background: rgba(217, 89, 38, 0.18); color: #e98a63; }
+.rar.epic { background: rgba(144, 133, 233, 0.18); color: #b3a8f2; }
+.rar.legendary { background: rgba(57, 135, 229, 0.18); color: #7db2ee; }
+.rar.champion { background: rgba(201, 133, 0, 0.2); color: #e0a83a; }
+.rar.tower { background: rgba(25, 158, 112, 0.18); color: #4cc39a; }
+.evo-badge { color: var(--warning); font-size: 0.78rem; }
+.coll-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.coll-controls input.txt { max-width: 240px; }
+table.data select, table.data input[type="number"] {
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 3px 6px; font: inherit; font-size: 0.85rem;
 }
+table.data input[type="number"] { width: 78px; text-align: right; }
+table.data select.maxed { border-color: var(--good); color: var(--good); }
+.deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.deck-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+.deck-card .nm { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
+.deck-card .meta { color: var(--ink-3); font-size: 0.78rem; }
+.mini-bar { position: relative; height: 7px; background: var(--surface); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.mini-bar > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 4px; }
+.mini-bar > span.full { background: var(--good); }
 
-/* ---- base builder library ---- */
-.b-linkbox { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex: 1; min-width: 0; }
-.b-linkbox input { flex: 1; min-width: 220px; }
-.b-lib { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-.b-card { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
-  padding: 6px; cursor: pointer; width: 148px; }
-.b-card:hover { border-color: var(--ink-3); }
-.b-card.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.b-card canvas { width: 100%; border-radius: 4px; display: block; }
-.b-card-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center;
-  margin-top: 6px; font-size: 0.8rem; }
-.b-card-meta b { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.b-card-meta a { font-size: 0.78rem; }
+/* ---------- meta decks ---------- */
+.meta-deck { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 10px; }
+.meta-deck.playable { border-color: rgba(12, 163, 12, 0.45); }
+.meta-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.meta-head .spacer { flex: 1; }
+.meta-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.deck-chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 2px 10px; font-size: 0.82rem; color: var(--ink-2); white-space: nowrap; }
+.deck-chip.evo { border-color: var(--accent); color: var(--ink); }
+.deck-chip.miss { border-style: dashed; color: var(--critical); }

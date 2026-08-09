@@ -17,10 +17,25 @@ A fully client-side Clash of Clans base analyzer, hosted on GitHub Pages at
   (heroes → army/unlock buildings → storages when they gate affordability →
   key defenses → splash → point → traps → resources; ranked inside each tier
   by ΔDPS + ΔHP/6 per cost), plus separate single-queue Laboratory and Pet
-  House orders, with optional Gold-Pass style time discounts.
+  House orders, with optional Gold-Pass style time discounts. Each free
+  builder takes the top job from whichever resource is least ahead of your
+  loot/day rates, so gold/elixir/dark spending stays even — but an upgrade
+  chain long enough to set the finish date (usually a hero) always continues
+  immediately, so balancing never extends the plan.
 - **To Max** — gold / elixir / dark elixir / ore totals needed to max the
   current TH, time bottleneck analysis at your loot-per-day rates with an ETA
   date, and a reference table of what *every* TH costs from scratch.
+- **Base Builder** — a layout creator for every Town Hall level: the exact
+  building counts for that TH on the 44×44 grid, click/drag placement, wall
+  painting, and a coverage overlay showing which tiles your defenses can
+  actually hit — toggle **ground / air / both** (X-Bow modes, Air Sweeper push
+  cones and the TH12+ Town Hall weapon included). A layout **library** holds
+  a whole collection of bases across TH levels: paste an in-game share link
+  (`link.clashofclans.com … OpenLayout&id=TH15:HV:…`) to file it under its TH
+  with a one-tap "open in game" button — the link itself is an opaque pointer
+  to Supercell's servers, so the grid is for sketching/analyzing the design.
+  PNG and JSON export per layout. Footprints/ranges/targets come from the
+  wiki via `tools/scrape_layout.py` (`layout-data.js`).
 - **Metrics** — total defensive DPS/HP vs. TH max, storage capacity, a
   per-defense matrix (counts, level ranges, remaining cost/time), a
   "best value right now" ranking of every available defense upgrade, and a
@@ -50,14 +65,11 @@ Three paths, all on the **Import / Export** tab:
    MIT-licensed [`clash-of-clans-data`](https://www.npmjs.com/package/clash-of-clans-data)
    npm package; IDs the tables don't know (brand-new content) are counted in
    the import message rather than guessed.
-1. **Clash of Clans API** — enter your player tag and a token from
-   [developer.clashofclans.com](https://developer.clashofclans.com). Note the
-   official API does not send CORS headers and pins keys to IPs, so calling it
-   straight from a browser page usually fails. Options:
-   - run a local proxy (e.g. `cocproxy`) and put its URL in the *API base* box;
-   - create your key whitelisting the RoyaleAPI proxy IP `45.79.218.79` and use
-     that proxy as the base URL;
-   - or skip straight to option 2.
+1. **Fetch by player tag** — after a one-time [API relay setup](../api-relay/README.md)
+   (a tiny self-hosted Node server; tokens live in `api-relay/.env` at home),
+   the tool needs only a tag. The relay serves both this tool and the Royale
+   one. Without a relay, use option 0 or 2 — Supercell's API blocks browsers
+   directly (no CORS, IP-locked tokens).
 2. **Paste / upload JSON** — paste the player payload from the developer
    portal's "Try it" button or from
    `curl -H "Authorization: Bearer TOKEN" "https://api.clashofclans.com/v1/players/%23YOURTAG"`.
@@ -97,6 +109,7 @@ cd clash/tools
 pip install beautifulsoup4 lxml
 python3 scrape.py          # scrapes the wiki into raw.json (cached per page)
 python3 build_data.py ../data.js
+python3 scrape_layout.py ../layout-data.js   # sizes/ranges/targets for the Base Builder
 ```
 
 `build_data.py` prints a validation report (level continuity, missing

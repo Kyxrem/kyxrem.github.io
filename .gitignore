@@ -1,0 +1,4 @@
+api-relay/.env
+node_modules/
+*.pid
+*.log
