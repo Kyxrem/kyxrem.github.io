@@ -1,5 +1,6 @@
 /* Kennzeichen-Sammler – Autobahn-Spiel
-   Datengrundlage Karte: BKG KFZ250 (vereinfacht), © BKG 2024, Datenquelle: Kraftfahrt-Bundesamt */
+   Datengrundlage Karte/Einwohner: BKG KFZ250 + VG250-EW (vereinfacht), © BKG 2024/2025,
+   Datenquelle: Kraftfahrt-Bundesamt */
 (function () {
 "use strict";
 
@@ -19,8 +20,8 @@ const Q = KFZ_MAP.q;
 const DEG = Math.PI / 180;
 const merc = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * DEG) / 2)) / DEG;
 
-const features = []; // {ars,name,land,codes,rings:[[x,y]...in lon/lat],areaKm2,d}
-for (const f of KFZ_MAP.f) {
+const features = []; // {idx,ars,name,land,codes,ew,rings,areaKm2}
+KFZ_MAP.f.forEach((f, idx) => {
   const rings = [];
   for (const enc of f.r) {
     const pts = [];
@@ -31,8 +32,8 @@ for (const f of KFZ_MAP.f) {
     }
     rings.push(pts);
   }
-  features.push({ ars: f.a, name: f.n, land: f.l, codes: f.k, rings });
-}
+  features.push({ idx, ars: f.a, name: f.n, land: f.l, codes: f.k, ew: f.e || 0, rings });
+});
 
 // Fläche in km² (Shoelace mit Breitengrad-Korrektur, Löcher via Vorzeichen)
 for (const f of features) {
@@ -51,7 +52,8 @@ for (const f of features) {
 }
 const TOTAL_AREA = features.reduce((s, f) => s + f.areaKm2, 0);
 
-// Projektion (Mercator) + Pfade
+// Projektion (Mercator) + Pfade – Schlüssel ist der Feature-Index
+// (nicht der ARS: einige Städte teilen sich den ARS mit ihrem Landkreis)
 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
 for (const f of features) for (const r of f.rings) for (const [lon, lat] of r) {
   const y = merc(lat);
@@ -75,19 +77,17 @@ svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
       }
       d += "Z";
     }
-    parts.push(`<path d="${d}" fill-rule="evenodd" data-a="${f.ars}"></path>`);
+    parts.push(`<path d="${d}" fill-rule="evenodd" data-i="${f.idx}"></path>`);
   }
   svg.innerHTML = parts.join("");
 }
-const pathByArs = {};
-svg.querySelectorAll("path").forEach((p) => (pathByArs[p.dataset.a] = p));
+const pathByIdx = [];
+svg.querySelectorAll("path").forEach((p) => (pathByIdx[+p.dataset.i] = p));
 
 /* ---------- Indizes ---------- */
 
-const featByArs = {};
 const codeToFeats = {}; // code -> [feature,...]
 for (const f of features) {
-  featByArs[f.ars] = f;
   for (const c of f.codes) (codeToFeats[c] = codeToFeats[c] || []).push(f);
 }
 const ALL_CODES = Object.keys(codeToFeats).sort((a, b) => a.localeCompare(b, "de"));
@@ -101,7 +101,34 @@ for (const c of ALL_CODES) codeByExpanded[expand(c)] = c;
 const codeState = (code) => (BL[codeToFeats[code][0].land] || "");
 const codeName = (code) => (KFZ_FACTS[code] ? KFZ_FACTS[code][0] : codeToFeats[code].map((f) => f.name).join(", "));
 
-// Suchindex
+/* ---------- Raritäten (Fortnite-Stil, nach Einwohnern) ---------- */
+
+const RARITY = [
+  { n: "Gewöhnlich",   c: "#a8b0bb" },
+  { n: "Ungewöhnlich", c: "#2fce4f" },
+  { n: "Selten",       c: "#37a6ff" },
+  { n: "Episch",       c: "#c95cff" },
+  { n: "Legendär",     c: "#ff9d2e" },
+  { n: "Mythisch",     c: "#ffd83d" },
+];
+const codePop = {};  // Einwohner im Zulassungsgebiet des Kürzels
+const codeAlt = {};  // nirgendwo Erstkürzel -> Altkennzeichen/Zweitkürzel
+const codeTier = {};
+for (const c of ALL_CODES) {
+  codePop[c] = codeToFeats[c].reduce((s, f) => s + f.ew, 0);
+  codeAlt[c] = codeToFeats[c].every((f) => f.codes[0] !== c);
+  const p = codePop[c];
+  let t;
+  if (p < 10000) t = 5;
+  else {
+    t = p >= 300000 ? 0 : p >= 170000 ? 1 : p >= 100000 ? 2 : p >= 50000 ? 3 : 4;
+    if (codeAlt[c]) t = Math.min(t + 1, 4); // Altkennzeichen sieht man seltener
+  }
+  codeTier[c] = t;
+}
+
+/* ---------- Suche ---------- */
+
 const searchIdx = ALL_CODES.map((c) => ({
   code: c,
   exp: expand(c),
@@ -119,10 +146,63 @@ try {
 const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, found }));
 const foundCount = () => Object.keys(found).length;
 
+/* ---------- Sync-Link (Fortschritt ohne Datei mitnehmen) ---------- */
+
+const SYNC_ORDER = [...ALL_CODES].sort(); // deterministische Reihenfolge (UTF-16)
+
+function encodeSync() {
+  const bytes = new Uint8Array(Math.ceil(SYNC_ORDER.length / 8));
+  SYNC_ORDER.forEach((c, i) => { if (found[c]) bytes[i >> 3] |= 1 << (i & 7); });
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return "1." + btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function decodeSync(str) {
+  const [v, payload] = str.split(".");
+  if (v !== "1" || !payload) return null;
+  try {
+    const bin = atob(payload.replaceAll("-", "+").replaceAll("_", "/"));
+    const codes = [];
+    SYNC_ORDER.forEach((c, i) => {
+      if (i >> 3 < bin.length && bin.charCodeAt(i >> 3) & (1 << (i & 7))) codes.push(c);
+    });
+    return codes;
+  } catch (e) { return null; }
+}
+
+function syncUrl() {
+  return location.origin + location.pathname + "#s=" + encodeSync();
+}
+
+function importFromHash() {
+  const m = location.hash.match(/[#&]s=([^&]+)/);
+  if (!m) return;
+  const codes = decodeSync(decodeURIComponent(m[1]));
+  history.replaceState(null, "", location.pathname + location.search);
+  if (!codes) { toast("Sync-Link konnte nicht gelesen werden.", "err"); return; }
+  let added = 0;
+  const now = Date.now();
+  for (const c of codes) if (!found[c]) { found[c] = now; added++; }
+  if (added) {
+    save();
+    toast(`🔗 Sync-Link geladen: <b>${added}</b> Kennzeichen übernommen (jetzt ${foundCount()}).`, "ok");
+  } else if (codes.length) {
+    toast("🔗 Sync-Link geladen – alles war schon in deiner Sammlung.", "");
+  }
+}
+
 /* ---------- UI-Helfer ---------- */
 
 const plateHTML = (code, cls = "") =>
-  `<span class="plate ${cls}"><span class="pl-eu"><span class="pl-stars">★</span>D</span><span class="pl-txt">${code}</span></span>`;
+  `<span class="plate r${codeTier[code] ?? ""} ${cls}"><span class="pl-eu"><span class="pl-stars">★</span>D</span><span class="pl-txt">${code}</span></span>`;
+
+const rarPill = (code) => {
+  const r = RARITY[codeTier[code]];
+  return `<span class="rar-pill" style="--rc:${r.c}">${r.n}</span>`;
+};
+
+const fmtNum = (n) => n.toLocaleString("de-DE");
 
 let toastTimer;
 function toast(msg, kind = "") {
@@ -131,7 +211,7 @@ function toast(msg, kind = "") {
   t.innerHTML = msg;
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), 4200);
+  toastTimer = setTimeout(() => (t.hidden = true), 4800);
 }
 
 const fmtDate = (ts) =>
@@ -143,7 +223,7 @@ const fmtDate = (ts) =>
 function updateMap() {
   for (const f of features) {
     const n = f.codes.filter((c) => found[c]).length;
-    const el = pathByArs[f.ars];
+    const el = pathByIdx[f.idx];
     el.classList.toggle("full", n === f.codes.length && n > 0);
     el.classList.toggle("part", n > 0 && n < f.codes.length);
   }
@@ -151,9 +231,9 @@ function updateMap() {
 
 function pulse(code) {
   for (const f of codeToFeats[code]) {
-    const el = pathByArs[f.ars];
+    const el = pathByIdx[f.idx];
     el.classList.remove("pulse");
-    void el.getBoundingClientRect(); // Animation neu starten
+    void el.getBoundingClientRect();
     el.classList.add("pulse");
     setTimeout(() => el.classList.remove("pulse"), 1200);
   }
@@ -172,6 +252,16 @@ function updateStats() {
   const pct = (covered / TOTAL_AREA) * 100;
   $("#stat-area").innerHTML = (pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)).replace(".", ",") + "&nbsp;%";
   $("#bar-area").style.width = pct + "%";
+
+  // Raritäten-Übersicht
+  const perTier = RARITY.map(() => ({ total: 0, found: 0 }));
+  for (const c of ALL_CODES) {
+    perTier[codeTier[c]].total++;
+    if (found[c]) perTier[codeTier[c]].found++;
+  }
+  $("#rar-grid").innerHTML = RARITY.map((r, i) =>
+    `<div class="rar-row" style="--rc:${r.c}"><i class="rar-dot"></i><span class="rar-name">${r.n}</span><span class="rar-count">${perTier[i].found}/${perTier[i].total}</span></div>`
+  ).join("");
 
   // Bundesländer
   const per = {};
@@ -196,9 +286,11 @@ function updateCollection() {
   const codes = Object.keys(found);
   $("#coll-empty").hidden = codes.length > 0;
   const mode = $("#coll-sort").value;
-  codes.sort(mode === "abc" ? (a, b) => a.localeCompare(b, "de") : (a, b) => found[b] - found[a]);
+  if (mode === "abc") codes.sort((a, b) => a.localeCompare(b, "de"));
+  else if (mode === "rar") codes.sort((a, b) => codeTier[b] - codeTier[a] || codePop[a] - codePop[b] || found[b] - found[a]);
+  else codes.sort((a, b) => found[b] - found[a]);
   $("#collection").innerHTML = codes
-    .map((c) => `<button class="coll-chip" data-code="${c}" title="${codeName(c)}">${plateHTML(c)}</button>`)
+    .map((c) => `<button class="coll-chip" data-code="${c}" title="${codeName(c)} – ${RARITY[codeTier[c]].n}">${plateHTML(c)}</button>`)
     .join("");
 }
 
@@ -224,6 +316,7 @@ function showCode(code, scroll = true) {
       <div>
         <h3>${entry[0]}</h3>
         <p class="fact-meta">${factMeta(code)}</p>
+        <p class="fact-meta">${rarPill(code)} <span class="rar-why">≈ ${fmtNum(codePop[code])} Einwohner im Zulassungsgebiet${codeAlt[code] ? " · Altkennzeichen (+1 Stufe)" : ""}</span></p>
       </div>
       <button class="fact-close" aria-label="Schließen">×</button>
     </div>
@@ -245,20 +338,20 @@ function showCode(code, scroll = true) {
   if (scroll) panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
-function showDistrict(ars) {
-  const f = featByArs[ars];
+function showDistrict(idx) {
+  const f = features[idx];
   if (f.codes.length === 1) return showCode(f.codes[0]);
   const panel = $("#fact-panel");
   panel.innerHTML = `
     <div class="fact-head">
       <div>
         <h3>${f.name}</h3>
-        <p class="fact-meta">${BL[f.land]} · ${f.codes.length} Kennzeichen in diesem Bezirk</p>
+        <p class="fact-meta">${BL[f.land]} · ≈ ${fmtNum(f.ew)} Einwohner · ${f.codes.length} Kennzeichen in diesem Bezirk</p>
       </div>
       <button class="fact-close" aria-label="Schließen">×</button>
     </div>
     <div class="collection" style="margin-top:12px">
-      ${f.codes.map((c) => `<button class="coll-chip" data-code="${c}" title="${codeName(c)}" style="${found[c] ? "" : "opacity:.45"}">${plateHTML(c)}</button>`).join("")}
+      ${f.codes.map((c) => `<button class="coll-chip" data-code="${c}" title="${codeName(c)} – ${RARITY[codeTier[c]].n}" style="${found[c] ? "" : "opacity:.45"}">${plateHTML(c)}</button>`).join("")}
     </div>
     <p class="fact-locked" style="border:0;padding-top:6px">Kürzel antippen für Details${f.codes.some((c) => !found[c]) ? " – blasse sind noch offen." : "."}</p>
   `;
@@ -282,7 +375,9 @@ function addCode(code) {
   updateMap(); updateStats(); updateCollection();
   pulse(code);
   const n = foundCount();
-  toast(`🎉 <b>NEU:</b> ${plateHTML(code)} ${codeName(code)}${MILESTONES[n] ? `<br>🏆 <b>${n}. Fund:</b> ${MILESTONES[n]}` : ""}`, "ok");
+  const r = RARITY[codeTier[code]];
+  const rarNote = codeTier[code] >= 3 ? ` <b style="color:${r.c}">${codeTier[code] >= 5 ? "MYTHISCH!! 🤯" : codeTier[code] >= 4 ? "LEGENDÄR! 🔥" : "Episch!"}</b>` : ` <span style="color:${r.c}">${r.n}</span>`;
+  toast(`🎉 <b>NEU:</b> ${plateHTML(code)}${rarNote} ${codeName(code)}${MILESTONES[n] ? `<br>🏆 <b>${n}. Fund:</b> ${MILESTONES[n]}` : ""}`, "ok");
   showCode(code, false);
 }
 
@@ -380,7 +475,7 @@ svg.addEventListener("pointermove", (e) => {
   if (e.pointerType === "touch") return;
   const p = e.target.closest("path");
   if (!p) { tip.hidden = true; return; }
-  const f = featByArs[p.dataset.a];
+  const f = features[+p.dataset.i];
   const fCodes = f.codes.filter((c) => found[c]);
   tip.innerHTML = `<b>${f.name}</b><span class="t-codes">${f.codes.join(", ")} · ${BL[f.land]}</span>` +
     (fCodes.length ? `<br><span class="t-found">✓ ${fCodes.join(", ")} gefunden</span>` : "");
@@ -395,7 +490,7 @@ svg.addEventListener("pointermove", (e) => {
 svg.addEventListener("pointerleave", () => (tip.hidden = true));
 svg.addEventListener("click", (e) => {
   const p = e.target.closest("path");
-  if (p) showDistrict(p.dataset.a);
+  if (p) showDistrict(+p.dataset.i);
 });
 
 /* ---------- Sammlung: Klicks & Sortierung ---------- */
@@ -406,7 +501,17 @@ document.addEventListener("click", (e) => {
 });
 $("#coll-sort").addEventListener("change", updateCollection);
 
-/* ---------- Export / Import / Reset ---------- */
+/* ---------- Sync / Export / Import / Reset ---------- */
+
+$("#sync-btn").addEventListener("click", () => {
+  const url = syncUrl();
+  const done = () => toast(`🔗 <b>Sync-Link kopiert!</b> Öffne ihn auf einem anderen Gerät (oder speichere ihn als Lesezeichen), um deine ${foundCount()} Kennzeichen mitzunehmen.`, "ok");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(done, () => window.prompt("Link kopieren:", url));
+  } else {
+    window.prompt("Link kopieren:", url);
+  }
+});
 
 $("#export-btn").addEventListener("click", () => {
   const blob = new Blob([JSON.stringify({ app: "kennzeichen-sammler", exportiert: new Date().toISOString(), found }, null, 2)], { type: "application/json" });
@@ -415,7 +520,7 @@ $("#export-btn").addEventListener("click", () => {
   a.download = "kennzeichen-sammlung.json";
   a.click();
   URL.revokeObjectURL(a.href);
-  toast("Sammlung exportiert. 📦", "ok");
+  toast("Backup-Datei exportiert. 📦", "ok");
 });
 
 $("#import-file").addEventListener("change", (e) => {
@@ -448,6 +553,7 @@ $("#reset-btn").addEventListener("click", () => {
 
 /* ---------- Start ---------- */
 
+importFromHash();
 updateMap();
 updateStats();
 updateCollection();
