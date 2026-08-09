@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kennzeichen-Sammler – Autobahn-Spiel mit Live-Karte</title>
+<meta name="description" content="Sammle deutsche Kfz-Kennzeichen, die du auf der Autobahn siehst. Live-Coverage auf der Deutschlandkarte plus Fakten zu jeder Stadt und jedem Landkreis.">
+<meta name="theme-color" content="#0d0f12">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚙</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div>
+    <h1><span class="plate logo" aria-hidden="true"><span class="pl-eu"><span class="pl-stars">★</span>D</span><span class="pl-txt">KZ&thinsp;:&thinsp;702</span></span> Kennzeichen-Sammler</h1>
+    <p class="sub">Das Beifahrer-Spiel: Tippe jedes Kennzeichen ein, das du unterwegs entdeckst – die Karte füllt sich live.</p>
+  </div>
+  <a class="home" href="../">← kyxrem</a>
+</header>
+
+<section class="entry" id="entry">
+  <form id="add-form" autocomplete="off">
+    <div class="platebox">
+      <span class="pl-eu big" aria-hidden="true"><span class="pl-stars">★</span>D</span>
+      <input id="code-input" placeholder="z. B. HH, E, DA, TÖL …" maxlength="20"
+             autocapitalize="characters" spellcheck="false" aria-label="Kennzeichen eingeben"
+             enterkeyhint="done">
+      <button type="submit" id="add-btn" aria-label="Kennzeichen hinzufügen">+</button>
+    </div>
+    <div id="suggestions" class="suggestions" hidden></div>
+  </form>
+  <div id="toast" class="toast" hidden></div>
+</section>
+
+<main class="grid">
+
+  <section class="panel fact-panel" id="fact-panel" hidden aria-live="polite"></section>
+
+  <section class="panel map-panel">
+    <div class="map-head">
+      <h2>Live-Coverage</h2>
+      <div class="legend" aria-hidden="false">
+        <span><i class="sw full"></i>Gefunden</span>
+        <span><i class="sw part"></i>Teilweise</span>
+        <span><i class="sw none"></i>Noch offen</span>
+      </div>
+    </div>
+    <div id="map-wrap">
+      <svg id="map" role="img" aria-label="Deutschlandkarte mit gefundenen Kennzeichen-Regionen"></svg>
+      <div id="map-tip" class="map-tip" hidden></div>
+    </div>
+    <p class="map-hint">Tipp: Region antippen für Details.</p>
+  </section>
+
+  <section class="panel stats-panel">
+    <h2>Fortschritt</h2>
+    <div class="stat big"><span class="num" id="stat-count">0</span><span class="of">von <span id="stat-total">?</span> Kennzeichen</span></div>
+    <div class="bar" role="progressbar" aria-label="Anteil gefundener Kennzeichen"><div id="bar-codes"></div></div>
+    <div class="stat"><span class="num sm" id="stat-area">0&nbsp;%</span><span class="of">der Fläche Deutschlands abgedeckt</span></div>
+    <div class="bar" role="progressbar" aria-label="Abgedeckte Fläche"><div id="bar-area"></div></div>
+    <details id="land-details">
+      <summary>Nach Bundesland</summary>
+      <div id="land-grid" class="land-grid"></div>
+    </details>
+  </section>
+
+  <section class="panel collection-panel">
+    <div class="coll-head">
+      <h2>Deine Sammlung</h2>
+      <span id="coll-sort-wrap"><label for="coll-sort" class="visually-hidden">Sortierung</label>
+        <select id="coll-sort"><option value="new">Neueste zuerst</option><option value="abc">A–Z</option></select>
+      </span>
+    </div>
+    <div id="collection" class="collection"></div>
+    <p id="coll-empty" class="empty">Noch nichts gesammelt – tippe oben dein erstes Kennzeichen ein! 🚗</p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="tools">
+    <button id="export-btn" type="button">⬇ Export</button>
+    <label class="btn" for="import-file">⬆ Import<input type="file" id="import-file" accept=".json,application/json" hidden></label>
+    <button id="reset-btn" type="button" class="danger-btn">Zurücksetzen</button>
+  </div>
+  <p class="attribution">Sammlung wird nur lokal in deinem Browser gespeichert.<br>
+  Kartengrundlage: <a href="http://www.bkg.bund.de" rel="noopener">© Bundesamt für Kartographie und Geodäsie 2024</a>, Datenquelle: Kraftfahrt-Bundesamt · Datensatz KFZ250 (Geometrie vereinfacht) · <a href="https://www.govdata.de/dl-de/by-2-0" rel="noopener">dl-de/by-2-0</a></p>
+</footer>
+
+<script src="map-data.js"></script>
+<script src="facts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
