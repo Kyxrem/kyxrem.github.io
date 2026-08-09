@@ -138,13 +138,152 @@ const searchIdx = ALL_CODES.map((c) => ({
 
 /* ---------- Zustand ---------- */
 
-let found = {}; // code -> timestamp
+let found = {};    // code -> timestamp
+let achStore = {}; // achievement-id -> timestamp der Freischaltung
 try {
   const raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
   if (raw && raw.found) found = raw.found;
+  if (raw && raw.ach) achStore = raw.ach;
 } catch (e) { /* frisch starten */ }
-const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, found }));
+const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, found, ach: achStore }));
 const foundCount = () => Object.keys(found).length;
+
+/* ---------- Errungenschaften ---------- */
+
+const SINGLES = ALL_CODES.filter((c) => c.length === 1);
+const DOUBLES = ALL_CODES.filter((c) => c.length === 2 && c[0] === c[1]);
+const LEGENDS = ALL_CODES.filter((c) => codeTier[c] >= 4);
+const setDef = (list) => list.filter((c) => codeToFeats[c]);
+const HANSE = setDef(["HH", "HB", "HL", "HRO", "HST", "HWI", "HGW", "STD", "LG"]);
+const RACE = setDef(["AW", "HOT", "OC", "SCZ"]);
+const WORTE = setDef(["BAD", "EIS", "ROT", "OHA"]);
+const ALPEN = setDef(["GAP", "BGL", "OA"]);
+const WEIN = setDef(["NW", "DÜW", "SÜW", "LD"]);
+const MILLIONEN = setDef(["B", "HH", "M", "K"]);
+const TRIO = setDef(["B", "HH", "HB"]);
+
+const cntAch = (goal, icon, id, name, desc) =>
+  ({ id, icon, name, desc, prog: (c) => [Math.min(c.n, goal), goal], check: (c) => c.n >= goal });
+
+const ACHIEVEMENTS = [
+  cntAch(1, "🚗", "c1", "Startschuss", "Dein erstes Kennzeichen gesammelt"),
+  cntAch(5, "✋", "c5", "Handvoll", "5 Kennzeichen gesammelt"),
+  cntAch(10, "🔟", "c10", "Zweistellig", "10 Kennzeichen gesammelt"),
+  cntAch(25, "🎒", "c25", "Sammlerherz", "25 Kennzeichen gesammelt"),
+  cntAch(50, "🚙", "c50", "Halbes Hundert", "50 Kennzeichen gesammelt"),
+  cntAch(100, "💯", "c100", "Dreistellig", "100 Kennzeichen gesammelt"),
+  cntAch(200, "🚛", "c200", "Autobahn-Profi", "200 Kennzeichen gesammelt"),
+  cntAch(351, "🗺️", "c351", "Die halbe Sammlung", "351 von 702 – die Hälfte ist voll!"),
+  cntAch(500, "🏅", "c500", "Club der 500", "500 Kennzeichen gesammelt"),
+  cntAch(702, "👑", "call", "Deutschland komplett", "Alle 702 Kennzeichen gesammelt"),
+  { id: "r2", icon: "🔵", name: "Selten gut", desc: "Ein Kennzeichen der Stufe Selten oder höher", prog: (c) => [Math.min(c.tierGE(2), 1), 1], check: (c) => c.tierGE(2) >= 1 },
+  { id: "r3", icon: "🟣", name: "Episch!", desc: "Ein Kennzeichen der Stufe Episch oder höher", prog: (c) => [Math.min(c.tierGE(3), 1), 1], check: (c) => c.tierGE(3) >= 1 },
+  { id: "r4", icon: "🟠", name: "Legende gesichtet", desc: "Ein legendäres Kennzeichen gefunden", prog: (c) => [Math.min(c.tierGE(4), 1), 1], check: (c) => c.tierGE(4) >= 1 },
+  { id: "r4x10", icon: "🏆", name: "Raritätenkabinett", desc: "10 legendäre (oder bessere) Kennzeichen", prog: (c) => [Math.min(c.tierGE(4), 10), 10], check: (c) => c.tierGE(4) >= 10 },
+  { id: "laender", icon: "🧭", name: "Ländersammler", desc: "Aus allen 16 Bundesländern mindestens eins", prog: (c) => [c.states.size, 16], check: (c) => c.states.size >= 16 },
+  { id: "trio", icon: "🏙️", name: "Stadtstaaten-Trio", desc: "B, HH und HB gesammelt", prog: (c) => [c.have(TRIO), 3], check: (c) => c.have(TRIO) === 3 },
+  { id: "mill", icon: "🌆", name: "Millionen-Metropolen", desc: "B, HH, M und K gesammelt", prog: (c) => [c.have(MILLIONEN), 4], check: (c) => c.have(MILLIONEN) === 4 },
+  { id: "single", icon: "🔠", name: "Ein-Buchstaben-Club", desc: `Alle ${SINGLES.length} Ein-Buchstaben-Kennzeichen (A, B, D …)`, prog: (c) => [c.have(SINGLES), SINGLES.length], check: (c) => c.have(SINGLES) === SINGLES.length },
+  { id: "abc", icon: "🔤", name: "Buchstaben-Bingo", desc: "Kennzeichen mit 20 verschiedenen Anfangsbuchstaben", prog: (c) => [c.initials.size, 20], check: (c) => c.initials.size >= 20 },
+  { id: "area25", icon: "📐", name: "Viertel-Republik", desc: "25 % der Fläche Deutschlands abgedeckt", prog: (c) => [Math.min(Math.floor(c.areaPct), 25), 25], check: (c) => c.areaPct >= 25 },
+  { id: "area50", icon: "🌍", name: "Halbe Fläche", desc: "50 % der Fläche Deutschlands abgedeckt", prog: (c) => [Math.min(Math.floor(c.areaPct), 50), 50], check: (c) => c.areaPct >= 50 },
+  { id: "day20", icon: "📅", name: "Tagesausflug", desc: "20 Funde an einem einzigen Tag", prog: (c) => [Math.min(c.maxDay, 20), 20], check: (c) => c.daySpanOk },
+  { id: "fast5", icon: "⚡", name: "Kolonne", desc: "5 Funde innerhalb von 5 Minuten", check: (c) => c.fast5 },
+  { id: "umlaut", icon: "🎯", name: "Ümläut-Fän", desc: "5 Kennzeichen mit Ä, Ö oder Ü", prog: (c) => [Math.min(c.umlaut, 5), 5], check: (c) => c.umlaut >= 5 },
+  { id: "hanse", icon: "⚓", name: "Hanse-Bündnis", desc: "5 alte Hansestädte (z. B. HH, HB, HL, HST, LG)", prog: (c) => [Math.min(c.have(HANSE), 5), 5], check: (c) => c.have(HANSE) >= 5 },
+  { id: "alpen", icon: "⛰️", name: "Alpenpanorama", desc: "GAP, BGL und OA – die Alpenkreise", prog: (c) => [c.have(ALPEN), 3], check: (c) => c.have(ALPEN) === 3 },
+  { id: "wein", icon: "🍷", name: "Weinstraßen-Tour", desc: "NW, DÜW, SÜW und LD – die Pfälzer Weinrunde", prog: (c) => [c.have(WEIN), 4], check: (c) => c.have(WEIN) === 4 },
+  { id: "bezirk3", icon: "🧩", name: "Bezirks-Komplettierer", desc: "Einen Bezirk mit mindestens 3 Kürzeln vollständig gesammelt", check: (c) => c.fullDistrict3 },
+  // Versteckte Errungenschaften – erscheinen als ??? und enthüllen sich beim Freischalten
+  { hidden: true, id: "h_bues", icon: "🇨🇭", name: "Grüezi!", desc: "BÜS gefunden – die Schweizer Exklave Büsingen, das einzige Mythisch", check: () => !!found["BÜS"] },
+  { hidden: true, id: "h_night", icon: "🌙", name: "Nachtschwärmer", desc: "Ein Fund zwischen 0 und 4 Uhr nachts", check: (c) => c.night },
+  { hidden: true, id: "h_pasch", icon: "🎲", name: "Pasch!", desc: `6 Doppelbuchstaben-Kennzeichen (AA, BB, DD, EE …) – es gibt ${DOUBLES.length}`, check: (c) => c.have(DOUBLES) >= 6 },
+  { hidden: true, id: "h_wort", icon: "🍜", name: "Buchstabensuppe", desc: "BAD, EIS, ROT und OHA – Kennzeichen, die echte Wörter sind", check: (c) => c.have(WORTE) === WORTE.length },
+  { hidden: true, id: "h_race", icon: "🏁", name: "Vollgas-Tour", desc: "Alle vier Rennstrecken-Kreise: AW (Nürburgring), HOT (Sachsenring), OC (Oschersleben), SCZ (Schleizer Dreieck)", check: (c) => c.have(RACE) === RACE.length },
+  { hidden: true, id: "h_leg", icon: "🦄", name: "Legenden-Meister", desc: `Alle ${LEGENDS.length} Kennzeichen der Stufen Legendär und Mythisch`, check: (c) => c.have(LEGENDS) === LEGENDS.length },
+];
+const PUB_ACH = ACHIEVEMENTS.filter((a) => !a.hidden);
+const HID_ACH = ACHIEVEMENTS.filter((a) => a.hidden);
+
+function achCtx() {
+  const codes = Object.keys(found);
+  const ts = codes.map((c) => found[c]).sort((a, b) => a - b);
+  const tierN = [0, 0, 0, 0, 0, 0];
+  const states = new Set(), initials = new Set();
+  let umlaut = 0;
+  for (const c of codes) {
+    tierN[codeTier[c]]++;
+    states.add(codeToFeats[c][0].land);
+    initials.add(c[0]);
+    if (/[ÄÖÜ]/.test(c)) umlaut++;
+  }
+  let covered = 0;
+  for (const f of features) if (f.codes.some((c) => found[c])) covered += f.areaKm2;
+  const perDay = {};
+  for (const t of ts) {
+    const d = new Date(t);
+    const k = d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+    (perDay[k] = perDay[k] || []).push(t);
+  }
+  let maxDay = 0, daySpanOk = false;
+  for (const k in perDay) {
+    const arr = perDay[k];
+    if (arr.length > maxDay) maxDay = arr.length;
+    // Mindest-Zeitspanne, damit ein Massen-Import nicht als "Tagesausflug" zählt
+    if (arr.length >= 20 && arr[arr.length - 1] - arr[0] >= 600000) daySpanOk = true;
+  }
+  let fast5 = false;
+  for (let i = 0; i + 4 < ts.length; i++) {
+    const span = ts[i + 4] - ts[i];
+    if (span <= 300000 && span >= 1500) { fast5 = true; break; }
+  }
+  return {
+    n: codes.length,
+    tierGE: (k) => tierN.slice(k).reduce((a, b) => a + b, 0),
+    states, initials, umlaut,
+    areaPct: (covered / TOTAL_AREA) * 100,
+    maxDay, daySpanOk, fast5,
+    night: ts.some((t) => { const h = new Date(t).getHours(); return h >= 0 && h < 4; }),
+    fullDistrict3: features.some((f) => f.codes.length >= 3 && f.codes.every((c) => found[c])),
+    have: (list) => list.filter((c) => found[c]).length,
+  };
+}
+
+function renderAchievements(c) {
+  const pu = PUB_ACH.filter((a) => achStore[a.id]).length;
+  const hu = HID_ACH.filter((a) => achStore[a.id]).length;
+  $("#ach-count").textContent = `${pu}/${PUB_ACH.length} (+${hu ? hu + "/" : ""}${HID_ACH.length})`;
+  $("#ach-grid").innerHTML = ACHIEVEMENTS.map((a) => {
+    const done = !!achStore[a.id];
+    const secret = a.hidden && !done;
+    const prog = !done && !secret && a.prog ? a.prog(c) : null;
+    return `<div class="ach ${done ? "done" : ""} ${a.hidden ? "hidden-ach" : ""}">
+      <span class="a-icon">${secret ? "❓" : a.icon}</span>
+      <div class="a-body">
+        <div class="a-name">${secret ? "???" : a.name}${a.hidden && done ? ' <span class="a-secret">Geheim</span>' : ""}</div>
+        <div class="a-desc">${secret ? "Versteckte Errungenschaft – probier mal was Ungewöhnliches …" : a.desc}</div>
+      </div>
+      <span class="a-state">${done ? "✓" : prog ? `${prog[0]}/${prog[1]}` : ""}</span>
+    </div>`;
+  }).join("");
+}
+
+function evalAchievements() {
+  const c = achCtx();
+  const newly = [];
+  for (const a of ACHIEVEMENTS) {
+    if (!achStore[a.id] && a.check(c)) {
+      achStore[a.id] = Date.now();
+      newly.push(a);
+    }
+  }
+  if (newly.length) save();
+  renderAchievements(c);
+  return newly;
+}
+
+const achToastLine = (newly) =>
+  `🏅 <b>Errungenschaft${newly.length > 1 ? "en" : ""} freigeschaltet:</b> ${newly.map((a) => `${a.icon} ${a.hidden ? `<span class="gold">${a.name}</span>` : a.name}`).join(" · ")}`;
 
 /* ---------- Sync-Link (Fortschritt ohne Datei mitnehmen) ---------- */
 
@@ -177,19 +316,18 @@ function syncUrl() {
 
 function importFromHash() {
   const m = location.hash.match(/[#&]s=([^&]+)/);
-  if (!m) return;
+  if (!m) return null;
   const codes = decodeSync(decodeURIComponent(m[1]));
   history.replaceState(null, "", location.pathname + location.search);
-  if (!codes) { toast("Sync-Link konnte nicht gelesen werden.", "err"); return; }
+  if (!codes) { toast("Sync-Link konnte nicht gelesen werden.", "err"); return null; }
   let added = 0;
   const now = Date.now();
   for (const c of codes) if (!found[c]) { found[c] = now; added++; }
   if (added) {
     save();
-    toast(`🔗 Sync-Link geladen: <b>${added}</b> Kennzeichen übernommen (jetzt ${foundCount()}).`, "ok");
-  } else if (codes.length) {
-    toast("🔗 Sync-Link geladen – alles war schon in deiner Sammlung.", "");
+    return `🔗 Sync-Link geladen: <b>${added}</b> Kennzeichen übernommen (jetzt ${foundCount()}).`;
   }
+  return codes.length ? "🔗 Sync-Link geladen – alles war schon in deiner Sammlung." : null;
 }
 
 /* ---------- UI-Helfer ---------- */
@@ -362,8 +500,6 @@ function showDistrict(idx) {
 
 /* ---------- Hinzufügen / Entfernen ---------- */
 
-const MILESTONES = { 10: "Zweistellig! 🎉", 25: "25 – ordentlich was los auf der Bahn!", 50: "50! Halbes Hundert 🏁", 100: "💯 Hundert Kennzeichen!", 200: "200 – du bist ein Profi! 🛣️", 350: "350 – die Hälfte ist geschafft!", 500: "500!! Legendär 🏆", 702: "ALLE 702!! Du hast Deutschland komplett! 👑" };
-
 function addCode(code) {
   if (found[code]) {
     toast(`${plateHTML(code)} hast du schon – gefunden am ${fmtDate(found[code])}.`, "warn");
@@ -374,10 +510,12 @@ function addCode(code) {
   save();
   updateMap(); updateStats(); updateCollection();
   pulse(code);
-  const n = foundCount();
   const r = RARITY[codeTier[code]];
   const rarNote = codeTier[code] >= 3 ? ` <b style="color:${r.c}">${codeTier[code] >= 5 ? "MYTHISCH!! 🤯" : codeTier[code] >= 4 ? "LEGENDÄR! 🔥" : "Episch!"}</b>` : ` <span style="color:${r.c}">${r.n}</span>`;
-  toast(`🎉 <b>NEU:</b> ${plateHTML(code)}${rarNote} ${codeName(code)}${MILESTONES[n] ? `<br>🏆 <b>${n}. Fund:</b> ${MILESTONES[n]}` : ""}`, "ok");
+  let msg = `🎉 <b>NEU:</b> ${plateHTML(code)}${rarNote} ${codeName(code)}`;
+  const newly = evalAchievements();
+  if (newly.length) msg += `<br>${achToastLine(newly)}`;
+  toast(msg, "ok");
   showCode(code, false);
 }
 
@@ -385,6 +523,7 @@ function removeCode(code) {
   delete found[code];
   save();
   updateMap(); updateStats(); updateCollection();
+  renderAchievements(achCtx());
   toast(`${plateHTML(code)} entfernt.`, "");
   hideFacts();
 }
@@ -514,7 +653,7 @@ $("#sync-btn").addEventListener("click", () => {
 });
 
 $("#export-btn").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify({ app: "kennzeichen-sammler", exportiert: new Date().toISOString(), found }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ app: "kennzeichen-sammler", exportiert: new Date().toISOString(), found, ach: achStore }, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "kennzeichen-sammlung.json";
@@ -534,8 +673,14 @@ $("#import-file").addEventListener("change", (e) => {
       for (const [c, ts] of Object.entries(src)) {
         if (codeToFeats[c] && !found[c] && typeof ts === "number") { found[c] = ts; added++; }
       }
+      if (data.ach) {
+        for (const [id, ts] of Object.entries(data.ach)) {
+          if (!achStore[id] && typeof ts === "number" && ACHIEVEMENTS.some((a) => a.id === id)) achStore[id] = ts;
+        }
+      }
       save(); updateMap(); updateStats(); updateCollection();
-      toast(`Import fertig: ${added} neue Kennzeichen übernommen.`, "ok");
+      const newly = evalAchievements();
+      toast(`Import fertig: ${added} neue Kennzeichen übernommen.${newly.length ? "<br>" + achToastLine(newly) : ""}`, "ok");
     } catch (err) {
       toast("Datei konnte nicht gelesen werden.", "err");
     }
@@ -544,18 +689,28 @@ $("#import-file").addEventListener("change", (e) => {
 });
 
 $("#reset-btn").addEventListener("click", () => {
-  if (confirm(`Wirklich alle ${foundCount()} gesammelten Kennzeichen löschen?`)) {
+  if (confirm(`Wirklich alle ${foundCount()} gesammelten Kennzeichen löschen? Auch die Errungenschaften werden zurückgesetzt.`)) {
     found = {};
+    achStore = {};
     save(); updateMap(); updateStats(); updateCollection(); hideFacts();
+    renderAchievements(achCtx());
     toast("Sammlung zurückgesetzt – gute Fahrt! 🛣️", "");
   }
 });
 
 /* ---------- Start ---------- */
 
-importFromHash();
+const syncMsg = importFromHash();
 updateMap();
 updateStats();
 updateCollection();
+const newlyOnLoad = evalAchievements();
+{
+  const msgs = [];
+  if (syncMsg) msgs.push(syncMsg);
+  if (newlyOnLoad.length) msgs.push(achToastLine(newlyOnLoad.slice(0, 4)) + (newlyOnLoad.length > 4 ? ` … und ${newlyOnLoad.length - 4} weitere` : ""));
+  if (msgs.length) toast(msgs.join("<br>"), "ok");
+}
+if (matchMedia("(min-width: 980px)").matches) $("#ach-details").open = true;
 
 })();
