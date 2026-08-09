@@ -299,3 +299,8 @@ footer.app p { margin: 4px 0; }
   margin-top: 6px; font-size: 0.8rem; }
 .b-card-meta b { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-card-meta a { font-size: 0.78rem; }
+
+/* ---- next up card ---- */
+.nu-total { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--ink); }
+.nu-side { margin-top: 6px; color: var(--ink-3); font-size: 0.86rem; }
+.nu-side b { color: var(--ink-2); }

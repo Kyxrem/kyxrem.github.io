@@ -10,7 +10,9 @@ A fully client-side Clash of Clans base analyzer, hosted on GitHub Pages at
   heroes, lab levels, pets and owned hero equipment (the API doesn't expose
   building levels, so these are set here; everything persists in
   `localStorage`).
-- **Upgrade Plan** — a Gantt-style timetable (one lane per builder plus the
+- **Upgrade Plan** — a "Next up" card with the first N builder jobs to
+  queue (N = your builder count) and their combined resource bill, above
+  a Gantt-style timetable (one lane per builder plus the
   Laboratory and Pet House, days on the x-axis, bars spanning each upgrade's
   duration, colored by the resource it costs) above a prioritized builder
   schedule across your builder count
