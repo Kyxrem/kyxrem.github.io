@@ -135,7 +135,7 @@ h1, h2, h3 { margin: 0; }
 @media (min-width: 980px) {
   .grid { grid-template-columns: minmax(0, 1.25fr) minmax(320px, .9fr); align-items: start; }
   .map-panel { grid-column: 1; grid-row: 1 / span 4; }
-  .fact-panel, .stats-panel, .collection-panel { grid-column: 2; }
+  .fact-panel, .stats-panel, .ach-panel, .collection-panel { grid-column: 2; }
   .fact-panel { grid-row: 1; }
 }
 
@@ -238,6 +238,46 @@ h1, h2, h3 { margin: 0; }
   background: var(--acc); border: 0; color: #06281c; font-weight: 700;
   border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: .9rem;
 }
+
+/* ---------- Errungenschaften ---------- */
+.ach-panel summary {
+  list-style: none; display: flex; align-items: center; gap: 10px; cursor: pointer;
+}
+.ach-panel summary::-webkit-details-marker { display: none; }
+.ach-panel summary::after { content: "▸"; color: var(--ink3); transition: transform .15s; }
+.ach-panel details[open] summary::after { transform: rotate(90deg); }
+.ach-count {
+  margin-left: auto; background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 3px 12px; font-size: .85rem; color: var(--ink2);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.ach-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
+.ach {
+  display: flex; gap: 10px; align-items: center; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel2); opacity: .72;
+}
+.ach.done {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--acc) 55%, var(--border));
+  background: color-mix(in srgb, var(--acc) 8%, var(--panel2));
+}
+.ach.hidden-ach.done {
+  border-color: #ffd83d;
+  background: color-mix(in srgb, #ffd83d 8%, var(--panel2));
+  box-shadow: 0 0 10px color-mix(in srgb, #ffd83d 25%, transparent);
+}
+.a-icon { font-size: 1.25rem; width: 28px; text-align: center; flex-shrink: 0; }
+.a-body { flex: 1; min-width: 0; }
+.a-name { font-size: .88rem; font-weight: 700; }
+.a-desc { font-size: .76rem; color: var(--ink2); }
+.a-state { font-size: .8rem; color: var(--ink3); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.ach.done .a-state { color: var(--acc); font-weight: 700; font-size: 1rem; }
+.ach.hidden-ach.done .a-state { color: #ffd83d; }
+.a-secret {
+  display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px;
+  border: 1px solid #ffd83d; color: #ffd83d; font-size: .68rem; vertical-align: middle;
+}
+.gold { color: #ffd83d; }
 
 /* ---------- Sammlung ---------- */
 .coll-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
