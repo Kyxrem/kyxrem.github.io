@@ -698,6 +698,41 @@ $("#reset-btn").addEventListener("click", () => {
   }
 });
 
+/* ---------- PWA: Installation & Offline ---------- */
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* offline-Modus dann eben nicht */ });
+}
+
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installEvt = e;
+  $("#install-btn").hidden = false;
+});
+$("#install-btn").addEventListener("click", async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  await installEvt.userChoice;
+  installEvt = null;
+  $("#install-btn").hidden = true;
+});
+window.addEventListener("appinstalled", () => {
+  $("#install-btn").hidden = true;
+  toast("📲 <b>Installiert!</b> Du findest den Kennzeichen-Sammler jetzt auf deinem Homescreen.", "ok");
+});
+
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+if (isIOS && !isStandalone && !localStorage.getItem("kz-ios-hint")) {
+  const hint = $("#ios-hint");
+  hint.hidden = false;
+  hint.querySelector("button").onclick = () => {
+    hint.hidden = true;
+    localStorage.setItem("kz-ios-hint", "1");
+  };
+}
+
 /* ---------- Start ---------- */
 
 const syncMsg = importFromHash();

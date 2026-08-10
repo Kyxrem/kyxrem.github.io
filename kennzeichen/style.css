@@ -19,6 +19,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
@@ -117,6 +118,16 @@ h1, h2, h3 { margin: 0; }
   animation: pop .25s ease-out;
 }
 .toast.ok { border-color: var(--acc); }
+.ios-hint {
+  margin-top: 10px; max-width: 560px; padding: 10px 14px; border-radius: 10px;
+  background: var(--panel2); border: 1px solid var(--blue); font-size: .9rem; color: var(--ink2);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.ios-hint b { color: var(--ink); }
+.ios-hint button {
+  margin-left: auto; background: var(--blue); color: #fff; border: 0; border-radius: 8px;
+  padding: 6px 14px; font-weight: 700; cursor: pointer;
+}
 .toast.warn { border-color: #c9a227; }
 .toast.err { border-color: var(--danger); }
 @keyframes pop { from { transform: scale(.96); opacity: 0; } }
@@ -301,6 +312,8 @@ footer { max-width: 1280px; margin: 0 auto; padding: 8px 18px 40px; }
 .tools button:hover, .tools .btn:hover { color: var(--ink); border-color: var(--ink3); }
 .tools .primary-btn { background: var(--acc); color: #06281c; border-color: var(--acc); font-weight: 700; }
 .tools .primary-btn:hover { color: #06281c; border-color: var(--acc); filter: brightness(1.1); }
+.tools .install-btn { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 700; }
+.tools .install-btn:hover { color: #fff; border-color: var(--blue); filter: brightness(1.12); }
 .tools .danger-btn:hover { color: var(--danger); border-color: var(--danger); }
 .attribution { color: var(--ink3); font-size: .75rem; margin-top: 14px; }
 .attribution a { color: var(--ink3); }
