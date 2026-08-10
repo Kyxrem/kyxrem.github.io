@@ -37,7 +37,7 @@ function freshState(th) {
     buildings: {}, walls: {}, heroes: {}, lab: {}, pets: {}, equip: {}, running: [],
     settings: { buildBoost: 0, labBoost: 0,
       lootGold: 12000000, lootElixir: 12000000, lootDark: 60000,
-      wallGoldDay: 3000000, wallElixirDay: 3000000,
+      wallGoldDay: 3000000, wallElixirDay: 3000000, apiEndpoint: "",
       oreWeekShiny: 6500, oreWeekGlowy: 550, oreWeekStarry: 15 },
   };
 }
@@ -130,45 +130,36 @@ function normalize() {
   const petsR = state.running.filter(r => r.q === "pet");
   const builds = state.running.filter(r => r.q === "builder");
   state.running = builds.slice(0, 6).concat(labs.slice(0, 1), petsR.slice(0, 1));
+  // Levels are stored raw and only clamped when read, so viewing a lower TH
+  // is a non-destructive preview — switching back restores everything.
   for (const b of BUILDINGS) {
     const n = effCount(b, th, "cur");
     let arr = (state.buildings[b.id] || []).slice();
-    const mx = maxLvlAt(b.rows, th);
-    arr = arr.map(l => Math.max(0, Math.min(l, mx)));
+    arr = arr.map(l => Math.max(0, Math.floor(l || 0)));
     arr.sort((a, bb) => bb - a);
-    if (arr.length > n) arr = arr.slice(0, n);
     while (arr.length < n) arr.push(0);
     state.buildings[b.id] = arr;
   }
-  const wMax = maxLvlAt(WALLS.rows, th);
   const wCount = WALLS.counts[th - 1] || 0;
-  let placed = 0;
   const walls = {};
-  for (let l = wMax; l >= 1; l--) {
-    let c = Math.max(0, Math.floor(state.walls[l] || 0));
-    c = Math.min(c, wCount - placed);
-    if (c > 0) walls[l] = c;
-    placed += c;
+  let placed = 0;
+  for (const [lvlStr, cnt] of Object.entries(state.walls)) {
+    const c = Math.max(0, Math.floor(cnt || 0));
+    const l = Math.floor(+lvlStr);
+    if (c > 0 && l >= 1) { walls[l] = (walls[l] || 0) + c; placed += c; }
   }
   if (placed < wCount) walls[1] = (walls[1] || 0) + (wCount - placed);
   state.walls = walls;
   for (const h of HEROES) {
-    const mx = maxLvlAt(h.rows, th);
-    state.heroes[h.id] = Math.max(0, Math.min(state.heroes[h.id] || 0, mx));
+    state.heroes[h.id] = Math.max(0, Math.floor(state.heroes[h.id] || 0));
   }
   for (const x of LAB) {
-    const mx = maxLvlAt(x.rows, th);
-    const unlocked = x.unlockTH <= th;
-    let l = state.lab[x.id] || 0;
-    if (unlocked && l < 1) l = 1;
-    state.lab[x.id] = Math.max(0, Math.min(l, mx));
+    let l = Math.max(0, Math.floor(state.lab[x.id] || 0));
+    if (x.unlockTH <= th && l < 1) l = 1;
+    state.lab[x.id] = l;
   }
   for (const p of PETS) {
-    const mx = maxLvlAt(p.rows, th);
-    const unlocked = p.unlockTH <= th;
-    let l = state.pets[p.id] || 0;
-    if (unlocked && l < 1) l = Math.max(l, 0);
-    state.pets[p.id] = Math.max(0, Math.min(l, mx));
+    state.pets[p.id] = Math.max(0, Math.floor(state.pets[p.id] || 0));
   }
   for (const id of Object.keys(state.equip)) {
     const e = byId[id];
@@ -211,13 +202,13 @@ function analyze(thArg) {
   // buildings
   for (const b of BUILDINGS) {
     const n = effCount(b, th, "max");
-    if (!n && !builtCount(b)) continue;
+    if (!n) continue;
     const mx = maxLvlAt(b.rows, th);
     const c = cat(b.cat);
-    const arr = (state.buildings[b.id] || []).slice();
+    const arr = (state.buildings[b.id] || []).slice().sort((x, y) => y - x);
     while (arr.length < n) arr.push(0);
-    for (let i = 0; i < arr.length; i++) {
-      const cur = arr[i];
+    for (let i = 0; i < n; i++) {
+      const cur = Math.min(arr[i], mx);
       c.spent += wcost(b.res, cumCost(b.rows, cur));
       c.total += wcost(b.res, cumCost(b.rows, mx));
       c.items++;
@@ -277,7 +268,7 @@ function analyze(thArg) {
     if (h.unlockTH > th) continue;
     const c = cat("heroes");
     const mx = maxLvlAt(h.rows, th);
-    const cur = state.heroes[h.id] || 0;
+    const cur = Math.min(state.heroes[h.id] || 0, mx);
     c.spent += wcost(h.res, cumCost(h.rows, cur));
     c.total += wcost(h.res, cumCost(h.rows, mx));
     c.items++;
@@ -293,7 +284,7 @@ function analyze(thArg) {
     if (x.unlockTH > th) continue;
     const c = cat("lab");
     const mx = maxLvlAt(x.rows, th);
-    const cur = Math.max(1, state.lab[x.id] || 1);
+    const cur = Math.min(Math.max(1, state.lab[x.id] || 1), mx);
     c.spent += wcost(x.res, cumCost(x.rows, cur));
     c.total += wcost(x.res, cumCost(x.rows, mx));
     c.items++;
@@ -309,7 +300,7 @@ function analyze(thArg) {
     if (p.unlockTH > th) continue;
     const c = cat("pets");
     const mx = maxLvlAt(p.rows, th);
-    const cur = Math.max(1, state.pets[p.id] || 1);
+    const cur = Math.min(Math.max(1, state.pets[p.id] || 1), mx);
     c.spent += wcost(p.res, cumCost(p.rows, cur));
     c.total += wcost(p.res, cumCost(p.rows, mx));
     c.items++;
@@ -393,7 +384,7 @@ function builderTasks(A) {
   for (const h of HEROES) {
     if (h.unlockTH > th) continue;
     const mx = maxLvlAt(h.rows, th);
-    let cur = state.heroes[h.id] || 0;
+    let cur = Math.min(state.heroes[h.id] || 0, mx);
     const seeded = consume(h.id, cur, h.id + ":0", h.name, h.res);
     stepsBetween(h.rows, cur + (seeded ? 1 : 0), mx).forEach((s, k) => {
       tasks.push({ kind: "hero", id: h.id, name: h.name, inst: 0, to: s.lvl, cost: s.cost, res: h.res,
@@ -404,10 +395,11 @@ function builderTasks(A) {
   for (const b of BUILDINGS) {
     const n = effCount(b, th, "max");
     const mx = maxLvlAt(b.rows, th);
-    const arr = (state.buildings[b.id] || []).slice();
+    const arr = (state.buildings[b.id] || []).slice().sort((x, y) => y - x);
     while (arr.length < n) arr.push(0);
     const tier = buildingTier(b);
-    arr.forEach((cur, i) => {
+    arr.slice(0, n).forEach((cur, i) => {
+      cur = Math.min(cur, mx);
       const seeded = consume(b.id, cur, b.id + ":" + i, b.name, b.res);
       if (seeded) cur += 1;
       stepsBetween(b.rows, cur, mx).forEach((s, k) => {
@@ -442,35 +434,84 @@ function schedule(tasks, workers, boostPct, seeds) {
     lanes[i].items.push(item);
     instAvail[sd.key] = sd.end;
   });
+  // Resource balancing: each free builder takes the highest-priority job from
+  // whichever resource is least ahead of its farming budget (loot/day rates
+  // from To Max), so spending is spread across gold/elixir/dark instead of
+  // burning one resource first.
+  const rate = {
+    gold: Math.max(1, state.settings.lootGold || 0),
+    elixir: Math.max(1, state.settings.lootElixir || 0),
+    dark: Math.max(1, state.settings.lootDark || 0),
+  };
+  const spent = { gold: 0, elixir: 0, dark: 0 };
   const timeline = [];
   const pending = tasks.map(t => ({ ...t }));
+  // remaining same-instance chain hours: a hero's queued levels can only run
+  // one after another, so a long chain is a hard lower bound on the finish date
+  const chainRem = {};
+  let workLeft = 0;
+  for (const t of pending) {
+    const dur = t.time * factor;
+    chainRem[t.id + ":" + t.inst] = (chainRem[t.id + ":" + t.inst] || 0) + dur;
+    workLeft += dur;
+  }
   const started = {};
   let guard = 0;
   while (pending.length && guard++ < 30000) {
     let lane = lanes[0];
     for (const l of lanes) if (l.free < lane.free) lane = l;
-    // first eligible task whose instance is idle by the time this lane frees up;
-    // otherwise the eligible one that becomes available soonest
-    let idx = -1, fbIdx = -1, fbAvail = Infinity;
+    // gather every task whose instance is idle by the time this lane frees up
+    const nowIdx = [];
+    let fbIdx = -1, fbAvail = Infinity;
     for (let i = 0; i < pending.length; i++) {
       const t = pending[i];
       const key = t.id + ":" + t.inst;
       if ((started[key] || 0) !== t.seq) continue;
       const avail = instAvail[key] || 0;
-      if (avail <= lane.free) { idx = i; break; }
-      if (avail < fbAvail) { fbAvail = avail; fbIdx = i; }
+      if (avail <= lane.free) nowIdx.push(i);
+      else if (avail < fbAvail) { fbAvail = avail; fbIdx = i; }
     }
-    if (idx === -1) idx = fbIdx;
+    let idx = -1;
+    if (nowIdx.length) {
+      // time comes first: if the longest startable chain is at least the
+      // average remaining load per builder, postponing it would push the whole
+      // finish date — continue that chain now. Resource balancing only gets to
+      // reorder work that has slack.
+      let busyBeyond = 0;
+      for (const l of lanes) busyBeyond += Math.max(0, l.free - lane.free);
+      let bestC = -1, bestH = 0;
+      for (const i of nowIdx) {
+        const h = chainRem[pending[i].id + ":" + pending[i].inst] || 0;
+        if (h > bestH) { bestH = h; bestC = i; }
+      }
+      if (bestC !== -1 && bestH >= (workLeft + busyBeyond) / lanes.length) {
+        idx = bestC;
+      } else {
+        const day = lane.free / 24 + 1;
+        const resOrder = ["gold", "elixir", "dark"]
+          .sort((a, b) => spent[a] / (rate[a] * day) - spent[b] / (rate[b] * day));
+        for (const res of resOrder) {
+          const hit = nowIdx.find(i => pending[i].res === res);
+          if (hit !== undefined) { idx = hit; break; }
+        }
+        if (idx === -1) idx = nowIdx[0];
+      }
+    } else {
+      idx = fbIdx;
+    }
     if (idx === -1) break;
     const t = pending.splice(idx, 1)[0];
     const key = t.id + ":" + t.inst;
     started[key] = (started[key] || 0) + 1;
     const start = Math.max(lane.free, instAvail[key] || 0);
     const dur = t.time * factor;
-    const item = { ...t, start, end: start + dur, lane: lanes.indexOf(lane) };
+    const item = { ...t, start, end: start + dur, lane: lanes.indexOf(lane), ord: timeline.length };
     lane.free = item.end;
     lane.items.push(item);
     instAvail[key] = item.end;
+    chainRem[key] = Math.max(0, (chainRem[key] || 0) - dur);
+    workLeft = Math.max(0, workLeft - dur);
+    spent[t.res] += t.cost;
     timeline.push(item);
   }
   timeline.sort((a, b) => a.start - b.start || a.end - b.end);
@@ -484,7 +525,7 @@ function labQueue() {
   for (const x of LAB) {
     if (x.unlockTH > th) continue;
     const mx = maxLvlAt(x.rows, th);
-    const cur = Math.max(1, state.lab[x.id] || 1);
+    const cur = Math.min(Math.max(1, state.lab[x.id] || 1), mx);
     stepsBetween(x.rows, cur, mx).forEach((s, k) => {
       const prevRow = x.rows.find(r => r.lvl === s.lvl - 1);
       const dDps = (s.dps || 0) - (prevRow && prevRow.dps || 0);
@@ -501,7 +542,7 @@ function petQueue() {
   for (const p of PETS) {
     if (p.unlockTH > th) continue;
     const mx = maxLvlAt(p.rows, th);
-    const cur = Math.max(1, state.pets[p.id] || 1);
+    const cur = Math.min(Math.max(1, state.pets[p.id] || 1), mx);
     stepsBetween(p.rows, cur, mx).forEach((s, k) => {
       items.push({ id: p.id, name: p.name, to: s.lvl, cost: s.cost, res: p.res, time: s.time, seq: k });
     });
@@ -606,7 +647,7 @@ function progRow(name, spent, total, extra) {
 }
 
 /* ---------------- tabs ---------------- */
-const TABS = ["overview", "base", "plan", "tomax", "metrics", "io"];
+const TABS = ["overview", "base", "plan", "tomax", "metrics", "builder", "io"];
 let activeTab = "overview";
 let ganttHorizon = 56; // days shown in the plan timetable; 0 = everything
 function switchTab(t) {
@@ -624,6 +665,7 @@ function renderActive() {
   if (activeTab === "plan") renderPlan();
   if (activeTab === "tomax") renderToMax();
   if (activeTab === "metrics") renderMetrics();
+  if (activeTab === "builder") renderBuilder();
   if (activeTab === "io") renderIO();
 }
 
@@ -810,20 +852,24 @@ function taskLabel(t) {
 }
 
 function ganttHTML(sched, labTL, petTL) {
-  const PX = 26;
   const finishH = Math.max(sched.finish,
     labTL.length ? labTL[labTL.length - 1].end : 0,
     petTL.length ? petTL[petTL.length - 1].end : 0);
   if (finishH <= 0) return '<p class="muted">Nothing left to schedule — this TH is done. 🎉</p>';
   const horizonD = ganttHorizon === 0 ? Math.ceil(finishH / 24) + 1 : ganttHorizon;
+  // zoom: the selected horizon always fills the available width
+  const mainW = (document.querySelector("main") || document.body).clientWidth || 1100;
+  const avail = Math.max(320, mainW - 36 /* card padding */ - 108 /* labels */ - 4);
+  const PX = Math.min(48, Math.max(7, Math.floor(avail / horizonD)));
   const width = horizonD * PX;
   const rows = [];
   for (let i = 0; i < state.builders; i++)
     rows.push({ label: "Builder " + (i + 1), items: (sched.lanes[i] || { items: [] }).items });
   rows.push({ label: "Laboratory", items: labTL });
   rows.push({ label: "Pet House", items: petTL });
+  const tickStep = horizonD > 90 ? 28 : horizonD > 45 ? 14 : 7;
   let ticks = "";
-  for (let d = 0; d < horizonD; d += 7) {
+  for (let d = 0; d < horizonD; d += tickStep) {
     const date = new Date(Date.now() + d * 86400000)
       .toLocaleDateString("en-US", { month: "short", day: "numeric" });
     ticks += `<div class="g-tick" style="left:${d * PX}px"><b>${d === 0 ? "today" : "day " + d}</b>${date}</div>`;
@@ -839,7 +885,7 @@ function ganttHTML(sched, labTL, petTL) {
         .toLocaleDateString("en-US", { month: "short", day: "numeric" });
       const title = `${label} · ${fmt(t.cost)} ${RES_LABEL[t.res]} · ${fmtH(t.end - t.start)} · day ${Math.floor(sD)}–${Math.ceil(eD)} (done ${endDate})`;
       return `<div class="g-block ${t.res === "dark" ? "dark" : t.res}${cut ? " cut" : ""}${t.running ? " running" : ""}" ` +
-        `style="left:${(sD * PX).toFixed(1)}px;width:${w.toFixed(1)}px" title="${esc((t.running ? "IN PROGRESS — " : "") + title)}">` +
+        `style="left:${(sD * PX).toFixed(1)}px;width:${w.toFixed(1)}px" data-tip="${esc((t.running ? "IN PROGRESS — " : "") + title)}">` +
         `${w > 68 ? (t.running ? "▶ " : "") + esc(label) : ""}</div>`;
     }).join("");
     return `<div class="g-track" style="width:${width}px">${blocks}</div>`;
@@ -859,6 +905,7 @@ function renderPlan() {
   const lab = labQueue();
   const pets = petQueue();
   const labFactor = 1 - (state.settings.labBoost || 0) / 100;
+  const bFactor = 1 - (state.settings.buildBoost || 0) / 100;
   const nowMs = Date.now();
   const runLab = state.running.find(r => r.q === "lab");
   let accL = 0;
@@ -886,46 +933,77 @@ function renderPlan() {
     const start = accPt; accPt += t.time * labFactor;
     petTL.push({ ...t, start, end: accPt });
   }
-  const bFactor = 1 - (state.settings.buildBoost || 0) / 100;
-  const runningRows = state.running.map((r, i) => {
+
+  const runningRows = state.running.map(r => {
     const item = byId[r.id];
     if (!item) return "";
     const remH = (r.endTs - nowMs) / 3.6e6;
     const icon = r.q === "lab" ? "🧪" : r.q === "pet" ? "🐾" : "🔨";
-    return `<div class="plan-item"><div class="idx">${icon}</div>
+    return `<div class="plan-item" style="grid-template-columns:34px 1fr auto">
+      <div class="idx">${icon}</div>
       <div class="what"><b>${esc(item.name)}</b> → L${r.to}
-        <div class="why">finishes ${new Date(r.endTs).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div></div>
-      <div class="cost">${fmtH(remH)} left</div>
-      <div class="dur"><button class="btn sm ghost" data-rdone="${i}">finish now</button></div>
-      <div class="when"><button class="btn sm ghost" data-rcancel="${i}">cancel</button></div></div>`;
+        <div class="why">imported from your village — the level applies automatically when the timer ends</div></div>
+      <div class="cost">${fmtH(remH)} left · done ${new Date(r.endTs).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>
+    </div>`;
   }).join("");
 
-  const planRows = sched.timeline.slice(0, 60).map((t, i) => `
-    <div class="plan-item">
+  // ---- next up: the first builder jobs to queue, with their price tags ----
+  const nextUp = sched.timeline.filter(t => !t.running)
+    .sort((a, b) => a.start - b.start || a.ord - b.ord).slice(0, state.builders);
+  const nuTotal = { gold: 0, elixir: 0, dark: 0, time: 0 };
+  const nextRows = nextUp.map((t, i) => {
+    nuTotal[t.res] += t.cost; nuTotal.time += t.end - t.start;
+    const startTxt = t.start < 1 ? "start now"
+      : `in ${fmtH(t.start)} (${new Date(Date.now() + t.start * 3.6e6).toLocaleDateString("en-US", { month: "short", day: "numeric" })})`;
+    return `<div class="plan-item" style="grid-template-columns:34px 1fr auto">
       <div class="idx">${i + 1}</div>
-      <div class="what"><b>${esc(t.name)}</b>${t.kind === "building" && (state.buildings[t.id] || []).length > 1 ? ` <span class="muted">#${t.inst + 1}</span>` : ""}
-        → L${t.to} <div class="why">${esc(t.why)}</div></div>
-      <div class="cost">${resTxt(t.res, t.cost)}</div>
-      <div class="dur">${t.seq === 0 ? `<button class="btn sm ghost" title="mark as started in game now" data-sq="builder" data-sid="${t.id}" data-sto="${t.to}" data-stime="${(t.time * bFactor).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.time * bFactor)}</div>
-      <div class="when" title="builder ${t.lane + 1}">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)} · B${t.lane + 1}</div>
-    </div>`).join("");
+      <div class="what"><b>${esc(t.name)}</b> → L${t.to}
+        <div class="why">${esc(t.why || "")}</div></div>
+      <div class="cost"><span class="dot ${t.res === "dark" ? "dark" : t.res}"></span> ${fmt(t.cost)} ${RES_LABEL[t.res]}
+        · ${fmtH((t.end - t.start))} · ${startTxt}</div>
+    </div>`;
+  }).join("");
+  const nuParts = ["gold", "elixir", "dark"].filter(r => nuTotal[r])
+    .map(r => `<b>${fmt(nuTotal[r])}</b> ${RES_LABEL[r]}`);
+  const nuLab = labTL.find(t => !t.running);
+  const nuPet = petTL.find(t => !t.running);
+  const nuSide = [
+    nuLab ? `Laboratory: <b>${esc(nuLab.name)}</b> → L${nuLab.to} (${fmt(nuLab.cost)} ${RES_LABEL[nuLab.res]})` : "",
+    nuPet ? `Pet House: <b>${esc(nuPet.name)}</b> → L${nuPet.to} (${fmt(nuPet.cost)} ${RES_LABEL[nuPet.res]})` : "",
+  ].filter(Boolean).join(" · ");
 
-  const labRows = labTL.slice(0, 40).map((t, i) => `<div class="plan-item"><div class="idx">${t.running ? "▶" : i + 1}</div>
-      <div class="what"><b>${esc(t.name)}</b> → L${t.to}<div class="why">${t.running ? "researching now" : "lab tier " + t.tier}</div></div>
-      <div class="cost">${t.running ? "" : resTxt(t.res, t.cost)}</div>
-      <div class="dur">${!t.running && i === (runLab ? 1 : 0) && !runLab ? `<button class="btn sm ghost" data-sq="lab" data-sid="${t.id}" data-sto="${t.to}" data-stime="${((t.end - t.start)).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.end - t.start)}</div>
-      <div class="when">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)}</div></div>`).join("");
-  const petRows = petTL.slice(0, 20).map((t, i) => `<div class="plan-item"><div class="idx">${t.running ? "▶" : i + 1}</div>
-      <div class="what"><b>${esc(t.name)}</b> → L${t.to}${t.running ? '<div class="why">upgrading now</div>' : ""}</div>
-      <div class="cost">${t.running ? "" : resTxt(t.res, t.cost)}</div>
-      <div class="dur">${!t.running && i === 0 && !runPet ? `<button class="btn sm ghost" data-sq="pet" data-sid="${t.id}" data-sto="${t.to}" data-stime="${(t.end - t.start).toFixed(3)}">▶ start</button> ` : ""}${fmtH(t.end - t.start)}</div>
-      <div class="when">day ${Math.floor(t.start / 24)}–${Math.ceil(t.end / 24)}</div></div>`).join("");
+  // ---- queue + category summaries instead of per-upgrade lists ----
+  const sumRes = list => {
+    const o = { n: 0, time: 0, gold: 0, elixir: 0, dark: 0 };
+    for (const t of list) { o.n++; o.time += t.time || 0; o[t.res] += t.cost || 0; }
+    return o;
+  };
+  const bSum = sumRes(tasks.map(t => ({ ...t, time: t.time * bFactor })));
+  const lSum = sumRes(lab.map(t => ({ ...t, time: t.time * labFactor })));
+  const pSum = sumRes(pets.map(t => ({ ...t, time: t.time * labFactor })));
+  const resCells = o => `<td>${o.gold ? fmt(o.gold) : "–"}</td><td>${o.elixir ? fmt(o.elixir) : "–"}</td><td>${o.dark ? fmt(o.dark) : "–"}</td>`;
+  const queueRows = `
+    <tr><td>Builders × ${state.builders}</td><td>${bSum.n}</td><td>${fmtDays(bSum.time)}</td>
+      <td>${fmtDays(sched.finish)}</td>${resCells(bSum)}</tr>
+    <tr><td>Laboratory</td><td>${lSum.n}</td><td>${fmtDays(lSum.time)}</td><td>${fmtDays(accL)}</td>${resCells(lSum)}</tr>
+    <tr><td>Pet House</td><td>${pSum.n}</td><td>${fmtDays(pSum.time)}</td><td>${fmtDays(accPt)}</td>${resCells(pSum)}</tr>`;
 
-  const labDays = accL / 24;
+  const TIER_LABEL = { 0: "Heroes", 1: "Army, unlocks & gating storages", 2: "Key defenses",
+    3: "Splash defenses", 4: "Point defenses & huts", 5: "Traps", 6: "Storages", 7: "Collectors" };
+  const byTier = {};
+  for (const t of tasks) {
+    const g = byTier[t.tier] || (byTier[t.tier] = { n: 0, time: 0, gold: 0, elixir: 0, dark: 0 });
+    g.n++; g.time += t.time * bFactor; g[t.res] += t.cost;
+  }
+  const tierRows = Object.keys(byTier).sort((a, b) => a - b).map(k => {
+    const g = byTier[k];
+    return `<tr><td>${TIER_LABEL[k] || "Other"}</td><td>${g.n}</td><td>${fmtDays(g.time)}</td><td></td>${resCells(g)}</tr>`;
+  }).join("");
+
   root.innerHTML = `
   <div class="grid cols-4" style="margin-bottom:14px">
     ${tile("Builder queue", `${tasks.length} upgrades`, "time", `≈ ${fmtDays(sched.finish)} with ${state.builders} builders`)}
-    ${tile("Lab queue", `${lab.length} researches`, "time", `≈ ${fmtDays(labDays * 24)}`)}
+    ${tile("Lab queue", `${lab.length} researches`, "time", `≈ ${fmtDays(accL)}`)}
     ${tile("Pet queue", `${pets.length} upgrades`, "time", `≈ ${fmtDays(accPt)}`)}
     <div class="card tile"><div class="label"><span class="dot accent"></span>Boosts</div>
       <div class="io-row" style="margin:6px 0 0">
@@ -933,13 +1011,24 @@ function renderPlan() {
         <label class="field small">lab −<select id="labBoost">${[0, 10, 15, 20].map(v => `<option ${v === state.settings.labBoost ? "selected" : ""}>${v}</option>`).join("")}</select>%</label>
       </div><div class="delta">Gold Pass / events time discount</div></div>
   </div>
-  ${state.running.length ? `<div class="card" style="margin-bottom:14px"><h2>Running now</h2>
-    <div class="note">Imported from your village export or marked started here. These occupy their lanes in the timetable; when a timer lapses, the level is applied automatically.</div>
-    ${runningRows}</div>` : ""}
+  ${state.running.length ? `<div class="card" style="margin-bottom:14px"><h2>Running now</h2>${runningRows}</div>` : ""}
+  <div class="card" style="margin-bottom:14px"><h2>Next up — fill your queue</h2>
+    <div class="note">The first ${nextUp.length} builder jobs from the timetable, in order. "Start now" rows fit a
+    free builder today; the others begin when a builder (or that building's own running upgrade) frees up.</div>
+    ${nextRows || '<p class="muted">Nothing left to build — this TH is done. 🎉</p>'}
+    ${nextUp.length ? `<div class="nu-total">Together they'll take ${nuParts.join(" + ")}
+      · ${fmtDays(nuTotal.time)} of builder time</div>` : ""}
+    ${nuSide ? `<div class="nu-side">Also queue — ${nuSide}</div>` : ""}
+  </div>
   <div class="card" style="margin-bottom:14px"><h2>Timetable</h2>
-    <div class="note">Every queue as a lane, every upgrade as a bar spanning its days. Builders follow the
-    priority order below; the Laboratory and Pet House are single queues. Hover a bar for cost and finish date.
-    Walls aren't shown — they're instant. Change the builder count in the header to add or remove lanes.</div>
+    <div class="note">Every queue as a lane, every upgrade as a bar spanning its days — the selected range always
+    fills the width, so picking fewer weeks zooms in. Hover or tap a bar for full details. Each free builder takes
+    the highest-priority job (heroes → army & unlocks → key defenses → splash → point → traps → resources) from
+    whichever resource is least ahead of your loot/day rates (set in To Max), so gold, elixir and dark elixir
+    spending stay balanced instead of burning one resource first — except when an upgrade chain is long enough
+    to set the finish date (usually a hero): that always continues immediately, so balancing never makes the
+    plan take longer. The Laboratory and Pet House are single queues.
+    Walls aren't scheduled — they're instant and only cost resources.</div>
     <div class="g-legend">
       <span><span class="dot gold"></span> costs gold</span>
       <span><span class="dot elixir"></span> costs elixir</span>
@@ -956,18 +1045,17 @@ function renderPlan() {
     ${ganttHTML(sched, labTL, petTL)}
   </div>
   <div class="grid cols-2">
-    <div class="card"><h2>Builder schedule</h2>
-      <div class="note">Priority: heroes → army/unlock buildings → storages when gating → key defenses → splash → point → traps → resources.
-      Within a tier, best (ΔDPS + ΔHP/6) per cost first. Days assume builders never idle.
-      Walls aren't scheduled — they're instant and only cost resources.</div>
-      ${planRows || '<p class="muted">Nothing to upgrade — this TH is maxed. 🎉</p>'}
-      ${sched.timeline.length > 60 ? `<p class="small muted">…and ${sched.timeline.length - 60} more.</p>` : ""}</div>
-    <div>
-      <div class="card" style="margin-bottom:14px"><h2>Laboratory order</h2>
-        <div class="note">Single queue — meta troops and war spells first (tier 1 → 3), then value per cost.</div>
-        ${labRows || '<p class="muted">Lab is done for this TH.</p>'}
-        ${lab.length > 40 ? `<p class="small muted">…and ${lab.length - 40} more.</p>` : ""}</div>
-      <div class="card"><h2>Pet House order</h2>${petRows || '<p class="muted">No pet upgrades available.</p>'}</div>
+    <div class="card"><h2>Queue summary</h2>
+      <div class="table-scroll"><table class="data">
+        <thead><tr><th>Queue</th><th>Upgrades</th><th>Work</th><th>Calendar</th><th>Gold</th><th>Elixir</th><th>Dark</th></tr></thead>
+        <tbody>${queueRows}</tbody></table></div>
+      <p class="small muted">Work = summed upgrade time (boosts applied) · Calendar = when the queue actually finishes.</p>
+    </div>
+    <div class="card"><h2>Builder work by priority group</h2>
+      <div class="table-scroll"><table class="data">
+        <thead><tr><th>Group</th><th>Upgrades</th><th>Work</th><th></th><th>Gold</th><th>Elixir</th><th>Dark</th></tr></thead>
+        <tbody>${tierRows}</tbody></table></div>
+      <p class="small muted">Groups are scheduled top to bottom; the timetable shows the resulting order per builder.</p>
     </div>
   </div>`;
 }
@@ -1000,6 +1088,11 @@ function renderToMax() {
   const eta = new Date(Date.now() + Math.min(bottleneck, 36500) * 86400000);
   const wallEtaDate = isFinite(wallDays) ? new Date(Date.now() + wallDays * 86400000) : null;
   const segCost = A.wall.segsLeft ? A.wall.rem / A.wall.segsLeft : 0;
+  // split the wall bill across both currencies, following your daily budget ratio
+  const wg = s.wallGoldDay || 0, we = s.wallElixirDay || 0;
+  const ratioE = wg + we > 0 ? we / (wg + we) : 0.5;
+  const wallElixirShare = Math.min(A.wall.remElixirOk, Math.round(A.wall.rem * ratioE));
+  const wallGoldShare = A.wall.rem - wallElixirShare;
   const segsPerWeek = segCost > 0 ? 7 * ((s.wallGoldDay || 0) + (s.wallElixirDay || 0)) / segCost : 0;
 
   const catRows = Object.entries(A.cats).filter(([k, c]) => c.total > 0 && k !== "walls" && k !== "equipment").map(([k, c]) => {
@@ -1078,7 +1171,7 @@ function renderToMax() {
     ${tile("Gold to max TH" + state.th, fmt(A.totals.res.gold), "gold", "buildings + traps — walls tracked separately")}
     ${tile("Elixir to max TH" + state.th, fmt(A.totals.res.elixir), "elixir", "buildings + research")}
     ${tile("Dark Elixir to max TH" + state.th, fmt(A.totals.res.dark), "dark", "heroes + research")}
-    ${tile("Walls to max", fmt(A.wall.rem), "gold", `${A.wall.segsLeft} segments · payable with gold${A.wall.remElixirOk >= A.wall.rem ? " or elixir" : A.wall.remElixirOk > 0 ? " (partly elixir)" : ""}`)}
+    ${tile("Walls to max", fmt(A.wall.rem), "gold", A.wall.rem > 0 ? `${A.wall.segsLeft} segments ≈ <span class="res-txt"><span class="dot gold"></span>${fmt(wallGoldShare)}</span> + <span class="res-txt"><span class="dot elixir"></span>${fmt(wallElixirShare)}</span> at your split` : "done")}
   </div>
   ${thPreview}
   <div class="grid cols-2" style="margin-bottom:14px">
@@ -1118,7 +1211,9 @@ function renderToMax() {
         <label class="field">Elixir/day <input type="number" class="wide" id="wallElixirDay" value="${s.wallElixirDay}" step="500000"></label>
       </div>
       <p class="small" style="margin:6px 0 10px">≈ <b>${segsPerWeek.toFixed(1)}</b> walls/week →
-        done in <b>${isFinite(wallDays) ? Math.ceil(wallDays) + " days" : "∞"}</b>${wallEtaDate ? ` (<b>${wallEtaDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</b>)` : ""}.</p>` : ""}
+        done in <b>${isFinite(wallDays) ? Math.ceil(wallDays) + " days" : "∞"}</b>${wallEtaDate ? ` (<b>${wallEtaDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</b>)` : ""}.
+        Split at this budget: <span class="res-txt"><span class="dot gold"></span><b>${fmt(wallGoldShare)}</b> gold</span> +
+        <span class="res-txt"><span class="dot elixir"></span><b>${fmt(wallElixirShare)}</b> elixir</span>${wallElixirShare >= A.wall.remElixirOk && A.wall.remElixirOk < A.wall.rem ? " (elixir capped by eligibility)" : ""}.</p>` : ""}
       <div class="table-scroll"><table class="data">
         <thead><tr><th>Walls</th><th>Count</th><th>To max, each</th><th>Subtotal</th></tr></thead>
         <tbody>${wallRows}</tbody></table></div>
@@ -1417,31 +1512,33 @@ function exportState() {
   return JSON.stringify({ format: "clash-analyzer-base", exported: new Date().toISOString(), state }, null, 2);
 }
 
-async function fetchFromAPI(tag, token, base) {
-  const t = tag.trim().replace(/^#/, "").toUpperCase();
-  const b = (base || "https://api.clashofclans.com").replace(/\/+$/, "");
-  const url = `${b}/v1/players/%23${encodeURIComponent(t)}`;
-  const res = await fetch(url, { headers: token ? { Authorization: "Bearer " + token.trim() } : {} });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`API responded ${res.status}. ${body.slice(0, 160)}`);
-  }
-  return res.json();
+async function fetchByTag(game, tag) {
+  const ep = (state.settings.apiEndpoint || "").trim().replace(/\/+$/, "");
+  if (!ep) throw new Error("Set your relay URL once (see the setup note in this card)");
+  const t = (tag || "").trim().replace(/^#/, "").toUpperCase();
+  if (!t) throw new Error("Enter a player tag");
+  const res = await fetch(`${ep}/${game}/players/${encodeURIComponent(t)}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Relay responded ${res.status}: ${body.error || body.reason || body.message || "unknown error"}`);
+  return body;
 }
 
 function renderIO() {
   const root = $("#tab-io");
   root.innerHTML = `
   <div class="grid cols-2">
-    <div class="card"><h2>Fetch from the Clash of Clans API</h2>
-      <div class="note">Needs a token from <a href="https://developer.clashofclans.com" target="_blank" rel="noopener">developer.clashofclans.com</a>.
-      The official API blocks browsers (no CORS) and pins your IP, so from this page you usually need a proxy you trust —
-      e.g. run <code>cocproxy</code> locally, or use the RoyaleAPI proxy IP (<code>45.79.218.79</code>) when creating the key and
-      set the proxy base URL below. If it fails, use “Paste JSON” instead — same data.</div>
-      <div class="io-row"><input class="txt" id="apiTag" placeholder="Player tag, e.g. #2PP0J0LL" style="max-width:220px">
-        <input class="txt" id="apiBase" placeholder="API base (default: https://api.clashofclans.com — or your proxy)" ></div>
-      <textarea class="io" id="apiToken" placeholder="API token (kept only in this browser)" style="min-height:70px"></textarea>
-      <div class="io-row"><button class="btn" id="apiGo">Fetch player</button></div>
+    <div class="card"><h2>Fetch by player tag</h2>
+      <div class="note">Enter your tag and fetch straight from the official API — troops, heroes, spells, pets and
+      equipment come in by name. Needs the 5-minute self-hosted
+      <a href="https://github.com/Kyxrem/kyxrem.github.io/tree/claude/clash-of-clans-analyzer-l3aqze/api-relay" target="_blank" rel="noopener">API relay setup</a>
+      once — a tiny Node server at home holding your tokens in <code>api-relay/.env</code>; after that it's tag-only.
+      Building levels still come from the village export / My Base.</div>
+      <div class="io-row">
+        <input class="txt" id="apiTag" placeholder="#QCPPQLQU" value="${esc(state.tag || "")}" style="max-width:180px">
+        <button class="btn" id="apiGo">Fetch</button>
+      </div>
+      <div class="io-row small"><label class="field" style="flex:1;min-width:260px">Relay URL
+        <input class="txt" id="apiEndpoint" value="${esc(state.settings.apiEndpoint || "")}" placeholder="http://localhost:8901 or https://relay.your.domain"></label></div>
       <div id="apiMsg"></div>
     </div>
     <div class="card"><h2>Paste / upload JSON</h2>
@@ -1518,7 +1615,852 @@ function loadSample() {
 }
 
 /* ---------------- events ---------------- */
+function bindTooltip() {
+  const tip = el('<div class="g-tip" hidden></div>');
+  document.body.appendChild(tip);
+  let pinned = false;
+  const place = (x, y) => {
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(6, Math.min(x + 12, innerWidth - w - 8)) + "px";
+    tip.style.top = (y + 16 + h > innerHeight ? y - h - 10 : y + 16) + "px";
+  };
+  const show = (b, x, y) => { tip.textContent = b.dataset.tip; place(x, y); };
+  const hide = () => { tip.hidden = true; pinned = false; };
+  const main = document.querySelector("main");
+  main.addEventListener("pointerover", e => {
+    if (pinned || e.pointerType === "touch") return;
+    const b = e.target.closest(".g-block[data-tip]");
+    if (b) show(b, e.clientX, e.clientY);
+  });
+  main.addEventListener("pointermove", e => {
+    if (pinned || tip.hidden || e.pointerType === "touch") return;
+    place(e.clientX, e.clientY);
+  });
+  main.addEventListener("pointerout", e => {
+    if (!pinned && e.target.closest && e.target.closest(".g-block[data-tip]")) tip.hidden = true;
+  });
+  document.addEventListener("click", e => {   // tap on mobile pins the tip; tap elsewhere closes it
+    const b = e.target.closest && e.target.closest(".g-block[data-tip]");
+    if (b) { pinned = true; show(b, e.clientX, e.clientY); }
+    else hide();
+  });
+}
+
+/* ---------- Base Builder (layout creator with ground/air coverage) ---------- */
+const LAY = window.COC_LAYOUT || { grid: 44, sizes: {}, defs: {}, thWeapon: {} };
+const BGRID = LAY.grid || 44;
+const BLS_KEY = "clashLayoutsV1";
+const B_ABBR = {
+  cannon: "Ca", archer_tower: "AT", mortar: "Mo", air_defense: "AD", wizard_tower: "WT",
+  air_sweeper: "AS", hidden_tesla: "Te", bomb_tower: "BT", x_bow: "XB", inferno_tower: "IT",
+  eagle_artillery: "EA", scattershot: "Sc", spell_tower: "SpT", monolith: "Mn",
+  multi_archer_tower: "MA", ricochet_cannon: "RC", multi_gear_tower: "MG", firespitter: "FS",
+  builder_s_hut: "BH", revenge_tower: "RT",
+  bomb: "b", spring_trap: "sp", air_bomb: "ab", giant_bomb: "GB", seeking_air_mine: "sam",
+  skeleton_trap: "sk", tornado_trap: "to", giga_bomb: "GB!",
+  gold_mine: "GM", elixir_collector: "EC", dark_elixir_drill: "DD", gold_storage: "GS",
+  elixir_storage: "ES", dark_elixir_storage: "DS",
+  army_camp: "Camp", barracks: "Br", dark_barracks: "DBr", laboratory: "Lab",
+  spell_factory: "SF", dark_spell_factory: "DSF", clan_castle: "CC", workshop: "WS",
+  pet_house: "PH", blacksmith: "BS", hero_hall: "HH", crafting_station: "CS", town_hall: "TH",
+};
+const B_COLOR = { defense: "#d95926", trap: "#57534e", resource: "#c98500",
+  army: "#9085e9", other: "#3987e5", wall: "#c3c2b7" };
+
+let layouts = null;
+let bTool = null;      // {mode:"place", id} | {mode:"erase"} | null = select/move
+let bSel = -1;         // selected item index in slot.items
+let bCover = "off";    // off | g | a | b
+let bHover = null;     // hovered tile {x,y}
+let bDrag = null;      // {i, ox, oy, gx, gy, moved}
+let bPaint = false;    // painting walls / erasing during drag
+let bShellBuilt = false;
+let bDelArm = 0;
+let bPx = 12;
+
+function bLoad() {
+  try {
+    const s = JSON.parse(localStorage.getItem(BLS_KEY));
+    if (s && s.v === 1 && Array.isArray(s.slots)) return s;
+  } catch (e) {}
+  return { v: 1, cur: 0, slots: [] };
+}
+function bSaveL() { try { localStorage.setItem(BLS_KEY, JSON.stringify(layouts)); } catch (e) {} }
+function bSlot() {
+  if (!layouts.slots.length) {
+    layouts.slots.push({ name: "TH" + state.th + " layout 1", th: state.th, items: [], walls: [] });
+    layouts.cur = 0;
+    bSaveL();
+  }
+  layouts.cur = Math.min(Math.max(0, layouts.cur), layouts.slots.length - 1);
+  return layouts.slots[layouts.cur];
+}
+
+function bSizeOf(id) { return LAY.sizes[id] || [1, 1]; }
+function bInventory(th) {
+  const inv = [{ id: "town_hall", name: "Town Hall", cat: "other", count: 1 }];
+  const order = { defense: 1, trap: 2, resource: 3, army: 4 };
+  const rest = [];
+  for (const b of BUILDINGS) {
+    const n = effCount(b, th, "max");
+    if (n && LAY.sizes[b.id]) rest.push({ id: b.id, name: b.name, cat: b.cat, count: n });
+  }
+  rest.sort((a, c) => order[a.cat] - order[c.cat] || a.name.localeCompare(c.name));
+  inv.push(...rest);
+  const wallN = WALLS.counts[th - 1] || 0;
+  if (wallN) inv.push({ id: "wall", name: "Walls", cat: "wall", count: wallN });
+  return inv;
+}
+function bPlacedCounts(slot) {
+  const m = { wall: slot.walls.length };
+  for (const it of slot.items) m[it.b] = (m[it.b] || 0) + 1;
+  return m;
+}
+function bRect(it) { const s = bSizeOf(it.b); return { x: it.x, y: it.y, w: s[0], h: s[1] }; }
+function bItemAt(slot, x, y) {
+  for (let i = slot.items.length - 1; i >= 0; i--) {
+    const r = bRect(slot.items[i]);
+    if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return i;
+  }
+  return -1;
+}
+function bWallAt(slot, x, y) { return slot.walls.findIndex(w => w[0] === x && w[1] === y); }
+function bCollide(slot, id, x, y, skip) {
+  const s = bSizeOf(id);
+  if (x < 0 || y < 0 || x + s[0] > BGRID || y + s[1] > BGRID) return true;
+  for (let i = 0; i < slot.items.length; i++) {
+    if (i === skip) continue;
+    const r = bRect(slot.items[i]);
+    if (x < r.x + r.w && x + s[0] > r.x && y < r.y + r.h && y + s[1] > r.y) return true;
+  }
+  for (const [wx, wy] of slot.walls)
+    if (wx >= x && wx < x + s[0] && wy >= y && wy < y + s[1]) return true;
+  return false;
+}
+
+// effective combat reach of a placed item (null = doesn't count for coverage)
+function bDefOf(it, th) {
+  if (it.b === "town_hall") return LAY.thWeapon[th] || null;
+  const d = LAY.defs[it.b];
+  if (!d || d.trap || d.push) return null; // traps trigger, sweepers push — not damage coverage
+  if (it.b === "x_bow" && d.modes) {
+    const m = it.m === "g" ? "g" : "b";
+    return { min: d.min, max: d.modes[m], t: m };
+  }
+  return d;
+}
+function bCoverage(slot) {
+  const g = new Uint8Array(BGRID * BGRID), a = new Uint8Array(BGRID * BGRID);
+  for (const it of slot.items) {
+    const d = bDefOf(it, slot.th);
+    if (!d) continue;
+    const s = bSizeOf(it.b);
+    const cx = it.x + s[0] / 2, cy = it.y + s[1] / 2;
+    const min2 = d.min * d.min, max2 = d.max * d.max;
+    const x0 = Math.max(0, Math.floor(cx - d.max)), x1 = Math.min(BGRID - 1, Math.ceil(cx + d.max));
+    const y0 = Math.max(0, Math.floor(cy - d.max)), y1 = Math.min(BGRID - 1, Math.ceil(cy + d.max));
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        const dx = tx + 0.5 - cx, dy = ty + 0.5 - cy, dd = dx * dx + dy * dy;
+        if (dd < min2 || dd > max2) continue;
+        const k = ty * BGRID + tx;
+        if (d.t !== "a" && g[k] < 250) g[k]++;
+        if (d.t !== "g" && a[k] < 250) a[k]++;
+      }
+    }
+  }
+  return { g, a };
+}
+
+function bShellHTML() {
+  let ths = "";
+  for (let t = 2; t <= MAX_TH; t++) ths += `<option${t === state.th ? " selected" : ""}>${t}</option>`;
+  return `<div class="card" style="margin-bottom:14px">
+    <h2>Base Builder</h2>
+    <div class="note">Design a layout for any Town Hall with that TH's real building counts, then check which
+    tiles your defenses can actually hit. Coverage counts every damage-dealing defense that targets
+    <b>ground</b> or <b>air</b> — X-Bows use their set mode (click one), and the Town Hall weapon counts from
+    TH12. Air Sweepers show their push cone (rotate via the selection bar) but deal no damage, so they aren't
+    counted; Spell Towers, the Builder's Hut turret, Clan Castle troops and traps aren't counted either.
+    Ranges are wiki values, measured building center → tile center. In-game layout links
+    (link.clashofclans.com … OpenLayout) are pointers to layouts stored on Supercell's servers — nothing
+    outside the game can turn one into tile positions, and the village export has none either. Attach links
+    to saved layouts to build your per-TH collection and reopen any of them in the game with one tap; the
+    grid is for sketching and analyzing the design itself.</div>
+    <div class="b-toolbar">
+      <label class="field">Layout <select id="bSlotSel"></select></label>
+      <button class="btn sm ghost" id="bDup" title="copy this layout into a new slot">⧉ duplicate</button>
+      <button class="btn sm ghost" id="bDel" title="delete this layout">✕ delete</button>
+      <span class="b-sep"></span>
+      <label class="field">TH <select id="bNewTH">${ths}</select></label>
+      <button class="btn sm" id="bNew">+ new layout</button>
+      <span class="b-sep"></span>
+      <label class="field">Coverage <select id="bCoverSel">
+        <option value="off">off</option><option value="g">ground</option>
+        <option value="a">air</option><option value="b">ground + air</option></select></label>
+      <button class="btn sm ghost" id="bPng">⬇ PNG</button>
+    </div>
+    <div class="b-toolbar">
+      <label class="field">Name <input id="bName" maxlength="40"></label>
+      <span class="b-linkbox" id="bLinkBox"></span>
+    </div>
+    <div class="b-cat" style="margin:2px 2px 6px">Library — click a base to edit it</div>
+    <div class="b-lib" id="bLib"></div>
+    <div class="b-main">
+      <div class="b-palette" id="bPalette"></div>
+      <div class="b-canvas-wrap">
+        <div class="b-selbar" id="bSelbar"></div>
+        <canvas id="bCanvas"></canvas>
+        <div class="b-status" id="bStatus">select a building in the palette, then click the map to place it</div>
+        <div class="b-cover-stats" id="bCoverStats"></div>
+      </div>
+    </div>
+    <details class="b-io"><summary>Layout JSON (backup / share)</summary>
+      <textarea id="bJson" rows="4" spellcheck="false" placeholder="export fills this box — or paste a layout here and load it"></textarea>
+      <div class="io-row">
+        <button class="btn sm" id="bJsonOut">→ export to box</button>
+        <button class="btn sm" id="bJsonIn">← load from box</button>
+        <span id="bJsonMsg" class="muted small"></span>
+      </div>
+    </details>
+  </div>`;
+}
+
+function bLinkHref(id) {
+  return "https://link.clashofclans.com/en?action=OpenLayout&id=" + encodeURIComponent(id);
+}
+// accepts a full share URL or a raw id like TH15:HV:AAAA… (HV = home village)
+function bParseLink(txt) {
+  try { txt = decodeURIComponent(txt); } catch (e) {}
+  const m = String(txt).match(/TH(\d+):(HV|BB\d*):([A-Za-z0-9_-]{8,})/i);
+  if (!m) return null;
+  if (!/^HV$/i.test(m[2])) return { bb: true };
+  const th = +m[1];
+  if (th < 2 || th > MAX_TH) return null;
+  return { th, id: `TH${th}:HV:${m[3]}` };
+}
+function bThumbCanvas(slot, px) {
+  const cv = document.createElement("canvas");
+  const n = BGRID * px;
+  cv.width = n; cv.height = n;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#161615"; ctx.fillRect(0, 0, n, n);
+  ctx.fillStyle = "#8e8b80";
+  for (const [x, y] of slot.walls) ctx.fillRect(x * px, y * px, px, px);
+  for (const it of slot.items) {
+    const sz = bSizeOf(it.b);
+    const cat = it.b === "town_hall" ? "other" : (byId[it.b] || {}).cat || "other";
+    ctx.fillStyle = B_COLOR[cat];
+    ctx.fillRect(it.x * px + 0.5, it.y * px + 0.5, sz[0] * px - 1, sz[1] * px - 1);
+  }
+  return cv;
+}
+function bUpdateLibrary() {
+  const lib = $("#bLib");
+  lib.innerHTML = "";
+  const order = layouts.slots.map((sl, i) => ({ sl, i }))
+    .sort((a, c) => c.sl.th - a.sl.th || a.sl.name.localeCompare(c.sl.name));
+  for (const { sl, i } of order) {
+    const card = document.createElement("div");
+    card.className = "b-card" + (i === layouts.cur ? " cur" : "");
+    card.dataset.bslot = i;
+    card.appendChild(bThumbCanvas(sl, 3));
+    const meta = document.createElement("div");
+    meta.className = "b-card-meta";
+    meta.innerHTML = `<span class="th-badge">TH ${sl.th}</span><b>${esc(sl.name)}</b>
+      <span class="muted small">${sl.items.length} bld · ${sl.walls.length} walls</span>
+      ${sl.link ? `<a href="${bLinkHref(sl.link)}" target="_blank" rel="noopener"
+        title="opens Clash of Clans and offers to save this layout">▶ open in game</a>` : ""}`;
+    card.appendChild(meta);
+    lib.appendChild(card);
+  }
+}
+function bUpdateToolbar() {
+  const sel = $("#bSlotSel");
+  const byTH = {};
+  layouts.slots.forEach((sl, i) => (byTH[sl.th] = byTH[sl.th] || []).push(i));
+  sel.innerHTML = Object.keys(byTH).sort((a, c) => c - a).map(th =>
+    `<optgroup label="TH ${th}">` + byTH[th].map(i =>
+      `<option value="${i}"${i === layouts.cur ? " selected" : ""}>${esc(layouts.slots[i].name)}</option>`).join("") +
+    "</optgroup>").join("");
+  $("#bCoverSel").value = bCover;
+  $("#bDel").textContent = bDelArm ? "sure? click again" : "✕ delete";
+  const slot = bSlot();
+  const nameEl = $("#bName");
+  if (nameEl && document.activeElement !== nameEl) nameEl.value = slot.name;
+  const box = $("#bLinkBox");
+  if (box) box.innerHTML = (slot.link
+    ? `<a class="btn sm" href="${bLinkHref(slot.link)}" target="_blank" rel="noopener">▶ open in game</a>
+       <button class="btn sm ghost" id="bUnlink" title="detach the in-game link from this layout">unlink</button>`
+    : "") +
+    `<input id="bLink" placeholder="paste an in-game layout link (…OpenLayout&amp;id=TH15:HV:…)">
+     <button class="btn sm" id="bLinkAdd" title="attach the pasted link to this layout">⚲ attach here</button>
+     <button class="btn sm ghost" id="bLinkNew" title="start a new library entry from the pasted link">+ new from link</button>
+     <span id="bLinkMsg" class="muted small"></span>`;
+  bUpdateLibrary();
+}
+
+function bUpdatePalette() {
+  const slot = bSlot();
+  const inv = bInventory(slot.th);
+  const placed = bPlacedCounts(slot);
+  const cats = [["other", "Town Hall"], ["defense", "Defenses"], ["trap", "Traps"],
+    ["resource", "Resources"], ["army", "Army & support"], ["wall", "Walls"]];
+  let html = `<div class="b-tools">
+    <button class="b-pal${!bTool ? " armed" : ""}" data-btool="select">🖱 select / move</button>
+    <button class="b-pal${bTool && bTool.mode === "erase" ? " armed" : ""}" data-btool="erase">⌫ eraser</button>
+  </div>`;
+  for (const [cat, label] of cats) {
+    const rows = inv.filter(x => x.cat === cat);
+    if (!rows.length) continue;
+    html += `<div class="b-cat">${label}</div>`;
+    for (const x of rows) {
+      const left = x.count - (placed[x.id] || 0);
+      const armed = bTool && bTool.mode === "place" && bTool.id === x.id;
+      const d = LAY.defs[x.id];
+      const tgt = x.id === "town_hall" ? (LAY.thWeapon[slot.th] ? "g+a" : "")
+        : d && !d.trap ? (d.t === "b" ? "g+a" : d.t === "g" ? "gnd" : "air") : "";
+      const size = bSizeOf(x.id);
+      html += `<button class="b-pal${armed ? " armed" : ""}${left ? "" : " done"}" data-bid="${x.id}"
+        title="${esc(x.name)} — ${size[0]}×${size[1]}${d ? ` · range ${d.min ? d.min + "–" : ""}${d.max}` : ""}">
+        <span class="b-chip" style="background:${B_COLOR[x.cat]}"></span>
+        <span class="b-nm">${esc(x.name)}</span>
+        ${tgt ? `<span class="b-tgt">${tgt}</span>` : ""}
+        <b>${left}</b></button>`;
+    }
+  }
+  $("#bPalette").innerHTML = html;
+}
+
+function bUpdateSelbar() {
+  const bar = $("#bSelbar");
+  const slot = bSlot();
+  const it = slot.items[bSel];
+  if (!it) {
+    const name = bTool && bTool.mode === "place" ? (bTool.id === "wall" ? "Walls" : (byId[bTool.id] || { name: "Town Hall" }).name) : null;
+    bar.innerHTML = name
+      ? `<span class="muted">placing: <b>${esc(name)}</b> — click the map (walls: click-drag paints), Esc to stop</span>`
+      : bTool && bTool.mode === "erase" ? `<span class="muted">eraser — click or drag over buildings and walls</span>`
+      : `<span class="muted">nothing selected</span>`;
+    return;
+  }
+  const nm = it.b === "town_hall" ? "Town Hall" : (byId[it.b] || { name: it.b }).name;
+  const d = LAY.defs[it.b];
+  let extra = "";
+  if (it.b === "x_bow" && d && d.modes)
+    extra += `<button class="btn sm" id="bMode">mode: ${it.m === "g" ? `Ground · ${d.modes.g}` : `Ground & Air · ${d.modes.b}`} ⇄</button>`;
+  if (d && d.push)
+    extra += `<button class="btn sm" id="bRot">⟳ rotate</button>`;
+  bar.innerHTML = `<b>${esc(nm)}</b>
+    ${d && !d.trap ? `<span class="muted small">range ${d.min ? d.min + "–" : ""}${it.b === "x_bow" && d.modes ? d.modes[it.m === "g" ? "g" : "b"] : d.max}</span>` : ""}
+    ${extra}<button class="btn sm ghost" id="bRemove">✕ remove (Del)</button>`;
+}
+
+function bCoverStats(slot, maps) {
+  const el = $("#bCoverStats");
+  if (bCover === "off") { el.textContent = ""; return; }
+  const tot = BGRID * BGRID;
+  let cg = 0, ca = 0;
+  for (let k = 0; k < tot; k++) { if (maps.g[k]) cg++; if (maps.a[k]) ca++; }
+  const parts = [];
+  if (bCover !== "a") parts.push(`ground-covered: ${cg} tiles (${Math.round(cg / tot * 100)}%)`);
+  if (bCover !== "g") parts.push(`air-covered: ${ca} tiles (${Math.round(ca / tot * 100)}%)`);
+  el.textContent = parts.join(" · ");
+}
+
+function bDraw() {
+  const cv = $("#bCanvas");
+  if (!cv) return;
+  const slot = bSlot();
+  const wrap = cv.parentElement;
+  bPx = Math.max(9, Math.min(16, Math.floor((wrap.clientWidth - 2) / BGRID)));
+  const cw = bPx * BGRID;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== cw * dpr) { cv.width = cw * dpr; cv.height = cw * dpr; }
+  cv.style.width = cw + "px"; cv.style.height = cw + "px";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, cw);
+  ctx.fillStyle = "#161615";
+  ctx.fillRect(0, 0, cw, cw);
+
+  const maps = bCoverage(slot);
+  if (bCover !== "off") {
+    for (let ty = 0; ty < BGRID; ty++) {
+      for (let tx = 0; tx < BGRID; tx++) {
+        const k = ty * BGRID + tx;
+        if (bCover !== "a" && maps.g[k]) {
+          ctx.fillStyle = `rgba(201,133,0,${Math.min(0.12 + 0.09 * maps.g[k], 0.55)})`;
+          ctx.fillRect(tx * bPx, ty * bPx, bPx, bPx);
+        }
+        if (bCover !== "g" && maps.a[k]) {
+          ctx.fillStyle = `rgba(57,135,229,${Math.min(0.12 + 0.09 * maps.a[k], 0.55) * (bCover === "b" ? 0.75 : 1)})`;
+          ctx.fillRect(tx * bPx, ty * bPx, bPx, bPx);
+        }
+      }
+    }
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.045)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= BGRID; i++) {
+    ctx.moveTo(i * bPx + 0.5, 0); ctx.lineTo(i * bPx + 0.5, cw);
+    ctx.moveTo(0, i * bPx + 0.5); ctx.lineTo(cw, i * bPx + 0.5);
+  }
+  ctx.stroke();
+
+  // sweeper push cones (air modes)
+  if (bCover === "a" || bCover === "b") {
+    for (const it of slot.items) {
+      const d = LAY.defs[it.b];
+      if (!d || !d.push) continue;
+      const s = bSizeOf(it.b);
+      const cx = (it.x + s[0] / 2) * bPx, cy = (it.y + s[1] / 2) * bPx;
+      const a0 = (-90 + (it.d || 0) * 45 - (d.cone || 120) / 2) * Math.PI / 180;
+      const a1 = (-90 + (it.d || 0) * 45 + (d.cone || 120) / 2) * Math.PI / 180;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, d.max * bPx, a0, a1);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(57,135,229,0.10)";
+      ctx.strokeStyle = "rgba(57,135,229,0.45)";
+      ctx.fill(); ctx.stroke();
+    }
+  }
+
+  for (const [wx, wy] of slot.walls) {
+    ctx.fillStyle = "#8e8b80";
+    ctx.fillRect(wx * bPx + 1.5, wy * bPx + 1.5, bPx - 3, bPx - 3);
+  }
+
+  slot.items.forEach((it, i) => {
+    if (bDrag && bDrag.i === i && bDrag.moved) return; // drawn as ghost below
+    bDrawItem(ctx, it, i === bSel);
+  });
+
+  // selected: range rings
+  const sel = slot.items[bSel];
+  if (sel) {
+    const d = bDefOf(sel, slot.th) || (LAY.defs[sel.b] && !LAY.defs[sel.b].trap ? LAY.defs[sel.b] : null);
+    if (d) {
+      const s = bSizeOf(sel.b);
+      const cx = (sel.x + s[0] / 2) * bPx, cy = (sel.y + s[1] / 2) * bPx;
+      ctx.strokeStyle = "rgba(255,255,255,0.65)";
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(cx, cy, d.max * bPx, 0, 7); ctx.stroke();
+      if (d.min) {
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.arc(cx, cy, d.min * bPx, 0, 7); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  // ghost: placement preview or drag target
+  let ghost = null;
+  if (bDrag && bDrag.moved) {
+    const it = slot.items[bDrag.i];
+    ghost = { id: it.b, x: bDrag.gx, y: bDrag.gy, ok: !bCollide(slot, it.b, bDrag.gx, bDrag.gy, bDrag.i), it };
+  } else if (bTool && bTool.mode === "place" && bTool.id !== "wall" && bHover) {
+    const s = bSizeOf(bTool.id);
+    const x = bHover.x - ((s[0] - 1) >> 1), y = bHover.y - ((s[1] - 1) >> 1);
+    ghost = { id: bTool.id, x, y, ok: !bCollide(slot, bTool.id, x, y, -1) };
+  }
+  if (ghost) {
+    const s = bSizeOf(ghost.id);
+    ctx.globalAlpha = 0.75;
+    bDrawItem(ctx, { b: ghost.id, x: ghost.x, y: ghost.y, m: ghost.it && ghost.it.m, d: ghost.it && ghost.it.d }, false);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = ghost.ok ? "rgba(12,163,12,0.9)" : "rgba(208,59,59,0.95)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ghost.x * bPx + 1, ghost.y * bPx + 1, s[0] * bPx - 2, s[1] * bPx - 2);
+    ctx.lineWidth = 1;
+    const gd = ghost.id === "town_hall" ? LAY.thWeapon[slot.th] : LAY.defs[ghost.id];
+    if (gd && !gd.trap && ghost.ok) {
+      const cx = (ghost.x + s[0] / 2) * bPx, cy = (ghost.y + s[1] / 2) * bPx;
+      ctx.strokeStyle = "rgba(255,255,255,0.35)";
+      ctx.beginPath(); ctx.arc(cx, cy, (gd.push || !gd.modes ? gd.max : gd.modes.b) * bPx, 0, 7); ctx.stroke();
+    }
+  }
+
+  bCoverStats(slot, maps);
+}
+
+function bDrawItem(ctx, it, selected) {
+  const s = bSizeOf(it.b);
+  const x = it.x * bPx, y = it.y * bPx, w = s[0] * bPx, h = s[1] * bPx;
+  const cat = it.b === "town_hall" ? "other" : (byId[it.b] || {}).cat || "other";
+  const d = LAY.defs[it.b];
+  ctx.fillStyle = B_COLOR[cat] + (cat === "trap" ? "88" : "cc");
+  if (ctx.roundRect) {
+    ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 3); ctx.fill();
+  } else ctx.fillRect(x + 1.5, y + 1.5, w - 3, h - 3);
+  if (cat === "trap") {
+    ctx.setLineDash([3, 2]);
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+    ctx.setLineDash([]);
+  }
+  if (selected) {
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.lineWidth = 1;
+  }
+  const label = B_ABBR[it.b] || "?";
+  if (w >= 18) {
+    ctx.fillStyle = cat === "trap" ? "#e7e5df" : "#0d0d0d";
+    ctx.font = `bold ${Math.min(11, Math.floor(bPx * 0.75))}px system-ui`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
+  }
+  // sweeper facing arrow
+  if (d && d.push) {
+    const ang = (-90 + (it.d || 0) * 45) * Math.PI / 180;
+    const cx = x + w / 2, cy = y + h / 2, r = Math.min(w, h) * 0.42;
+    ctx.strokeStyle = "#0d0d0d";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+  // x-bow ground-mode marker
+  if (it.b === "x_bow" && it.m === "g") {
+    ctx.fillStyle = "#0d0d0d";
+    ctx.fillRect(x + w - 7, y + 3, 4, 4);
+  }
+}
+
+function bStatusMsg(msg) { $("#bStatus").textContent = msg; }
+
+function bRefresh(saveIt) {
+  if (saveIt) bSaveL();
+  bUpdateToolbar(); bUpdatePalette(); bUpdateSelbar(); bDraw();
+}
+
+function bTileFromEvent(e) {
+  const cv = $("#bCanvas");
+  const r = cv.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) / bPx), y = Math.floor((e.clientY - r.top) / bPx);
+  if (x < 0 || y < 0 || x >= BGRID || y >= BGRID) return null;
+  return { x, y };
+}
+
+function bPlaceAt(t) {
+  const slot = bSlot();
+  const inv = bInventory(slot.th);
+  const placed = bPlacedCounts(slot);
+  const entry = inv.find(x => x.id === bTool.id);
+  const left = entry ? entry.count - (placed[bTool.id] || 0) : 0;
+  if (bTool.id === "wall") {
+    if (left <= 0) { bStatusMsg("no wall pieces left at TH" + slot.th); return; }
+    if (bWallAt(slot, t.x, t.y) >= 0 || bItemAt(slot, t.x, t.y) >= 0) return;
+    slot.walls.push([t.x, t.y]);
+    bRefresh(true);
+    return;
+  }
+  const s = bSizeOf(bTool.id);
+  const x = t.x - ((s[0] - 1) >> 1), y = t.y - ((s[1] - 1) >> 1);
+  if (left <= 0) { bStatusMsg("all placed — none left at TH" + slot.th); bTool = null; bRefresh(false); return; }
+  if (bCollide(slot, bTool.id, x, y, -1)) { bStatusMsg("doesn't fit there"); return; }
+  slot.items.push({ b: bTool.id, x, y });
+  if (left - 1 <= 0) { bTool = null; bSel = slot.items.length - 1; }
+  bRefresh(true);
+}
+
+function bEraseAt(t) {
+  const slot = bSlot();
+  const wi = bWallAt(slot, t.x, t.y);
+  if (wi >= 0) { slot.walls.splice(wi, 1); bRefresh(true); return; }
+  const ii = bItemAt(slot, t.x, t.y);
+  if (ii >= 0) {
+    slot.items.splice(ii, 1);
+    if (bSel === ii) bSel = -1; else if (bSel > ii) bSel--;
+    bRefresh(true);
+  }
+}
+
+function bHoverInfo(t) {
+  const slot = bSlot();
+  const ii = bItemAt(slot, t.x, t.y);
+  if (ii >= 0) {
+    const it = slot.items[ii];
+    const nm = it.b === "town_hall" ? "Town Hall" : (byId[it.b] || { name: it.b }).name;
+    const s = bSizeOf(it.b);
+    const d = it.b === "town_hall" ? LAY.thWeapon[slot.th] : LAY.defs[it.b];
+    const T = { g: "ground", a: "air", b: "ground & air" };
+    bStatusMsg(`${nm} — ${s[0]}×${s[1]}` +
+      (d ? ` · ${d.trap ? "trigger" : "range"} ${d.min ? d.min + "–" : ""}${it.b === "x_bow" && d.modes ? d.modes[it.m === "g" ? "g" : "b"] : d.max} · ${d.push ? "pushes air" : "hits " + T[it.b === "x_bow" ? (it.m === "g" ? "g" : "b") : d.t]}` : "") +
+      ` · tile ${t.x},${t.y}`);
+  } else if (bWallAt(slot, t.x, t.y) >= 0) bStatusMsg(`Wall · tile ${t.x},${t.y}`);
+  else bStatusMsg(`tile ${t.x},${t.y}`);
+}
+
+function bBindCanvas() {
+  const cv = $("#bCanvas");
+  cv.addEventListener("pointerdown", e => {
+    const t = bTileFromEvent(e);
+    if (!t) return;
+    e.preventDefault();
+    cv.setPointerCapture(e.pointerId);
+    const slot = bSlot();
+    if (bTool && bTool.mode === "place") {
+      bPlaceAt(t);
+      if (bTool && bTool.id === "wall") bPaint = true;
+      return;
+    }
+    if (bTool && bTool.mode === "erase") { bEraseAt(t); bPaint = true; return; }
+    const ii = bItemAt(slot, t.x, t.y);
+    if (ii >= 0) {
+      bSel = ii;
+      const it = slot.items[ii];
+      bDrag = { i: ii, ox: t.x - it.x, oy: t.y - it.y, gx: it.x, gy: it.y, moved: false };
+    } else bSel = -1;
+    bRefresh(false);
+  });
+  cv.addEventListener("pointermove", e => {
+    const t = bTileFromEvent(e);
+    if (!t) return;
+    const changed = !bHover || bHover.x !== t.x || bHover.y !== t.y;
+    bHover = t;
+    if (bPaint && bTool) {
+      if (bTool.mode === "erase") bEraseAt(t);
+      else if (bTool.id === "wall") bPlaceAt(t);
+      return;
+    }
+    if (bDrag) {
+      const gx = t.x - bDrag.ox, gy = t.y - bDrag.oy;
+      if (gx !== bDrag.gx || gy !== bDrag.gy || !bDrag.moved) {
+        bDrag.gx = gx; bDrag.gy = gy;
+        bDrag.moved = bDrag.moved || gx !== bSlot().items[bDrag.i].x || gy !== bSlot().items[bDrag.i].y;
+        bDraw();
+      }
+      return;
+    }
+    if (changed) {
+      bHoverInfo(t);
+      if (bTool && bTool.mode === "place") bDraw();
+    }
+  });
+  cv.addEventListener("pointerup", e => {
+    bPaint = false;
+    if (bDrag) {
+      const slot = bSlot();
+      const it = slot.items[bDrag.i];
+      if (bDrag.moved && !bCollide(slot, it.b, bDrag.gx, bDrag.gy, bDrag.i)) {
+        it.x = bDrag.gx; it.y = bDrag.gy;
+        bDrag = null;
+        bRefresh(true);
+      } else {
+        bDrag = null;
+        bDraw();
+      }
+    }
+  });
+  cv.addEventListener("pointerleave", () => {
+    bHover = null; bPaint = false;
+    if (!bDrag) bDraw();
+  });
+}
+
+function bImportJSON(txt) {
+  let s;
+  try { s = JSON.parse(txt); } catch (e) { return "not valid JSON"; }
+  const th = Math.min(Math.max(2, +s.th || 0), MAX_TH);
+  if (!th || !Array.isArray(s.items) || !Array.isArray(s.walls)) return "missing th / items / walls";
+  const slot = { name: String(s.name || `TH${th} import`).slice(0, 40), th, items: [], walls: [] };
+  const pl = bParseLink(String(s.link || ""));
+  if (pl && pl.id) slot.link = pl.id;
+  const inv = bInventory(th);
+  const caps = {}; inv.forEach(x => caps[x.id] = x.count);
+  let dropped = 0;
+  for (const raw of s.items) {
+    const it = { b: String(raw.b), x: raw.x | 0, y: raw.y | 0 };
+    if (raw.m === "g") it.m = "g";
+    if (raw.d) it.d = raw.d & 7;
+    const used = slot.items.filter(z => z.b === it.b).length;
+    if (!LAY.sizes[it.b] || !(caps[it.b] > used) || bCollide(slot, it.b, it.x, it.y, -1)) { dropped++; continue; }
+    slot.items.push(it);
+  }
+  for (const raw of s.walls) {
+    const x = raw[0] | 0, y = raw[1] | 0;
+    if (x < 0 || y < 0 || x >= BGRID || y >= BGRID || slot.walls.length >= (caps.wall || 0)
+      || bWallAt(slot, x, y) >= 0 || bItemAt(slot, x, y) >= 0) { dropped++; continue; }
+    slot.walls.push([x, y]);
+  }
+  layouts.slots.push(slot);
+  layouts.cur = layouts.slots.length - 1;
+  bSel = -1; bTool = null;
+  bRefresh(true);
+  return `loaded "${slot.name}"` + (dropped ? ` — ${dropped} entr${dropped === 1 ? "y" : "ies"} dropped (over count / collision / unknown)` : "");
+}
+
+function bBindShell() {
+  const root = $("#tab-builder");
+  root.addEventListener("click", e => {
+    const tool = e.target.closest("[data-btool]");
+    if (tool) {
+      bTool = tool.dataset.btool === "erase" ? { mode: "erase" } : null;
+      bSel = -1; bRefresh(false); return;
+    }
+    const pal = e.target.closest("[data-bid]");
+    if (pal) {
+      const id = pal.dataset.bid;
+      bTool = bTool && bTool.mode === "place" && bTool.id === id ? null : { mode: "place", id };
+      bSel = -1; bRefresh(false); return;
+    }
+    if (e.target.id === "bNew") {
+      const th = +$("#bNewTH").value;
+      const n = layouts.slots.filter(s => s.th === th).length + 1;
+      layouts.slots.push({ name: `TH${th} layout ${n}`, th, items: [], walls: [] });
+      layouts.cur = layouts.slots.length - 1;
+      bSel = -1; bTool = null; bRefresh(true); return;
+    }
+    if (e.target.id === "bDup") {
+      const cur = bSlot();
+      layouts.slots.push(JSON.parse(JSON.stringify({ ...cur, name: cur.name.slice(0, 34) + " copy" })));
+      layouts.cur = layouts.slots.length - 1;
+      bSel = -1; bRefresh(true); return;
+    }
+    if (e.target.id === "bDel") {
+      if (!bDelArm) {
+        bDelArm = 1; bUpdateToolbar();
+        setTimeout(() => { bDelArm = 0; const d = $("#bDel"); if (d) bUpdateToolbar(); }, 2500);
+        return;
+      }
+      bDelArm = 0;
+      layouts.slots.splice(layouts.cur, 1);
+      layouts.cur = Math.max(0, layouts.cur - 1);
+      bSel = -1; bTool = null; bRefresh(true); return;
+    }
+    if (e.target.id === "bPng") {
+      const cv = $("#bCanvas");
+      const name = bSlot().name.replace(/[^\w-]+/g, "-");
+      cv.toBlob(bl => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(bl);
+        a.download = name + ".png";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      });
+      return;
+    }
+    if (e.target.id === "bJsonOut") {
+      $("#bJson").value = JSON.stringify(bSlot());
+      $("#bJsonMsg").textContent = "copy the box contents somewhere safe";
+      return;
+    }
+    if (e.target.id === "bJsonIn") {
+      $("#bJsonMsg").textContent = bImportJSON($("#bJson").value.trim());
+      return;
+    }
+    if (e.target.id === "bRemove") {
+      const slot = bSlot();
+      if (bSel >= 0) { slot.items.splice(bSel, 1); bSel = -1; bRefresh(true); }
+      return;
+    }
+    if (e.target.id === "bMode") {
+      const it = bSlot().items[bSel];
+      if (it) { it.m = it.m === "g" ? "b" : "g"; bRefresh(true); }
+      return;
+    }
+    if (e.target.id === "bRot") {
+      const it = bSlot().items[bSel];
+      if (it) { it.d = ((it.d || 0) + 1) & 7; bRefresh(true); }
+      return;
+    }
+    if (e.target.id === "bLinkAdd" || e.target.id === "bLinkNew") {
+      const raw = ($("#bLink").value || "").trim();
+      const pl = bParseLink(raw);
+      const msg = $("#bLinkMsg");
+      if (!raw) { msg.textContent = "paste a link first"; return; }
+      if (!pl) { msg.textContent = "that doesn't look like a layout link (expected …id=TH##:HV:…)"; return; }
+      if (pl.bb) { msg.textContent = "that's a Builder Base link — only home-village layouts are supported"; return; }
+      if (e.target.id === "bLinkAdd") {
+        const slot = bSlot();
+        slot.link = pl.id;
+        bRefresh(true);
+        $("#bLinkMsg").textContent = pl.th !== slot.th
+          ? `attached — note: the link says TH${pl.th} but this layout is set up for TH${slot.th}`
+          : "attached ✓";
+      } else {
+        const n = layouts.slots.filter(sl => sl.th === pl.th).length + 1;
+        layouts.slots.push({ name: `TH${pl.th} base ${n}`, th: pl.th, items: [], walls: [], link: pl.id });
+        layouts.cur = layouts.slots.length - 1;
+        bSel = -1; bTool = null;
+        bRefresh(true);
+        $("#bLinkMsg").textContent = `added to the library — sketch it on the grid or just keep the link`;
+      }
+      return;
+    }
+    if (e.target.id === "bUnlink") {
+      delete bSlot().link;
+      bRefresh(true);
+      return;
+    }
+    const card = e.target.closest("[data-bslot]");
+    if (card && !e.target.closest("a")) {
+      layouts.cur = +card.dataset.bslot;
+      bSel = -1; bTool = null;
+      bRefresh(true);
+      return;
+    }
+  });
+  root.addEventListener("change", e => {
+    if (e.target.id === "bName") {
+      const v = e.target.value.trim();
+      if (v) { bSlot().name = v.slice(0, 40); bRefresh(true); }
+      return;
+    }
+    if (e.target.id === "bSlotSel") {
+      layouts.cur = +e.target.value;
+      bSel = -1; bTool = null; bRefresh(true);
+    } else if (e.target.id === "bCoverSel") {
+      bCover = e.target.value; bDraw();
+    }
+  });
+  bBindCanvas();
+  window.addEventListener("resize", () => { if (activeTab === "builder") bDraw(); });
+  document.addEventListener("keydown", e => {
+    if (activeTab !== "builder") return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName || "")) return;
+    if (e.key === "Escape") { bTool = null; bDrag = null; bRefresh(false); }
+    else if ((e.key === "Delete" || e.key === "Backspace") && bSel >= 0) {
+      e.preventDefault();
+      const slot = bSlot();
+      slot.items.splice(bSel, 1); bSel = -1; bRefresh(true);
+    } else if ((e.key === "r" || e.key === "R") && bSel >= 0) {
+      const it = bSlot().items[bSel];
+      const d = LAY.defs[it.b];
+      if (d && d.push) { it.d = ((it.d || 0) + 1) & 7; bRefresh(true); }
+      else if (it.b === "x_bow") { it.m = it.m === "g" ? "b" : "g"; bRefresh(true); }
+    }
+  });
+}
+
+function renderBuilder() {
+  const root = $("#tab-builder");
+  if (!root) return;
+  layouts = layouts || bLoad();
+  if (!bShellBuilt) {
+    root.innerHTML = bShellHTML();
+    bBindShell();
+    bShellBuilt = true;
+  }
+  bRefresh(false);
+}
+
 function bindEvents() {
+  bindTooltip();
+  const restore = $("#restoreBase");
+  if (restore) {
+    restore.hidden = !window.MY_BASE;
+    restore.addEventListener("click", () => { loadMyBase(); renderActive(); });
+  }
   $("#tabs").addEventListener("click", e => {
     const b = e.target.closest("button[data-tab]");
     if (b) switchTab(b.dataset.tab);
@@ -1555,11 +2497,13 @@ function bindEvents() {
       normalize(); save(); renderActive();
     } else if (t.dataset.eq) {
       state.equip[t.dataset.eq] = Math.max(1, +t.value || 1); normalize(); save(); renderActive();
-    } else if (t.id === "buildBoost") { state.settings.buildBoost = +t.value; save(); renderActive(); }
+    } else if (t.id === "ganttHorizon") { ganttHorizon = +t.value; renderPlan(); }
+    else if (t.id === "buildBoost") { state.settings.buildBoost = +t.value; save(); renderActive(); }
     else if (t.id === "labBoost") { state.settings.labBoost = +t.value; save(); renderActive(); }
     else if (t.id === "lootGold") { state.settings.lootGold = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootElixir") { state.settings.lootElixir = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootDark") { state.settings.lootDark = Math.max(0, +t.value || 0); save(); renderActive(); }
+    else if (t.id === "apiEndpoint") { state.settings.apiEndpoint = t.value.trim(); save(); }
     else if (t.id === "wallGoldDay") { state.settings.wallGoldDay = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "wallElixirDay") { state.settings.wallElixirDay = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "oreWeekShiny") { state.settings.oreWeekShiny = Math.max(0, +t.value || 0); save(); renderActive(); }
@@ -1603,26 +2547,6 @@ function bindEvents() {
       state.walls = { 1: WALLS.counts[state.th - 1] || 0 };
       normalize(); save(); renderActive();
     }
-    if (t.dataset.sq) {
-      const q = t.dataset.sq;
-      const cap = q === "builder" ? state.builders : 1;
-      if (state.running.filter(r => r.q === q).length >= cap) {
-        alert(q === "builder" ? "All builders are already busy — finish or cancel one first." : "That queue is already busy.");
-      } else {
-        state.running.push({ q, id: t.dataset.sid, to: +t.dataset.sto, endTs: Date.now() + (+t.dataset.stime) * 3600000 });
-        save(); renderActive();
-      }
-      return;
-    }
-    if (t.dataset.rdone !== undefined) {
-      const r = state.running[+t.dataset.rdone];
-      if (r) { completeRunning(r); state.running.splice(+t.dataset.rdone, 1); normalize(); save(); renderActive(); }
-      return;
-    }
-    if (t.dataset.rcancel !== undefined) {
-      state.running.splice(+t.dataset.rcancel, 1); save(); renderActive();
-      return;
-    }
     if (t.id === "ioImport") {
       const box = $("#ioMsg");
       try {
@@ -1660,12 +2584,12 @@ function bindEvents() {
       const box = $("#apiMsg");
       box.innerHTML = `<div class="msg info">Fetching…</div>`;
       try {
-        const data = await fetchFromAPI($("#apiTag").value, $("#apiToken").value, $("#apiBase").value);
+        const data = await fetchByTag("coc", $("#apiTag").value);
         const msg = detectAndImport(data);
         box.innerHTML = `<div class="msg ok">${msg}</div>`;
         renderHeader();
       } catch (err) {
-        box.innerHTML = `<div class="msg err">${esc(err.message)} — browsers are usually blocked by the API's CORS policy; use a proxy base URL or the “Paste JSON” box instead.</div>`;
+        box.innerHTML = `<div class="msg err">${esc(err.message)}. No relay yet? Do the one-time setup, or use “Paste JSON” — same data.</div>`;
       }
     }
   });

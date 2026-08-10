@@ -1,0 +1,19 @@
+# Supercell API relay — systemd unit for a Raspberry Pi (or any Linux box).
+# Adjust the two /home/pi/... paths and User= if your clone lives elsewhere, then:
+#   sudo cp supercell-relay.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now supercell-relay
+[Unit]
+Description=Supercell API relay (Clash tools)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/env node /home/pi/kyxrem.github.io/api-relay/server.js
+WorkingDirectory=/home/pi/kyxrem.github.io/api-relay
+Restart=on-failure
+RestartSec=5
+User=pi
+
+[Install]
+WantedBy=multi-user.target
