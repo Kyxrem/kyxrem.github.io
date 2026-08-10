@@ -6,7 +6,13 @@
 <title>Kennzeichen-Sammler – Autobahn-Spiel mit Live-Karte</title>
 <meta name="description" content="Sammle deutsche Kfz-Kennzeichen, die du auf der Autobahn siehst. Live-Coverage auf der Deutschlandkarte plus Fakten zu jeder Stadt und jedem Landkreis.">
 <meta name="theme-color" content="#0d0f12">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚙</text></svg>">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kennzeichen">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -31,6 +37,10 @@
     <div id="suggestions" class="suggestions" hidden></div>
   </form>
   <div id="toast" class="toast" hidden></div>
+  <div id="ios-hint" class="ios-hint" hidden>
+    📲 <b>Als App installieren:</b> In Safari unten auf <b>Teilen</b> tippen → <b>„Zum Home-Bildschirm“</b>. Läuft danach wie eine echte App – auch offline.
+    <button type="button" aria-label="Hinweis schließen">OK</button>
+  </div>
 </section>
 
 <main class="grid">
@@ -96,12 +106,13 @@
 
 <footer>
   <div class="tools">
+    <button id="install-btn" type="button" class="install-btn" hidden>📲 Als App installieren</button>
     <button id="sync-btn" type="button" class="primary-btn">🔗 Sync-Link kopieren</button>
     <button id="export-btn" type="button">⬇ Backup</button>
     <label class="btn" for="import-file">⬆ Import<input type="file" id="import-file" accept=".json,application/json" hidden></label>
     <button id="reset-btn" type="button" class="danger-btn">Zurücksetzen</button>
   </div>
-  <p class="attribution">Dein Fortschritt wird automatisch im Browser gespeichert – ganz ohne Download. Mit dem <b>Sync-Link</b> nimmst du ihn auf ein anderes Gerät mit: Link kopieren, dort öffnen, fertig (funktioniert auch als Lesezeichen oder per WhatsApp an dich selbst).<br>
+  <p class="attribution">Dein Fortschritt wird automatisch im Browser gespeichert – ganz ohne Download. Mit dem <b>Sync-Link</b> nimmst du ihn auf ein anderes Gerät mit: Link kopieren, dort öffnen, fertig (funktioniert auch als Lesezeichen oder per WhatsApp an dich selbst). Einmal geladen läuft die App auch <b>offline</b> – perfekt für Funklöcher auf der A7.<br>
   Kartengrundlage: <a href="http://www.bkg.bund.de" rel="noopener">© Bundesamt für Kartographie und Geodäsie 2024</a>, Datenquelle: Kraftfahrt-Bundesamt · Datensatz KFZ250 (Geometrie vereinfacht) · <a href="https://www.govdata.de/dl-de/by-2-0" rel="noopener">dl-de/by-2-0</a></p>
 </footer>
 
