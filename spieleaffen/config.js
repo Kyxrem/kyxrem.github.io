@@ -7,5 +7,5 @@
  *   apiBase: 'https://spieleaffen.DEIN-SUBDOMAIN.workers.dev'
  */
 window.SPIELEAFFEN_CONFIG = {
-  apiBase: ''
+  apiBase: 'https://spieleaffen.torben-meyer-61a.workers.dev'
 };
