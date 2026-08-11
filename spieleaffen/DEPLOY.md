@@ -63,9 +63,10 @@ Committen und pushen. Aus dem roten **DEMO** wird ein grünes **LIVE**.
 
 ## 3. Erste Einrichtung
 
-1. `…/spieleaffen/#admin` öffnen und den **ADMIN_TOKEN** ins Code-Feld tippen.
-   (Das Feld nimmt auch längere Eingaben als vier Ziffern — es prüft nur,
-   ob am Ende etwas Bekanntes herauskommt.)
+1. `…/spieleaffen/#admin` öffnen. Dort stehen vier Kästen für die vier Ziffern —
+   da passt der Admin-Schlüssel nicht hinein. Stattdessen unten auf
+   **Mit Admin-Schlüssel** tippen; das Feld dahinter nimmt beliebig lange
+   Zeichenfolgen. Der Knopf erscheint nur, wenn ein Backend eingetragen ist.
 2. Unter **Affen** die Leute anlegen. Jeder bekommt eine der sechs Sitzfarben;
    die Farbe gehört ihm ab dann für immer und taucht in Avatar, Tag und Balken
    wieder auf.
