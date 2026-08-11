@@ -1,0 +1,18 @@
+name = "spieleaffen"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# KV-Namespace anlegen und die ausgegebene id hier eintragen:
+#   npx wrangler kv namespace create SA_KV
+[[kv_namespaces]]
+binding = "SA_KV"
+id = "HIER_DIE_KV_ID_EINTRAGEN"
+
+# Admin-Schlüssel setzen (nicht hier, sondern als Secret):
+#   npx wrangler secret put ADMIN_TOKEN
+# Damit kommt man auch rein, wenn noch kein Affe einen Code hat — oder wenn
+# sich die Runde ausgesperrt hat.
+
+# Optional: CORS auf die eigene Seite beschränken.
+# [vars]
+# ALLOW_ORIGIN = "https://kyxrem.github.io"

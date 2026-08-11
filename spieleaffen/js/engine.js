@@ -100,6 +100,12 @@
     return out;
   }
 
+  /* „1 Spiel" statt „1 Spiele" — Zahlen bleiben Ziffern, aber das Wort daneben
+     muss stimmen. */
+  function plural(n, einzahl, mehrzahl) {
+    return n + ' ' + (Math.abs(n) === 1 ? einzahl : mehrzahl);
+  }
+
   function uid(prefix) {
     return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
   }
@@ -705,6 +711,7 @@
     initials: initials,
     shortCode: shortCode,
     rankBy: rankBy,
+    plural: plural,
     uid: uid
   };
 });

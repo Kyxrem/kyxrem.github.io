@@ -28,7 +28,7 @@
           h('div.sa-card__heading', null,
             h('h3.sa-h3', bereichName(c)),
             affen.length ? U.Tease({ tone: T.teaseRang(affen).tone, size: 'sm', children: T.teaseRang(affen).text }) : null),
-          U.Badge({ children: affen.length + ' Affen', size: 'sm' })),
+          U.Badge({ children: SA.plural(affen.length, 'Affe', 'Affen'), size: 'sm' })),
         affen.length ? affen.map(function (a) {
           var spruch = T.teaseSpieler(a, a.place, affen.length);
           return U.ScoreRow({

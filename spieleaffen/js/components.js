@@ -16,6 +16,12 @@
 
   function seatVar(seat) { return 'var(--seat-' + (((Number(seat) || 1) - 1) % 6 + 1) + ')'; }
 
+  /* Zahlen tragen den typografischen Minus (−), nicht den Bindestrich.
+     Steht so in readme.md > Content fundamentals > Numbers. */
+  function num(v) {
+    return String(v == null ? '' : v).replace(/-/g, '−');
+  }
+
   function initials(name) {
     return String(name || '').trim().split(/\s+/).slice(0, 2)
       .map(function (w) { return w[0] || ''; }).join('').toUpperCase();
@@ -131,7 +137,7 @@
         h('span.sa-stat__label', o.label),
         o.icon ? Icon(o.icon, { size: 16, color: 'var(--text-faint)' }) : null),
       h('div.sa-stat__figure', null,
-        h('span.sa-stat__value', String(o.value)),
+        h('span.sa-stat__value', num(o.value)),
         o.unit ? h('span.sa-stat__unit', o.unit) : null),
       o.delta ? h('span', { class: ['sa-stat__delta', down && 'is-down'] },
         Icon(down ? 'trending-down' : 'trending-up', { size: 13 }), o.delta) : null
@@ -457,8 +463,8 @@
       // Nur echte Bewegung zeigen: „↑0" ist keine Information, nur Rauschen.
       o.delta ? h('span', { class: ['sa-scorerow__delta', o.delta < 0 && 'is-down'] },
         Icon(o.delta >= 0 ? 'arrow-up' : 'arrow-down', { size: 12 }),
-        String(Math.abs(o.delta))) : null,
-      h('span.sa-scorerow__points', String(o.points))
+        num(Math.abs(o.delta))) : null,
+      h('span.sa-scorerow__points', num(o.points))
     );
   }
 
@@ -537,7 +543,7 @@
             return h('span', { class: ['sa-pad__cell', cell.bid == null && 'is-empty'] },
               h('span', { class: ['sa-pad__bid', hit && 'is-hit'] },
                 cell.bid == null ? '—' : cell.bid + '/' + cell.made),
-              h('span.sa-pad__pts', cell.points == null ? '' : (cell.points > 0 ? '+' : '') + cell.points));
+              h('span.sa-pad__pts', cell.points == null ? '' : num((cell.points > 0 ? '+' : '') + cell.points)));
           }));
       }),
 
@@ -545,7 +551,7 @@
         h('span.sa-pad__eyebrow', 'Summe'),
         players.map(function (p) {
           var v = totals[p.id] || 0;
-          return h('span', { class: ['sa-pad__total', v === best && 'is-best'] }, String(v));
+          return h('span', { class: ['sa-pad__total', v === best && 'is-best'] }, num(v));
         }))
     );
   }
@@ -558,6 +564,6 @@
     Dialog: Dialog, Toast: Toast, Tooltip: Tooltip, ProgressBar: ProgressBar, LogEntry: LogEntry,
     PlayerAvatar: PlayerAvatar, ScoreRow: ScoreRow,
     DiceHistogram: DiceHistogram, ScorePad: ScorePad,
-    seatVar: seatVar, initials: initials
+    seatVar: seatVar, initials: initials, num: num
   };
 })();

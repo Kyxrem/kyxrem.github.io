@@ -29,7 +29,7 @@
       }),
       U.StatTile({
         label: 'Längste Serie', tone: 'banana', icon: 'flame',
-        value: beste ? beste.bestStreak : 0, unit: 'Abende',
+        value: beste ? beste.bestStreak : 0, unit: beste && beste.bestStreak === 1 ? 'Abend' : 'Abende',
         delta: beste && beste.bestStreak ? beste.name + ', natürlich' : null
       }),
       U.StatTile({
@@ -115,7 +115,7 @@
             h('span.sa-strong.sa-truncate', titel || info.night.title),
             U.Tease({ tone: 'brag', size: 'sm', icon: null, children: (sieger ? sieger.name : 'Niemand') + ' hat’s genommen.' })),
           sieger ? U.Tag({ children: sieger.name, color: U.seatVar(sieger.seat), size: 'sm' }) : null,
-          h('span.sa-num', { style: { width: '44px', textAlign: 'right', fontSize: '16px' } }, String(punkte))
+          h('span.sa-num', { style: { width: '44px', textAlign: 'right', fontSize: '16px' } }, U.num(punkte))
         );
       }) : h('div.sa-empty', null,
         U.Icon('calendar-days', { size: 32, color: 'var(--text-faint)' }),
@@ -228,7 +228,7 @@
         eyebrow: SA.fmtDateLong(S.heute()),
         title: 'Übersicht',
         sub: affen.length
-          ? affen.length + ' Affen, ' + c.shelf.length + ' Spiele, keine Ausreden.'
+          ? SA.plural(affen.length, 'Affe', 'Affen') + ', ' + SA.plural(c.shelf.length, 'Spiel', 'Spiele') + ', keine Ausreden.'
           : 'Noch keine Affen im Block. Das wird ein kurzer Abend.',
         actions: [
           U.Button({ children: 'Ergebnis eintragen', variant: 'secondary', iconLeft: 'dices', onClick: function () { window.SA_DIALOGS.ergebnisEintragen(); } }),

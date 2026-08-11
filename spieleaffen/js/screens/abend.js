@@ -137,7 +137,7 @@
               fontSize: '23px', minWidth: '62px', textAlign: 'center',
               color: fuehrt && a.id === fuehrt.id ? 'var(--slime-500)' : 'var(--text-strong)'
             }
-          }, String(wert)),
+          }, U.num(wert)),
           ansicht === 'runde' ? U.IconButton({
             icon: 'plus', label: a.name + ' plus fünf', variant: 'outline', size: 'sm',
             onClick: function () { bump(live, a.id, 5); }

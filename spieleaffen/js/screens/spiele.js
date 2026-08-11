@@ -121,7 +121,7 @@
       SH.ScreenHead({
         eyebrow: 'Regal',
         title: 'Spiele',
-        sub: shelf.length + ' Spiele im Schrank. Manche davon sogar gespielt.',
+        sub: SA.plural(shelf.length, 'Spiel', 'Spiele') + ' im Schrank. Manche davon sogar gespielt.',
         actions: U.Button({ children: 'Abend planen', iconLeft: 'plus', onClick: window.SA_DIALOGS.abendPlanen })
       }),
       h('div.sa-inline.sa-section-gap', { style: { justifyContent: 'space-between' } },
