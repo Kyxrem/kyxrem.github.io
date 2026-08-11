@@ -31,7 +31,10 @@
       class: ['sa-btn', 'sa-btn--' + (o.variant || 'primary'), 'sa-btn--' + size,
         o.fullWidth && 'sa-btn--full', o.loading && 'sa-btn--loading', o.class],
       disabled: !!dead,
-      onclick: dead ? null : o.onClick,
+      // Der Handler hängt immer dran: ein Button, der erst später scharf
+      // geschaltet wird (button.disabled = false), hätte sonst nie einen.
+      // Ein deaktivierter Button feuert von sich aus kein click-Ereignis.
+      onclick: o.onClick,
       title: o.title || null,
       style: o.style
     },
@@ -55,7 +58,7 @@
       'aria-pressed': o.active ? 'true' : null,
       title: o.label,
       disabled: !!o.disabled,
-      onclick: o.disabled ? null : o.onClick,
+      onclick: o.onClick,
       style: o.style
     }, Icon(o.icon, { size: size === 'sm' ? 14 : size === 'lg' ? 22 : 18 }));
   }
@@ -323,7 +326,10 @@
     return h('button', {
       type: 'button',
       class: ['sa-navitem', o.active && 'is-active', o.class],
-      title: o.collapsed ? o.label : null,
+      // Titel und aria-label sitzen immer, weil die Beschriftung in der
+      // schmalen Leiste und am Telefon per CSS verschwindet.
+      title: o.label,
+      'aria-label': o.label,
       'aria-current': o.active ? 'page' : null,
       onclick: o.onClick, style: o.style
     },
@@ -448,7 +454,8 @@
         h('span.sa-scorerow__name', o.name),
         o.meta ? h('span.sa-scorerow__meta', o.meta) : null),
       o.badge || null,
-      o.delta != null ? h('span', { class: ['sa-scorerow__delta', o.delta < 0 && 'is-down'] },
+      // Nur echte Bewegung zeigen: „↑0" ist keine Information, nur Rauschen.
+      o.delta ? h('span', { class: ['sa-scorerow__delta', o.delta < 0 && 'is-down'] },
         Icon(o.delta >= 0 ? 'arrow-up' : 'arrow-down', { size: 12 }),
         String(Math.abs(o.delta))) : null,
       h('span.sa-scorerow__points', String(o.points))

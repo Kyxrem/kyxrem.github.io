@@ -9,13 +9,9 @@
  */
 
 /* ═══ core/Icon ══════════════════════════════════════════════════════════ */
-.sa-icon {
-  font-family: "Material Symbols Outlined";
-  font-weight: 400; font-style: normal;
-  line-height: 1; display: inline-flex; align-items: center; justify-content: center;
-  flex: 0 0 auto; letter-spacing: normal; text-transform: none; white-space: nowrap;
-  user-select: none; -webkit-font-smoothing: antialiased;
-}
+/* Inline-SVG statt Webfont (siehe js/icons.js). Erbt currentColor, wird in px
+   bemessen, schrumpft nie im Flex-Layout. */
+.sa-icon { display: inline-block; flex: 0 0 auto; vertical-align: middle; overflow: visible; }
 
 /* ═══ core/Button ════════════════════════════════════════════════════════ */
 .sa-btn {

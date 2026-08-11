@@ -1,15 +1,15 @@
 /* SpieleAffen Design System — tokens.
  * Copied verbatim from the Claude Design handoff (project/tokens/*.css).
  * Order matches project/styles.css. Do not hand-edit values here; they are the design.
+ *
+ * EINE Abweichung, und nur diese: der Abschnitt tokens/fonts.css lud beide
+ * Schriftpakete vom Google-CDN. Beides liegt jetzt lokal — siehe fonts.css für
+ * die Textschriften und js/icons.js für die Symbole. Der Grund steht dort.
+ * Alle Werte darunter sind unverändert.
  */
 
-/* ── tokens/fonts.css ─────────────────────────────────────────── */
-/* Webfonts. NOTE: no font binaries were supplied with the brief, so these are
-   Google Fonts substitutions loaded from the Google CDN (see readme.md > Fonts).
-   Chivo (900) = display / headlines. IBM Plex Sans = UI + body. JetBrains Mono = numbers, scores, timers.
-   Material Symbols Outlined = the icon set (see readme.md > Iconography). */
-@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400..700,0..1,0&display=block");
-@import url("https://fonts.googleapis.com/css2?family=Chivo:ital,wght@0,400;0,700;0,900;1,900&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;700;800&display=swap");
+/* ── tokens/fonts.css (ersetzt: selbst gehostet statt CDN) ─────── */
+@import url("fonts.css");
 
 /* ── tokens/colors.css ─────────────────────────────────────────── */
 :root{

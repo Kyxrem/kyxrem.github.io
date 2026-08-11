@@ -5,7 +5,7 @@
  *
  * Tag-Syntax: 'div.a.b#id' — Klassen und id direkt im Tag.
  * Props: 'class' (String | Array | Objekt), 'style' (Objekt), on*-Handler,
- *        data-*/aria-* als Attribute, alles andere als Property, wenn möglich.
+ *        data- und aria-Schlüssel als Attribute, alles andere als Property.
  * Kinder: Strings, Zahlen, Nodes, Arrays, null/false/undefined (werden ignoriert).
  */
 (function () {
