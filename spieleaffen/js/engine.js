@@ -1,12 +1,21 @@
-/* SpieleAffen — core.js
- * Datenmodell, Punkte-Engine, Tabellen, Achievements, Rekorde.
- * Läuft im Browser (window.SA) und in Node (module.exports) — keine DOM-Abhängigkeit.
+/* SpieleAffen — engine.js
+ * Datenmodell, Punkte-Engine, Tabellen, Pokale, Rekorde.
+ * Läuft im Browser (window.SA) und in Node (module.exports) — keine DOM-Abhängigkeit,
+ * damit die Regeln von der Kommandozeile aus prüfbar bleiben.
  *
- * Punkteregeln (siehe Legende in der App):
+ * Punkteregeln (unverändert aus der Vorgänger-App übernommen):
  *   – Platzierung je Spiel: 1. = 5, 2. = 3, 3. = 1 (Gleichstand teilt den Platz)
  *   – Antreten: +1 pro Abend
  *   – Bester Tipp je Spiel: +3 (Gleichstand: alle Nächsten)
+ *   – Strafe: −20 je Regelbruch
  * Abendsieger = meiste Punkte des Abends.
+ *
+ * Datendokument:
+ *   { meta, players[], seasons[], games[], nights[], modules{}, houseRules[] }
+ *   players: { id, name, short, seat 1..6, admin, archived }
+ *   nights:  { id, date, title, hostId, status, dabei[], snacks[], games[] }
+ *   games in nights: { id, gameId, title, lowerWins, durationMin, results[] }
+ *   results: { playerId, score, tip, strafe }
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -14,11 +23,14 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var PLACE_POINTS = [5, 3, 1]; // 1., 2., 3. — danach 0
-  var PART_POINTS = 1;          // pro Abend
-  var TIP_BONUS = 3;            // bester Tipp je Spiel
+  var PLACE_POINTS = [5, 3, 1];  // 1., 2., 3. — danach 0
+  var PART_POINTS = 1;           // pro Abend
+  var TIP_BONUS = 3;             // bester Tipp je Spiel
+  var STRAFE_POINTS = 20;        // Abzug je Strafe
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  var SEATS = [1, 2, 3, 4, 5, 6];
+
+  // ── Helfer ────────────────────────────────────────────────────────────────
   function byDateAsc(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
 
   function fmtDate(iso) {
@@ -27,20 +39,37 @@
     return p[2] + '.' + p[1] + '.' + p[0].slice(2);
   }
   function fmtDateShort(iso) {
+    if (!iso) return '';
     var p = iso.split('-');
     return parseInt(p[2], 10) + '.' + parseInt(p[1], 10) + '.';
   }
   var MONTHS = ['JAN', 'FEB', 'MÄR', 'APR', 'MAI', 'JUN', 'JUL', 'AUG', 'SEP', 'OKT', 'NOV', 'DEZ'];
+  var MONTHS_LONG = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  var WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   function monthAbbr(iso) { return MONTHS[parseInt(iso.split('-')[1], 10) - 1] || ''; }
+  function monthName(key) {
+    var p = String(key).split('-');
+    return (MONTHS_LONG[parseInt(p[1], 10) - 1] || '') + ' ' + p[0];
+  }
   function dayNum(iso) { return parseInt(iso.split('-')[2], 10); }
+  function monthKey(iso) { return iso ? iso.slice(0, 7) : ''; }
+  function weekday(iso) {
+    if (!iso) return '';
+    var d = new Date(iso + 'T12:00:00');
+    return WEEKDAYS[d.getDay()] || '';
+  }
+  /* „Di, 19. Mai" — die Datumsform aus dem Design-Kit. */
+  function fmtDateLong(iso) {
+    if (!iso) return '';
+    var p = iso.split('-');
+    return weekday(iso) + ', ' + parseInt(p[2], 10) + '. ' + (MONTHS_LONG[parseInt(p[1], 10) - 1] || '');
+  }
 
   function initials(name) {
     var parts = String(name || '?').trim().split(/\s+/);
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
     return String(name || '?').slice(0, 2).toUpperCase();
   }
-
-  // Kürzel: explizit gesetzt (player.short) oder aus dem Namen abgeleitet.
   function shortCode(player) {
     if (!player) return '?';
     if (player.short) return String(player.short).toUpperCase().slice(0, 2);
@@ -55,7 +84,7 @@
     return null;
   }
 
-  // Wettkampf-Ranking über einen Zahlenwert: gleiche Werte teilen den Platz ("1224").
+  /* Wettkampf-Ranking über einen Zahlenwert: gleiche Werte teilen den Platz ("1224"). */
   function rankBy(items, valueOf, desc) {
     var sorted = items.slice().sort(function (a, b) {
       var d = valueOf(b) - valueOf(a);
@@ -68,33 +97,46 @@
       if (i > 0 && valueOf(sorted[i - 1]) === v) place = out.get(sorted[i - 1]).place;
       out.set(sorted[i], { place: place, value: v });
     }
-    return out; // Map item -> {place, value}
+    return out;
+  }
+
+  function uid(prefix) {
+    return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+  }
+
+  /* Freie Sitzfarben: sechs Stück, aktive Affen belegen je eine. */
+  function freeSeats(players) {
+    var taken = (players || []).filter(function (p) { return !p.archived; })
+      .map(function (p) { return Number(p.seat); });
+    return SEATS.filter(function (s) { return taken.indexOf(s) < 0; });
   }
 
   // ── Spiel auswerten ───────────────────────────────────────────────────────
-  // returns per playerId: {score, tip, place, placePts, tipPts, tipDiff, exact}
+  // → je playerId: {score, tip, place, placePts, tipPts, tipDiff, exact, strafe, strafePts}
   function evalGame(game) {
-    var res = game.results || [];
+    var res = (game.results || []).filter(function (r) { return r.score != null && r.score !== ''; });
     if (!res.length) return {};
-    var ranks = rankBy(res, function (r) { return game.lowerWins ? -r.score : r.score; });
+    var ranks = rankBy(res, function (r) { return game.lowerWins ? -Number(r.score) : Number(r.score); });
     var out = {};
     res.forEach(function (r) {
       var place = ranks.get(r).place;
       out[r.playerId] = {
-        score: r.score,
-        tip: (r.tip === 0 || r.tip) ? r.tip : null,
+        score: Number(r.score),
+        tip: (r.tip === 0 || r.tip) ? Number(r.tip) : null,
         place: place,
         placePts: PLACE_POINTS[place - 1] || 0,
-        tipPts: 0, tipDiff: null, exact: false
+        tipPts: 0, tipDiff: null, exact: false,
+        strafe: !!r.strafe,
+        strafePts: r.strafe ? -STRAFE_POINTS : 0
       };
     });
     // Tipp-Bonus: kleinste Abweichung |score − tip| unter allen Tippern
     var tippers = res.filter(function (r) { return r.tip === 0 || r.tip; });
     if (tippers.length) {
       var best = Infinity;
-      tippers.forEach(function (r) { best = Math.min(best, Math.abs(r.score - r.tip)); });
+      tippers.forEach(function (r) { best = Math.min(best, Math.abs(Number(r.score) - Number(r.tip))); });
       tippers.forEach(function (r) {
-        var d = Math.abs(r.score - r.tip);
+        var d = Math.abs(Number(r.score) - Number(r.tip));
         out[r.playerId].tipDiff = d;
         out[r.playerId].exact = d === 0;
         if (d === best) out[r.playerId].tipPts = TIP_BONUS;
@@ -105,22 +147,25 @@
 
   // ── Abend auswerten ───────────────────────────────────────────────────────
   function evalNight(night) {
-    var per = {}; // playerId -> {placePts, tipPts, partPts, total, games:[{gameId,title,place,score,tip,tipPts,exact}]}
+    var per = {};
     (night.games || []).forEach(function (g) {
       var ev = evalGame(g);
       Object.keys(ev).forEach(function (pid) {
-        if (!per[pid]) per[pid] = { placePts: 0, tipPts: 0, partPts: PART_POINTS, total: 0, games: [] };
+        if (!per[pid]) per[pid] = { placePts: 0, tipPts: 0, partPts: PART_POINTS, strafePts: 0, strafen: 0, total: 0, games: [] };
         per[pid].placePts += ev[pid].placePts;
         per[pid].tipPts += ev[pid].tipPts;
+        per[pid].strafePts += ev[pid].strafePts;
+        if (ev[pid].strafe) per[pid].strafen += 1;
         per[pid].games.push({
           gameId: g.id, title: g.title, place: ev[pid].place, score: ev[pid].score,
-          tip: ev[pid].tip, tipDiff: ev[pid].tipDiff, tipPts: ev[pid].tipPts, exact: ev[pid].exact
+          tip: ev[pid].tip, tipDiff: ev[pid].tipDiff, tipPts: ev[pid].tipPts,
+          exact: ev[pid].exact, strafe: ev[pid].strafe
         });
       });
     });
     var pids = Object.keys(per);
     pids.forEach(function (pid) {
-      per[pid].total = per[pid].placePts + per[pid].tipPts + per[pid].partPts;
+      per[pid].total = per[pid].placePts + per[pid].tipPts + per[pid].partPts + per[pid].strafePts;
       var placeSum = 0;
       per[pid].games.forEach(function (g) { placeSum += g.place; });
       per[pid].avgPlace = per[pid].games.length ? placeSum / per[pid].games.length : 0;
@@ -128,19 +173,18 @@
     var ranks = rankBy(pids, function (pid) { return per[pid].total; });
     var winners = [], losers = [];
     var totals = pids.map(function (pid) { return per[pid].total; });
-    var max = Math.max.apply(null, totals), min = Math.min.apply(null, totals);
+    var max = totals.length ? Math.max.apply(null, totals) : 0;
+    var min = totals.length ? Math.min.apply(null, totals) : 0;
     pids.forEach(function (pid) {
       per[pid].place = ranks.get(pid).place;
       if (per[pid].total === max) winners.push(pid);
     });
-    // "Letzter des Abends": eindeutig schlechtester — bei Punktgleichheit
+    // „Letzter des Abends": eindeutig schlechtester — bei Punktgleichheit
     // entscheidet die schlechtere Durchschnittsplatzierung; volle Gleichheit → niemand.
     if (max !== min) {
       var cands = pids.filter(function (pid) { return per[pid].total === min; });
       cands.sort(function (a, b) { return per[b].avgPlace - per[a].avgPlace; });
-      if (cands.length === 1 || per[cands[0]].avgPlace > per[cands[1]].avgPlace) {
-        losers = [cands[0]];
-      }
+      if (cands.length === 1 || per[cands[0]].avgPlace > per[cands[1]].avgPlace) losers = [cands[0]];
     }
     return { per: per, players: pids, winners: winners, losers: losers };
   }
@@ -149,39 +193,42 @@
   function newStats() {
     return {
       nights: 0, nightWins: 0, nightLasts: 0, points: 0,
-      placePts: 0, tipPts: 0, partPts: 0,
+      placePts: 0, tipPts: 0, partPts: 0, strafePts: 0, strafen: 0,
       gamesPlayed: 0, gameWins: 0, tipBonuses: 0, tipExacts: 0,
-      placements: [] // Abend-Platzierungen chronologisch (für Formkurve)
+      placements: []
     };
   }
 
   function compute(data) {
+    data = data || {};
     var players = data.players || [];
     var playerById = {};
     players.forEach(function (p) { playerById[p.id] = p; });
 
     var nights = (data.nights || []).slice().sort(byDateAsc);
-    var played = nights.filter(function (n) { return (n.games || []).length > 0; });
-    var planned = nights.filter(function (n) { return !(n.games || []).length; });
+    var played = nights.filter(function (n) { return (n.games || []).length > 0 && hasResults(n); });
+    var planned = nights.filter(function (n) { return played.indexOf(n) < 0; });
+    var live = nights.filter(function (n) { return n.status === 'laeuft'; })[0] || null;
 
-    var scopes = { all: {} }; // scopeKey -> playerId -> stats
+    // Bereiche: 'all', jede Saison, jeder Monat mit Abenden
+    var scopes = { all: {} };
     (data.seasons || []).forEach(function (s) { scopes[s.id] = {}; });
+    played.forEach(function (n) { if (!scopes['m:' + monthKey(n.date)]) scopes['m:' + monthKey(n.date)] = {}; });
     function stat(scope, pid) {
+      if (!scopes[scope]) scopes[scope] = {};
       if (!scopes[scope][pid]) scopes[scope][pid] = newStats();
       return scopes[scope][pid];
     }
 
-    var nightInfos = [];          // chronologisch, ausgewertet
-    var unlockEvents = [];        // Achievements (unten)
-    var perGame = {};             // title -> {plays, totalMin, byPlayer: pid -> {played, wins, scoreSum, bestScore, places[]}}
-    var streaks = {};             // pid -> {cur, best}
-    var lastNightLast = {};       // pid -> war beim letzten Abend Letzter?
-    var timelinePerPlayer = {};   // pid -> [{nightId,date,place,total}]
+    var nightInfos = [];
+    var unlockEvents = [];
+    var perGame = {};
+    var streaks = {};
+    var timelinePerPlayer = {};
+    var rankSnapshots = {};   // scope -> [ {pid: place} ] nach jedem Abend
     var records = {
-      bestScoreByTitle: {},       // title -> {score,playerId,date}
-      longestGameMin: null,       // {min,title,date}
-      bestNightPoints: null,      // {points,playerId,date,nightId}
-      bestStreak: null            // {len,playerId}
+      bestScoreByTitle: {}, longestGameMin: null, bestNightPoints: null,
+      bestStreak: null, worstNight: null
     };
 
     played.forEach(function (night) {
@@ -189,15 +236,19 @@
       var ev = evalNight(night);
       var info = { night: night, season: season, eval: ev };
       nightInfos.push(info);
+      var scopeKeys = ['all', 'm:' + monthKey(night.date)].concat(season ? [season.id] : []);
 
       ev.players.forEach(function (pid) {
         var e = ev.per[pid];
-        [stat('all', pid)].concat(season ? [stat(season.id, pid)] : []).forEach(function (s) {
+        scopeKeys.forEach(function (key) {
+          var s = stat(key, pid);
           s.nights += 1;
           s.points += e.total;
           s.placePts += e.placePts;
           s.tipPts += e.tipPts;
           s.partPts += e.partPts;
+          s.strafePts += e.strafePts;
+          s.strafen += e.strafen;
           s.gamesPlayed += e.games.length;
           s.placements.push(e.place);
           e.games.forEach(function (g) {
@@ -213,9 +264,12 @@
         if (!records.bestNightPoints || e.total > records.bestNightPoints.points) {
           records.bestNightPoints = { points: e.total, playerId: pid, date: night.date, nightId: night.id };
         }
+        if (!records.worstNight || e.total < records.worstNight.points) {
+          records.worstNight = { points: e.total, playerId: pid, date: night.date, nightId: night.id };
+        }
       });
 
-      // Streaks (über alle Abende, nicht nur Saison)
+      // Serien laufen über alle Abende, nicht je Saison
       players.forEach(function (p) {
         var pid = p.id;
         if (ev.players.indexOf(pid) < 0) return; // nicht dabei: Serie bleibt stehen
@@ -234,7 +288,8 @@
       // Pro Spiel + Rekorde
       (night.games || []).forEach(function (g) {
         var gv = evalGame(g);
-        if (!perGame[g.title]) perGame[g.title] = { title: g.title, plays: 0, byPlayer: {} };
+        if (!Object.keys(gv).length) return;
+        if (!perGame[g.title]) perGame[g.title] = { title: g.title, gameId: g.gameId || null, plays: 0, byPlayer: {} };
         var pg = perGame[g.title];
         pg.plays += 1;
         Object.keys(gv).forEach(function (pid) {
@@ -258,8 +313,16 @@
           records.longestGameMin = { min: g.durationMin, title: g.title, date: night.date };
         }
       });
-      lastNightLast = {};
-      ev.losers.forEach(function (pid) { lastNightLast[pid] = true; });
+
+      // Platzierungs-Momentaufnahme je Bereich — daraus wird später die Bewegung (delta)
+      scopeKeys.forEach(function (key) {
+        var pids = Object.keys(scopes[key]);
+        var r = rankBy(pids, function (pid) { return scopes[key][pid].points; });
+        var snap = {};
+        pids.forEach(function (pid) { snap[pid] = r.get(pid).place; });
+        if (!rankSnapshots[key]) rankSnapshots[key] = [];
+        rankSnapshots[key].push(snap);
+      });
     });
 
     // ── Tabellen ────────────────────────────────────────────────────────────
@@ -277,9 +340,55 @@
       return rows;
     }
 
-    // ── Angstgegner (Nemesis): wer schlägt mich am häufigsten? ─────────────
-    // Zählt Spiele, in denen beide dabei waren und B strikt besser platziert war als A.
-    var beats = {}; // a -> b -> {lost, shared, byTitle: {title: {lost, shared}}}
+    /* Bewegung gegenüber dem vorletzten Abend: +1 = einen Platz gutgemacht. */
+    function deltaIn(scope, pid) {
+      var snaps = rankSnapshots[scope];
+      if (!snaps || snaps.length < 2) return 0;
+      var now = snaps[snaps.length - 1][pid];
+      var before = snaps[snaps.length - 2][pid];
+      if (now == null || before == null) return 0;
+      return before - now;
+    }
+
+    /* Die Zeilenform, die Rangliste, Affen und die Sprüche erwarten. */
+    function standings(scope, opts) {
+      opts = opts || {};
+      var rows = table(scope || 'all');
+      var out = rows.map(function (r) {
+        var s = r.stats;
+        return {
+          id: r.player.id, name: r.player.name, short: shortCode(r.player),
+          seat: r.player.seat, archiv: !!r.player.archived, admin: !!r.player.admin,
+          place: r.place, points: s.points, delta: deltaIn(scope || 'all', r.player.id),
+          nights: s.nights, wins: s.nightWins, lasts: s.nightLasts,
+          gameWins: s.gameWins, gamesPlayed: s.gamesPlayed,
+          tipBonuses: s.tipBonuses, tipExacts: s.tipExacts,
+          strafen: s.strafen,
+          streak: streaks[r.player.id] ? streaks[r.player.id].cur : 0,
+          bestStreak: streaks[r.player.id] ? streaks[r.player.id].best : 0,
+          quote: s.nights ? Math.round((s.nightWins / s.nights) * 100) : 0,
+          you: opts.youId ? r.player.id === opts.youId : false
+        };
+      });
+      // Affen ohne Abende gehören trotzdem in die Affen-Liste
+      if (opts.includeEmpty) {
+        var seen = {};
+        out.forEach(function (a) { seen[a.id] = true; });
+        players.filter(function (p) { return !seen[p.id] && (opts.includeArchived || !p.archived); })
+          .forEach(function (p) {
+            out.push({
+              id: p.id, name: p.name, short: shortCode(p), seat: p.seat, archiv: !!p.archived, admin: !!p.admin,
+              place: out.length + 1, points: 0, delta: 0, nights: 0, wins: 0, lasts: 0,
+              gameWins: 0, gamesPlayed: 0, tipBonuses: 0, tipExacts: 0, strafen: 0,
+              streak: 0, bestStreak: 0, quote: 0, you: opts.youId === p.id
+            });
+          });
+      }
+      return opts.includeArchived ? out : out.filter(function (a) { return !a.archiv; });
+    }
+
+    // ── Angstgegner (Nemesis) ───────────────────────────────────────────────
+    var beats = {};
     played.forEach(function (night) {
       (night.games || []).forEach(function (g) {
         var gv = evalGame(g);
@@ -320,24 +429,21 @@
       return best;
     }
 
-    // ── Achievements ────────────────────────────────────────────────────────
-    // Werden aus der Historie berechnet — deterministisch, keine Speicherung nötig.
+    // ── Pokale ──────────────────────────────────────────────────────────────
+    // Aus der Historie berechnet — deterministisch, nichts zu speichern.
     var ACH = achievementDefs();
-    var achState = {}; // pid -> achId -> {nightId, date}
+    var achState = {};
     players.forEach(function (p) { achState[p.id] = {}; });
-    var run = {}; // Laufzustand je Spieler für die Checks
+    var run = {};
     players.forEach(function (p) {
       run[p.id] = {
         nights: 0, nightWins: 0, nightLasts: 0, points: 0, tipBonuses: 0, tipExacts: 0,
         winStreak: 0, wonTitles: {}, winsByTitle: {}, wasLastPreviousNight: false,
-        hasBigOvershoot: false, seasonsWon: 0
+        hasBigOvershoot: false, strafen: 0
       };
     });
 
-    // Saisonsieger vergangener Saisonen (Saisonende < heute niemals nötig —
-    // eine Saison gilt als gewonnen, sobald ihr Enddatum vor dem letzten
-    // erfassten Abend liegt oder eine spätere Saison begonnen hat).
-    var seasonWinners = {}; // seasonId -> [pid]
+    var seasonWinners = {};
     (data.seasons || []).forEach(function (s) {
       var rows = table(s.id);
       if (!rows.length) return;
@@ -352,8 +458,10 @@
       var night = info.night, ev = info.eval;
       ev.players.forEach(function (pid) {
         var r = run[pid], e = ev.per[pid];
+        if (!r) return;
         r.nights += 1;
         r.points += e.total;
+        r.strafen += e.strafen;
         var wonNight = ev.winners.indexOf(pid) >= 0;
         var lastNight = ev.losers.indexOf(pid) >= 0;
         if (wonNight) { r.nightWins += 1; r.winStreak += 1; } else { r.winStreak = 0; }
@@ -386,10 +494,8 @@
         });
         r.wasLastPreviousNight = lastNight;
       });
-      // Spieler, die nicht dabei waren: wasLastPreviousNight bleibt wie zuvor
     });
 
-    // Saisonmeister nach Saisonende freischalten (Datum = letzter Abend der Saison)
     Object.keys(seasonWinners).forEach(function (sid) {
       var season = (data.seasons || []).filter(function (s) { return s.id === sid; })[0];
       var lastNightOfSeason = null;
@@ -406,15 +512,35 @@
 
     unlockEvents.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
 
+    // ── Spiele-Regal ────────────────────────────────────────────────────────
+    var shelf = (data.games || []).map(function (g) {
+      var pg = perGame[g.title];
+      return {
+        id: g.id, title: g.title, genre: g.genre || 'Sonst', dauerMin: g.dauerMin || null,
+        minAffen: g.minAffen || null, maxAffen: g.maxAffen || null,
+        lowerWins: !!g.lowerWins, modul: g.modul || null,
+        plays: pg ? pg.plays : 0
+      };
+    }).sort(function (a, b) { return b.plays - a.plays || a.title.localeCompare(b.title, 'de'); });
+
+    var monthKeys = Object.keys(scopes).filter(function (k) { return k.slice(0, 2) === 'm:'; })
+      .map(function (k) { return k.slice(2); }).sort().reverse();
+
     return {
+      data: data,
       players: players,
       playerById: playerById,
       seasons: data.seasons || [],
       nights: nights,
       playedNights: played,
       plannedNights: planned,
+      liveNight: live,
+      lastNight: played.length ? played[played.length - 1] : null,
+      nextNight: planned.filter(function (n) { return n.status !== 'laeuft'; })[0] || null,
       nightInfos: nightInfos,
       table: table,
+      standings: standings,
+      shelf: shelf,
       perGame: perGame,
       streaks: streaks,
       nemesisOf: nemesisOf,
@@ -424,7 +550,9 @@
       unlockEvents: unlockEvents,
       seasonWinners: seasonWinners,
       records: records,
+      months: monthKeys,
       currentSeason: currentSeason(data),
+      freeSeats: freeSeats(players),
       spieltag: function (seasonId) {
         return played.filter(function (n) {
           var s = seasonOf(data, n.date);
@@ -434,13 +562,18 @@
     };
   }
 
+  function hasResults(night) {
+    return (night.games || []).some(function (g) {
+      return (g.results || []).some(function (r) { return r.score != null && r.score !== ''; });
+    });
+  }
+
   function currentSeason(data, todayIso) {
     var t = todayIso || new Date().toISOString().slice(0, 10);
     var list = data.seasons || [];
     for (var i = 0; i < list.length; i++) {
       if (t >= list[i].start && t <= list[i].end) return list[i];
     }
-    // sonst: letzte Saison mit Abenden, sonst letzte
     var played = (data.nights || []).filter(function (n) { return (n.games || []).length; }).sort(byDateAsc);
     if (played.length) {
       var s = seasonOf(data, played[played.length - 1].date);
@@ -449,48 +582,52 @@
     return list[list.length - 1] || null;
   }
 
-  // ── Achievement-Katalog ───────────────────────────────────────────────────
+  // ── Pokal-Katalog ─────────────────────────────────────────────────────────
+  // Kein Emoji — das Design-System verbietet es. Jeder Pokal trägt ein
+  // Material-Symbol und einen der beiden Tonfälle: banana (Belohnung) oder
+  // punsch (Schande).
   function achievementDefs() {
     return [
-      { id: 'erster-sieg',    emoji: '🏆', name: 'Erster Sieg',     desc: 'Zum ersten Mal Abendsieger', tone: 'gold',
+      { id: 'erster-sieg',    icon: 'trophy',        name: 'Erster Sieg',   desc: 'Zum ersten Mal Abendsieger', tone: 'banana',
         check: function (c) { return c.wonNight && c.run.nightWins === 1; } },
-      { id: 'hattrick',       emoji: '🎩', name: 'Hattrick',        desc: 'Drei Abendsiege in Folge', tone: 'gold',
+      { id: 'hattrick',       icon: 'repeat',        name: 'Hattrick',      desc: 'Drei Abendsiege in Folge', tone: 'banana',
         check: function (c) { return c.run.winStreak >= 3; } },
-      { id: 'hellseher',      emoji: '🔮', name: 'Hellseher',       desc: 'Eigenen Tipp exakt getroffen', tone: 'gold',
+      { id: 'hellseher',      icon: 'visibility',    name: 'Hellseher',     desc: 'Eigenen Tipp exakt getroffen', tone: 'banana',
         check: function (c) { return c.run.tipExacts >= 1; } },
-      { id: 'scharfschuetze', emoji: '🎯', name: 'Scharfschütze',   desc: 'Dreimal den Tipp-Bonus geholt', tone: 'gold',
+      { id: 'scharfschuetze', icon: 'gps_fixed',     name: 'Scharfschütze', desc: 'Dreimal den Tipp-Bonus geholt', tone: 'banana',
         check: function (c) { return c.run.tipBonuses >= 3; } },
-      { id: 'allrounder',     emoji: '🧭', name: 'Allrounder',      desc: 'Drei verschiedene Spiele gewonnen', tone: 'gold',
+      { id: 'allrounder',     icon: 'explore',       name: 'Allrounder',    desc: 'Drei verschiedene Spiele gewonnen', tone: 'banana',
         check: function (c) { return Object.keys(c.run.wonTitles).length >= 3; } },
-      { id: 'spezialist',     emoji: '👑', name: 'Spezialist',      desc: 'Fünf Siege im selben Spiel', tone: 'gold',
+      { id: 'spezialist',     icon: 'crown',         name: 'Spezialist',    desc: 'Fünf Siege im selben Spiel', tone: 'banana',
         check: function (c) {
           var w = c.run.winsByTitle;
           return Object.keys(w).some(function (t) { return w[t] >= 5; });
         } },
-      { id: 'dauerbrenner',   emoji: '🔥', name: 'Dauerbrenner',    desc: 'Zehn Abende dabei', tone: 'gold',
+      { id: 'dauerbrenner',   icon: 'flame',         name: 'Dauerbrenner',  desc: 'Zehn Abende dabei', tone: 'banana',
         check: function (c) { return c.run.nights >= 10; } },
-      { id: 'urgestein',      emoji: '🗿', name: 'Urgestein',       desc: '25 Abende dabei', tone: 'gold',
+      { id: 'urgestein',      icon: 'landscape',     name: 'Urgestein',     desc: '25 Abende dabei', tone: 'banana',
         check: function (c) { return c.run.nights >= 25; } },
-      { id: 'punktesammler',  emoji: '💯', name: 'Punktesammler',   desc: '100 Punkte insgesamt', tone: 'gold',
+      { id: 'punktesammler',  icon: 'scoreboard',    name: 'Punktesammler', desc: '100 Punkte insgesamt', tone: 'banana',
         check: function (c) { return c.run.points >= 100; } },
-      { id: 'comeback',       emoji: '🚀', name: 'Comeback',        desc: 'Abendsieg direkt nach letztem Platz', tone: 'gold',
+      { id: 'comeback',       icon: 'rocket_launch', name: 'Comeback',      desc: 'Abendsieg direkt nach letztem Platz', tone: 'banana',
         check: function (c) { return c.comeback; } },
-      { id: 'affenbande',     emoji: '🐒', name: 'Affenbande',      desc: 'Abend mit allen sechs Affen', tone: 'gold',
+      { id: 'affenbande',     icon: 'users',         name: 'Affenbande',    desc: 'Abend mit allen sechs Affen', tone: 'banana',
         check: function (c) { return c.allSix; } },
-      { id: 'saisonmeister',  emoji: '🥇', name: 'Saisonmeister',   desc: 'Eine Saison gewonnen', tone: 'gold',
+      { id: 'saisonmeister',  icon: 'military_tech', name: 'Saisonmeister', desc: 'Eine Saison gewonnen', tone: 'banana',
         check: function () { return false; /* wird separat vergeben */ } },
-      { id: 'rote-laterne',   emoji: '🕯️', name: 'Rote Laterne',    desc: 'Dreimal Letzter des Abends', tone: 'shame',
+      { id: 'rote-laterne',   icon: 'skull',         name: 'Rote Laterne',  desc: 'Dreimal Letzter des Abends', tone: 'punsch',
         check: function (c) { return c.run.nightLasts >= 3; } },
-      { id: 'luftschloss',    emoji: '📉', name: 'Luftschloss',     desc: 'Eigenen Tipp meilenweit überschätzt', tone: 'shame',
-        check: function (c) { return c.run.hasBigOvershoot; } }
+      { id: 'luftschloss',    icon: 'trending-down', name: 'Luftschloss',   desc: 'Eigenen Tipp meilenweit überschätzt', tone: 'punsch',
+        check: function (c) { return c.run.hasBigOvershoot; } },
+      { id: 'strafbank',      icon: 'gavel',         name: 'Strafbank',     desc: 'Dreimal Strafe kassiert', tone: 'punsch',
+        check: function (c) { return c.run.strafen >= 3; } }
     ];
   }
 
-  // ── Statuszeilen für die Tabelle (Sticheleien) ────────────────────────────
-  function statusLines(computed, rows, scopeStats) {
-    var out = {}; // pid -> {text, tone}
+  // ── Statuszeilen für die Tabelle ──────────────────────────────────────────
+  function statusLines(computed, rows) {
+    var out = {};
     if (!rows.length) return out;
-    // Beste Tipper (eindeutig, ≥2 Boni)
     var bestTip = null, bestTipCount = 1, tie = false;
     rows.forEach(function (r) {
       var tb = r.stats.tipBonuses;
@@ -500,24 +637,23 @@
     rows.forEach(function (r) {
       var pid = r.player.id;
       var streak = computed.streaks[pid] ? computed.streaks[pid].cur : 0;
-      if (streak >= 2) { out[pid] = { text: streak + ' SIEGE IN FOLGE', tone: 'up' }; return; }
+      if (streak >= 2) { out[pid] = { text: streak + ' Siege in Folge', tone: 'up' }; return; }
       if (r.place === rows[rows.length - 1].place && r.place > 1 && r.stats.nightWins === 0 && r.stats.nights >= 3) {
-        out[pid] = { text: 'ROTE LATERNE', tone: 'down' }; return;
+        out[pid] = { text: 'Rote Laterne', tone: 'down' }; return;
       }
-      if (pid === bestTip && !tie && bestTipCount >= 2) { out[pid] = { text: 'BESTER TIPPER', tone: 'dim' }; return; }
+      if (pid === bestTip && !tie && bestTipCount >= 2) { out[pid] = { text: 'Bester Tipper', tone: 'dim' }; return; }
       if (r.place === 2) {
         var diff = rows[0].stats.points - r.stats.points;
-        if (diff > 0) { out[pid] = { text: '–' + diff + ' AUF PLATZ 1', tone: 'dim' }; return; }
+        if (diff > 0) { out[pid] = { text: '−' + diff + ' auf Platz 1', tone: 'dim' }; return; }
       }
     });
     return out;
   }
 
-  // ── Sticheleien / Banter für den letzten Abend ────────────────────────────
+  // ── Sticheleien zum letzten Abend ─────────────────────────────────────────
   function banterForNight(computed, info) {
     var lines = [];
     var ev = info.eval;
-    // Größte Tipp-Fehleinschätzung
     var worst = null;
     ev.players.forEach(function (pid) {
       ev.per[pid].games.forEach(function (g) {
@@ -527,37 +663,48 @@
       });
     });
     if (worst && worst.diff >= 3) {
-      var name = computed.playerById[worst.pid].name;
       lines.push({
-        plain: name + ' tippte ' + worst.tip + ' Punkte, holte ' + worst.score + '.',
-        strong: 'Größte Selbstüberschätzung des Abends.'
+        text: (computed.playerById[worst.pid] || {}).name + ' tippte ' + worst.tip + ', holte ' + worst.score + '.',
+        tone: 'burn'
       });
     } else if (worst && worst.diff === 0) {
-      var n2 = computed.playerById[worst.pid].name;
-      lines.push({ plain: n2 + ' traf den eigenen Tipp exakt.', strong: 'Hellseher.' });
+      lines.push({ text: (computed.playerById[worst.pid] || {}).name + ' traf den eigenen Tipp exakt.', tone: 'brag' });
     }
     return lines;
+  }
+
+  // ── Leeres Dokument ───────────────────────────────────────────────────────
+  function emptyDoc() {
+    return { meta: { version: 1 }, players: [], seasons: [], games: [], nights: [], modules: { catan: { sessions: [] }, wizard: { sessions: [] } }, houseRules: [] };
   }
 
   return {
     PLACE_POINTS: PLACE_POINTS,
     PART_POINTS: PART_POINTS,
     TIP_BONUS: TIP_BONUS,
+    STRAFE_POINTS: STRAFE_POINTS,
+    SEATS: SEATS,
     compute: compute,
     evalGame: evalGame,
     evalNight: evalNight,
     currentSeason: currentSeason,
     seasonOf: seasonOf,
+    achievementDefs: achievementDefs,
     statusLines: statusLines,
     banterForNight: banterForNight,
+    freeSeats: freeSeats,
+    emptyDoc: emptyDoc,
     fmtDate: fmtDate,
     fmtDateShort: fmtDateShort,
+    fmtDateLong: fmtDateLong,
     monthAbbr: monthAbbr,
+    monthName: monthName,
+    monthKey: monthKey,
+    weekday: weekday,
     dayNum: dayNum,
     initials: initials,
     shortCode: shortCode,
-    uid: function (prefix) {
-      return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-    }
+    rankBy: rankBy,
+    uid: uid
   };
 });
