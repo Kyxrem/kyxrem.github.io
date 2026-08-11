@@ -20,18 +20,32 @@
   var abendId = null;
   var entwurf = {};   // {spielId: {playerId: {score, tip, strafe}}}
 
+  /* Zustand des Tors auf Modulebene: jede Toast-Meldung zeichnet die Schale neu
+     und baut den Screen von vorn auf. Läge das hier drin, fiele man nach einem
+     Fehlversuch zurück auf die vier Ziffern — mit dem langen Schlüssel in der
+     Zwischenablage und keinem Feld dafür. */
+  var langerWeg = false;
+  var versuche = 0;
+  var falschStand = false;   // damit die Fehlermeldung das Neuzeichnen überlebt
+
   // ══ Code-Tor ═════════════════════════════════════════════════════════════
   function codeTor(state) {
-    var versuche = 0;
     var karte = h('div');
 
     function zeichne(falsch) {
+      falschStand = !!falsch;
+      window.SA_DOM.mount(karte, falschStand ? (langerWeg ? schluesselKarte(true) : pinKarte(true))
+                                             : (langerWeg ? schluesselKarte(false) : pinKarte(false)));
+    }
+
+    /* Der alltägliche Weg: vier Ziffern, wie im Entwurf. */
+    function pinKarte(falsch) {
       var pin = U.PinInput({
         length: 4, invalid: falsch, autoFocus: true,
         hint: falsch ? 'Falscher Code. Der Block merkt sich das.' : 'Deine vier Ziffern. Nicht die von jemand anderem.',
         onComplete: pruefen
       });
-      window.SA_DOM.mount(karte, U.Card({
+      return U.Card({
         tone: falsch ? 'live' : 'neon',
         style: { width: 'min(420px, 100%)', animation: falsch ? 'sa-boing var(--dur-base) var(--ease-boing)' : null },
         eyebrow: 'Nur für Affen mit Schlüssel',
@@ -48,14 +62,56 @@
               }
             }),
             U.Button({ children: 'Löschen', variant: 'ghost', onClick: function () { pin.clear(); } })),
-          versuche >= 2 ? h('span.sa-meta', { style: { color: 'var(--punsch-400)' } }, demoTipp(state)) : null
+          versuche >= 2 ? h('span.sa-meta', { style: { color: 'var(--punsch-400)' } }, demoTipp(state)) : null,
+          // Der lange Schlüssel aus den Worker-Secrets passt in kein Vier-Ziffern-
+          // Feld. Er ist auch nicht der Normalfall — nur die erste Einrichtung
+          // und der Weg zurück, wenn sich die Runde ausgesperrt hat.
+          window.SA_API.hasBackend() ? U.Button({
+            children: 'Mit Admin-Schlüssel', variant: 'ghost', size: 'sm', iconLeft: 'key',
+            onClick: function () { langerWeg = true; zeichne(false); }
+          }) : null
         ]
-      }));
+      });
+    }
+
+    /* Der seltene Weg: der lange Schlüssel aus `wrangler secret put`. */
+    function schluesselKarte(falsch) {
+      var feld = U.Input({
+        label: 'Admin-Schlüssel', type: 'password', icon: 'key',
+        placeholder: 'der lange aus wrangler secret put',
+        error: falsch ? 'Stimmt nicht. Groß- und Kleinschreibung zählt.' : null,
+        hint: falsch ? null : 'Für die erste Einrichtung und für den Fall, dass niemand mehr reinkommt.',
+        onKeyDown: function (e) { if (e.key === 'Enter') pruefen(feld.input.value.trim()); }
+      });
+      setTimeout(function () { feld.input.focus(); }, 30);
+      return U.Card({
+        tone: falsch ? 'live' : 'neon',
+        style: { width: 'min(420px, 100%)', animation: falsch ? 'sa-boing var(--dur-base) var(--ease-boing)' : null },
+        eyebrow: 'Erste Einrichtung',
+        title: 'Admin-Schlüssel',
+        children: [
+          h('span.sa-body', 'Der Schlüssel, den du beim Deploy gesetzt hast. Danach legst du Affen an und gibst ihnen ihre vier Ziffern.'),
+          feld,
+          h('div.sa-inline', null,
+            U.Button({
+              children: 'Rein', iconLeft: 'lock_open',
+              onClick: function () { pruefen(feld.input.value.trim()); }
+            }),
+            U.Button({
+              children: 'Zurück zu vier Ziffern', variant: 'ghost',
+              onClick: function () { langerWeg = false; zeichne(false); }
+            }))
+        ]
+      });
     }
 
     function pruefen(wert) {
       if (!wert || wert.length < 4) return;
       S.login(wert).then(function (spieler) {
+        // Nach dem Abmelden soll wieder das Vier-Ziffern-Tor vorn stehen.
+        langerWeg = false;
+        versuche = 0;
+        falschStand = false;
         S.toast('Drin', 'Hallo ' + spieler.name + '. Bitte keine Dummheiten.', 'slime');
       }).catch(function (err) {
         versuche += 1;
@@ -66,7 +122,9 @@
       });
     }
 
-    zeichne(false);
+    // Nicht zeichne(false): ein Neuaufbau der Schale (jede Toast-Meldung löst
+    // einen aus) darf die Fehlermeldung nicht wegwischen.
+    zeichne(falschStand);
     return h('div', { style: { display: 'grid', justifyItems: 'center', alignItems: 'center', minHeight: '60vh', width: '100%' } }, karte);
   }
 
