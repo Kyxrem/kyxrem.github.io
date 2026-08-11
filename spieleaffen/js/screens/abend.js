@@ -32,7 +32,11 @@
       var r = (g.results || []).filter(function (x) { return x.playerId === playerId; })[0];
       if (!r) { r = { playerId: playerId, score: 0 }; g.results.push(r); }
       r.score = Number(r.score || 0) + by;
-    }, { summary: 'Punkte geändert (' + (by > 0 ? '+' : '') + by + ')', quiet: true });
+    }, {
+      summary: 'Punkte im laufenden Abend geändert',
+      // Am Tisch wird gehämmert: fünf Klicks sind eine Änderung, nicht fünf.
+      debounce: 1200
+    });
   }
 
   function strafe(live, affe) {
@@ -75,16 +79,7 @@
               : 'Nichts geplant, nichts gewonnen.'),
             next ? U.Button({
               children: 'Abend starten', iconLeft: 'play',
-              onClick: function () {
-                S.update(function (doc) {
-                  var n = doc.nights.filter(function (x) { return x.id === next.id; })[0];
-                  if (!n) return false;
-                  n.status = 'laeuft'; n.runde = 1; n.runden = n.runden || 7; n.startedAt = S.uhr();
-                }, {
-                  summary: 'Abend „' + next.title + '" gestartet',
-                  entries: [{ icon: 'play', tone: 'punsch', text: 'Abend „' + next.title + '" läuft.', to: S.uhr() }]
-                });
-              }
+              onClick: function () { window.SA_DIALOGS.abendStarten(next); }
             }) : null)
         })
       ];

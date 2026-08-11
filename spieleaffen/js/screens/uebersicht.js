@@ -55,19 +55,7 @@
             U.Button({ children: 'Abend planen', iconLeft: 'plus', onClick: window.SA_DIALOGS.abendPlanen }),
             next ? U.Button({
               children: 'Abend starten', variant: 'secondary', iconLeft: 'play',
-              onClick: function () {
-                S.update(function (doc) {
-                  var n = doc.nights.filter(function (x) { return x.id === next.id; })[0];
-                  if (!n) return false;
-                  n.status = 'laeuft';
-                  n.runde = 1;
-                  n.runden = n.runden || 7;
-                  n.startedAt = S.uhr();
-                }, {
-                  summary: 'Abend „' + next.title + '" gestartet',
-                  entries: [{ icon: 'play', tone: 'punsch', text: 'Abend „' + next.title + '" läuft.', to: S.uhr() }]
-                }).then(function () { S.navigate('abend'); });
-              }
+              onClick: function () { window.SA_DIALOGS.abendStarten(next); }
             }) : null)
         ]
       });

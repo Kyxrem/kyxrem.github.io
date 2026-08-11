@@ -68,14 +68,13 @@
             onClick: function () {
               var titel = titelFeld.input.value.trim() || 'Spieleabend';
               var datum = datumFeld.input.value || naechsterDienstag();
-              var spielId = spielFeld.select.value;
-              var spiel = c.shelf.filter(function (g) { return g.id === spielId; })[0];
               if (dabei.length < 2) { S.toast('Zu wenig', 'Alleine spielt sich das schlecht.', 'punsch'); return; }
               S.update(function (doc) {
                 doc.nights = doc.nights || [];
                 doc.nights.push({
                   id: SA.uid('n'), date: datum, title: titel, hostId: dabei[0],
                   status: 'geplant', zeit: zeitFeld.input.value || '20:00',
+                  gameId: spielFeld.select.value || null,   // gemerkt fürs Starten
                   dabei: dabei.slice(), snacks: standardSnacks(), games: []
                 });
               }, {
@@ -286,8 +285,45 @@
     });
   }
 
+  // ── Abend starten ────────────────────────────────────────────────────────
+  /* Ein laufender Abend braucht ein Spiel, in das die ±-Tasten schreiben
+     können. Wer beim Planen keins gewählt hat, bekommt das erste aus dem
+     Regal — umstellen geht auf dem Abend-Screen. */
+  function abendStarten(abend) {
+    var c = S.computed();
+    var spiel = c.shelf.filter(function (g) { return g.id === abend.gameId; })[0] || c.shelf[0];
+    var dabei = (abend.dabei || []).length ? abend.dabei
+      : c.standings('all', { includeEmpty: true }).map(function (a) { return a.id; });
+
+    return S.update(function (doc) {
+      var n = doc.nights.filter(function (x) { return x.id === abend.id; })[0];
+      if (!n) return false;
+      n.status = 'laeuft';
+      n.runde = n.runde || 1;
+      n.runden = n.runden || 7;
+      n.startedAt = S.uhr();
+      n.dabei = dabei;
+      if (!(n.games || []).length) {
+        n.games = [{
+          id: SA.uid('g'),
+          gameId: spiel ? spiel.id : null,
+          title: spiel ? spiel.title : 'Spieleabend',
+          lowerWins: !!(spiel && spiel.lowerWins),
+          results: dabei.map(function (pid) { return { playerId: pid, score: 0 }; })
+        }];
+      }
+    }, {
+      summary: 'Abend „' + abend.title + '" gestartet',
+      entries: [{ icon: 'play', tone: 'punsch', text: 'Abend „' + abend.title + '" läuft.', to: S.uhr() }]
+    }).then(function (res) {
+      if (res !== null) S.navigate('abend');
+      return res;
+    }).catch(function () { /* Meldung kam schon vom Store */ });
+  }
+
   window.SA_DIALOGS = {
     abendPlanen: abendPlanen,
+    abendStarten: abendStarten,
     ergebnisEintragen: ergebnisEintragen,
     affeHinzufuegen: affeHinzufuegen,
     standardSnacks: standardSnacks
