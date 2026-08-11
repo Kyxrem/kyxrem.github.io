@@ -1,18 +1,18 @@
-# SpieleAffen API — Cloudflare Worker
-# Deploy-Anleitung: siehe ../DEPLOY.md
 name = "spieleaffen"
 main = "worker.js"
-compatibility_date = "2026-08-01"
+compatibility_date = "2026-01-01"
 
-# KV-Namespace anlegen:  npx wrangler kv namespace create SA_KV
-# …und die ausgegebene id hier eintragen:
+# KV-Namespace anlegen und die ausgegebene id hier eintragen:
+#   npx wrangler kv namespace create SA_KV
 [[kv_namespaces]]
 binding = "SA_KV"
-id = "HIER_KV_NAMESPACE_ID_EINTRAGEN"
+id = "HIER_DIE_KV_ID_EINTRAGEN"
 
-# Optional: CORS auf die eigene Seite einschränken (Default: *)
+# Admin-Schlüssel setzen (nicht hier, sondern als Secret):
+#   npx wrangler secret put ADMIN_TOKEN
+# Damit kommt man auch rein, wenn noch kein Affe einen Code hat — oder wenn
+# sich die Runde ausgesperrt hat.
+
+# Optional: CORS auf die eigene Seite beschränken.
 # [vars]
 # ALLOW_ORIGIN = "https://kyxrem.github.io"
-
-# Admin-Token als Secret setzen (nicht hier eintragen!):
-#   npx wrangler secret put ADMIN_TOKEN

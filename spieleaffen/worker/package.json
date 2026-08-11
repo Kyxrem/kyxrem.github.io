@@ -1,0 +1,5 @@
+{
+  "name": "spieleaffen-worker",
+  "private": true,
+  "type": "module"
+}

@@ -1,29 +1,52 @@
 /* SpieleAffen — Cloudflare Worker (Backend)
  *
- * Öffentlich lesbar, Schreiben nur mit persönlichem Zugangs-Token.
- * Jede Änderung landet mit Name + Zeitpunkt im Protokoll — so ist
- * nachvollziehbar, wer was eingetragen oder geändert hat.
+ * Lesen ist öffentlich, Schreiben braucht eine Sitzung, und eine Sitzung
+ * bekommt man mit den eigenen vier Ziffern. Deshalb steht in jedem Log-Eintrag
+ * ein Name und nicht nur „Admin".
  *
  * Endpunkte:
- *   GET  /api/data            öffentlich  → {rev, updatedAt, data}
- *   GET  /api/log?limit=N     öffentlich  → {entries:[{ts,who,action,summary,auto}]}
- *   GET  /api/whoami          Token       → {name, admin}
- *   PUT  /api/data            Token       → speichert {data, baseRev, summary}; 409 bei Konflikt
- *   GET  /api/tokens          Admin       → {tokens:[{id,name,prefix,createdAt,lastUsedAt,revokedAt}]}
- *   POST /api/tokens          Admin       → {token} (wird nur einmal ausgegeben; gespeichert wird nur der Hash)
- *   POST /api/tokens/revoke   Admin       → widerruft ein Token
+ *   GET  /api/data          öffentlich → {rev, updatedAt, data}
+ *   GET  /api/log?limit=N   öffentlich → {entries:[…]}   — der Block ist einsehbar
+ *   POST /api/login         Code       → {token, player}; 401 falsch, 429 zu oft
+ *   POST /api/logout        Token      → beendet die Sitzung
+ *   GET  /api/me            Token      → {id, name, admin}
+ *   PUT  /api/data          Token      → {data, baseRev, summary, entries}; 409 bei Konflikt
+ *   GET  /api/codes         Admin      → {codes:{playerId:true}} — nur wer einen hat, nie welchen
+ *   POST /api/codes         Admin      → setzt oder löscht den Code eines Affen
  *
  * Bindings (wrangler.toml): KV-Namespace SA_KV, Secret ADMIN_TOKEN.
  * Optionale Var ALLOW_ORIGIN (Default '*') schränkt CORS ein.
+ *
+ * ── Zur Sicherheit der vier Ziffern ──────────────────────────────────────
+ * Vier Ziffern sind zehntausend Möglichkeiten. Das ist schwach, und es soll
+ * hier auch nichts Wertvolleres schützen als eine Punktetabelle unter Freunden.
+ * Zwei Dinge machen es trotzdem ordentlich:
+ *
+ *   1. Gespeichert wird nie der Code, sondern PBKDF2-SHA256 mit 100.000
+ *      Runden und eigenem Salt je Affe. Wer die KV-Datenbank in die Hand
+ *      bekommt, braucht selbst für zehntausend Kandidaten spürbar Rechenzeit.
+ *   2. Geraten wird nicht: nach VERSUCHE_MAX falschen Codes ist die IP für
+ *      SPERRE_MIN Minuten draußen. Das ist die eigentliche Verteidigung.
+ *
+ * Wer mehr braucht, nimmt längere Codes — LAENGE_MIN unten anheben genügt.
  */
 
 const MAX_DOC_BYTES = 400_000;
 const MAX_LOG = 500;
+const PBKDF2_RUNDEN = 100_000;
+const SITZUNG_TAGE = 30;
+const VERSUCHE_MAX = 6;
+const SPERRE_MIN = 15;
+const LAENGE_MIN = 4;
 
-const EMPTY_DOC = {
+const LEERES_DOKUMENT = {
+  meta: { version: 1 },
   players: [],
   seasons: [],
-  nights: []
+  games: [],
+  nights: [],
+  modules: { catan: { sessions: [] }, wizard: { sessions: [] } },
+  houseRules: []
 };
 
 export default {
@@ -36,41 +59,27 @@ export default {
     }
 
     try {
-      if (url.pathname === '/' || url.pathname === '') {
-        return json({ ok: true, service: 'SpieleAffen API' }, 200, origin);
-      }
-      if (url.pathname === '/api/data' && request.method === 'GET') {
-        return json(await getDoc(env), 200, origin);
-      }
-      if (url.pathname === '/api/log' && request.method === 'GET') {
-        const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10) || 100, MAX_LOG);
-        const log = (await env.SA_KV.get('log', 'json')) || [];
-        return json({ entries: log.slice(0, limit) }, 200, origin);
-      }
-      if (url.pathname === '/api/whoami' && request.method === 'GET') {
-        const who = await authenticate(request, env);
-        if (!who) return json({ error: 'Token ungültig' }, 401, origin);
-        return json({ name: who.name, admin: who.admin }, 200, origin);
-      }
-      if (url.pathname === '/api/data' && request.method === 'PUT') {
-        return await putData(request, env, origin);
-      }
-      if (url.pathname === '/api/tokens' && request.method === 'GET') {
-        const who = await authenticate(request, env);
-        if (!who) return json({ error: 'Token ungültig' }, 401, origin);
-        if (!who.admin) return json({ error: 'Nur für Admins' }, 403, origin);
-        const tokens = (await env.SA_KV.get('tokens', 'json')) || {};
-        const list = Object.keys(tokens).map((id) => {
-          const t = tokens[id];
-          return { id, name: t.name, prefix: t.prefix, createdAt: t.createdAt, lastUsedAt: t.lastUsedAt || null, revokedAt: t.revokedAt || null };
-        }).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-        return json({ tokens: list }, 200, origin);
-      }
-      if (url.pathname === '/api/tokens' && request.method === 'POST') {
-        return await createToken(request, env, origin);
-      }
-      if (url.pathname === '/api/tokens/revoke' && request.method === 'POST') {
-        return await revokeToken(request, env, origin);
+      const route = request.method + ' ' + url.pathname;
+      switch (route) {
+        case 'GET /':
+        case 'GET ':
+          return json({ ok: true, service: 'SpieleAffen API' }, 200, origin);
+
+        case 'GET /api/data':
+          return json(await ladeDokument(env), 200, origin);
+
+        case 'GET /api/log': {
+          const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10) || 100, MAX_LOG);
+          const log = (await env.SA_KV.get('log', 'json')) || [];
+          return json({ entries: log.slice(0, limit) }, 200, origin);
+        }
+
+        case 'POST /api/login':   return await anmelden(request, env, origin);
+        case 'POST /api/logout':  return await abmelden(request, env, origin);
+        case 'GET /api/me':       return await werBinIch(request, env, origin);
+        case 'PUT /api/data':     return await speichern(request, env, origin);
+        case 'GET /api/codes':    return await codesLesen(request, env, origin);
+        case 'POST /api/codes':   return await codeSetzen(request, env, origin);
       }
       return json({ error: 'Nicht gefunden' }, 404, origin);
     } catch (err) {
@@ -79,7 +88,7 @@ export default {
   }
 };
 
-// ── Helpers ────────────────────────────────────────────────
+// ── Grundlagen ─────────────────────────────────────────────────────────────
 function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
@@ -89,200 +98,218 @@ function corsHeaders(origin) {
   };
 }
 
-function json(obj, status, origin) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-      ...corsHeaders(origin)
-    }
+function json(body, status, origin) {
+  return new Response(JSON.stringify(body), {
+    status: status || 200,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...corsHeaders(origin || '*') }
   });
 }
 
-async function sha256Hex(s) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+function hex(buffer) {
+  return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function bearer(request) {
-  const h = request.headers.get('Authorization') || '';
-  const m = /^Bearer\s+(.+)$/i.exec(h);
-  return m ? m[1].trim() : null;
+function zufall(bytes) {
+  return hex(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
-// → {name, admin, tokenId?} oder null
-async function authenticate(request, env) {
-  const token = bearer(request);
+/* Konstante Laufzeit — ein Vergleich, der bei der ersten Abweichung abbricht,
+   verrät über die Zeit, wie viele Zeichen stimmten. */
+function gleich(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function ableiten(code, salt) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: PBKDF2_RUNDEN },
+    key, 256
+  );
+  return hex(bits);
+}
+
+// ── Dokument ───────────────────────────────────────────────────────────────
+async function ladeDokument(env) {
+  const gespeichert = await env.SA_KV.get('doc', 'json');
+  return gespeichert || { rev: 0, updatedAt: null, data: LEERES_DOKUMENT };
+}
+
+// ── Sperre gegen Raten ─────────────────────────────────────────────────────
+function ipVon(request) {
+  return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unbekannt';
+}
+
+async function gesperrt(env, ip) {
+  const eintrag = await env.SA_KV.get('rl:' + ip, 'json');
+  return !!(eintrag && eintrag.versuche >= VERSUCHE_MAX);
+}
+
+async function fehlversuch(env, ip) {
+  const eintrag = (await env.SA_KV.get('rl:' + ip, 'json')) || { versuche: 0 };
+  eintrag.versuche += 1;
+  await env.SA_KV.put('rl:' + ip, JSON.stringify(eintrag), { expirationTtl: SPERRE_MIN * 60 });
+}
+
+async function sperreLoesen(env, ip) {
+  await env.SA_KV.delete('rl:' + ip);
+}
+
+// ── Anmelden ───────────────────────────────────────────────────────────────
+async function anmelden(request, env, origin) {
+  const ip = ipVon(request);
+  if (await gesperrt(env, ip)) {
+    return json({ error: 'Zu viele Versuche. In ' + SPERRE_MIN + ' Minuten nochmal.' }, 429, origin);
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const code = String(body.code || '');
+  if (code.length < LAENGE_MIN) return json({ error: 'Code zu kurz' }, 400, origin);
+
+  // Der Admin-Schlüssel aus den Secrets kommt immer rein — damit sich die
+  // Runde nicht selbst aussperren kann und der allererste Affe angelegt
+  // werden kann, bevor es überhaupt Codes gibt.
+  if (env.ADMIN_TOKEN && gleich(code, env.ADMIN_TOKEN)) {
+    await sperreLoesen(env, ip);
+    const player = { id: null, name: 'Admin', admin: true };
+    return json({ token: await sitzungAnlegen(env, player), player }, 200, origin);
+  }
+
+  const codes = (await env.SA_KV.get('codes', 'json')) || {};
+  const doc = await ladeDokument(env);
+
+  for (const playerId of Object.keys(codes)) {
+    const eintrag = codes[playerId];
+    if (!eintrag || !eintrag.salt || !eintrag.hash) continue;
+    const kandidat = await ableiten(code, eintrag.salt);
+    if (!gleich(kandidat, eintrag.hash)) continue;
+
+    const spieler = (doc.data.players || []).filter((p) => p.id === playerId)[0];
+    if (!spieler || spieler.archived) break;   // archivierte Affen kommen nicht rein
+    await sperreLoesen(env, ip);
+    const player = { id: spieler.id, name: spieler.name, admin: !!spieler.admin };
+    return json({ token: await sitzungAnlegen(env, player), player }, 200, origin);
+  }
+
+  await fehlversuch(env, ip);
+  return json({ error: 'Code stimmt nicht' }, 401, origin);
+}
+
+async function sitzungAnlegen(env, player) {
+  const token = zufall(32);
+  await env.SA_KV.put('sess:' + token, JSON.stringify(player), { expirationTtl: SITZUNG_TAGE * 86400 });
+  return token;
+}
+
+async function sitzung(request, env) {
+  const auth = request.headers.get('Authorization') || '';
+  if (!auth.startsWith('Bearer ')) return null;
+  const token = auth.slice(7).trim();
   if (!token) return null;
-
-  // Admin-Token (Secret): Vergleich über Hashes
-  if (env.ADMIN_TOKEN) {
-    const [a, b] = await Promise.all([sha256Hex(token), sha256Hex(env.ADMIN_TOKEN)]);
-    if (a === b) return { name: 'Admin', admin: true };
-  }
-
-  const tokens = (await env.SA_KV.get('tokens', 'json')) || {};
-  const hash = await sha256Hex(token);
-  for (const id of Object.keys(tokens)) {
-    const t = tokens[id];
-    if (t.hash === hash) {
-      if (t.revokedAt) return null;
-      // lastUsedAt höchstens einmal pro Stunde schreiben
-      const now = Date.now();
-      if (!t.lastUsedAt || now - Date.parse(t.lastUsedAt) > 3600_000) {
-        t.lastUsedAt = new Date(now).toISOString();
-        await env.SA_KV.put('tokens', JSON.stringify(tokens));
-      }
-      return { name: t.name, admin: false, tokenId: id };
-    }
-  }
-  return null;
+  const roh = await env.SA_KV.get('sess:' + token, 'json');
+  if (!roh) return null;
+  return { ...roh, token };
 }
 
-async function getDoc(env) {
-  const doc = await env.SA_KV.get('doc', 'json');
-  if (!doc) return { rev: 0, updatedAt: null, data: EMPTY_DOC };
-  return doc;
-}
-
-function validateData(data) {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return 'data muss ein Objekt sein';
-  for (const key of ['players', 'seasons', 'nights']) {
-    if (!Array.isArray(data[key])) return key + ' muss eine Liste sein';
-  }
-  for (const p of data.players) {
-    if (!p || typeof p.id !== 'string' || typeof p.name !== 'string') return 'Spieler brauchen id und name';
-  }
-  for (const n of data.nights) {
-    if (!n || typeof n.id !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(n.date || '')) return 'Abende brauchen id und Datum (YYYY-MM-DD)';
-    if (!Array.isArray(n.games)) return 'Abend ' + n.id + ': games muss eine Liste sein';
-  }
-  for (const s of data.seasons) {
-    if (!s || typeof s.id !== 'string' || typeof s.name !== 'string') return 'Saisons brauchen id und name';
-  }
-  return null;
-}
-
-// Kurze automatische Zusammenfassung der Änderung fürs Protokoll —
-// unabhängig davon, was der Client als summary behauptet.
-function autoDiff(oldData, newData) {
-  const parts = [];
-  const on = (oldData.nights || []).length, nn = (newData.nights || []).length;
-  const op = (oldData.players || []).length, np = (newData.players || []).length;
-  const os = (oldData.seasons || []).length, ns = (newData.seasons || []).length;
-  if (on !== nn) parts.push('Abende ' + on + '→' + nn);
-  if (op !== np) parts.push('Spieler ' + op + '→' + np);
-  if (os !== ns) parts.push('Saisons ' + os + '→' + ns);
-  if (!parts.length) {
-    const oldIds = new Map((oldData.nights || []).map((n) => [n.id, JSON.stringify(n)]));
-    const changed = (newData.nights || []).filter((n) => oldIds.has(n.id) && oldIds.get(n.id) !== JSON.stringify(n));
-    if (changed.length) parts.push(changed.length + ' Abend' + (changed.length > 1 ? 'e' : '') + ' geändert');
-    else if (JSON.stringify(oldData.players) !== JSON.stringify(newData.players)) parts.push('Spielerdaten geändert');
-    else if (JSON.stringify(oldData.seasons) !== JSON.stringify(newData.seasons)) parts.push('Saisons geändert');
-  }
-  return parts.join(', ');
-}
-
-async function appendLog(env, entry) {
-  const log = (await env.SA_KV.get('log', 'json')) || [];
-  log.unshift(entry);
-  await env.SA_KV.put('log', JSON.stringify(log.slice(0, MAX_LOG)));
-}
-
-async function putData(request, env, origin) {
-  const who = await authenticate(request, env);
-  if (!who) return json({ error: 'Token ungültig' }, 401, origin);
-
-  const raw = await request.text();
-  if (raw.length > MAX_DOC_BYTES) return json({ error: 'Dokument zu groß' }, 413, origin);
-  let body;
-  try { body = JSON.parse(raw); } catch (e) { return json({ error: 'Ungültiges JSON' }, 400, origin); }
-
-  const invalid = validateData(body.data);
-  if (invalid) return json({ error: invalid }, 400, origin);
-
-  const current = await getDoc(env);
-  const baseRev = typeof body.baseRev === 'number' ? body.baseRev : -1;
-  if (baseRev !== current.rev) {
-    return json({ error: 'Konflikt: Daten wurden zwischenzeitlich geändert', rev: current.rev }, 409, origin);
-  }
-
-  const next = {
-    rev: current.rev + 1,
-    updatedAt: new Date().toISOString(),
-    data: body.data
-  };
-  await env.SA_KV.put('doc', JSON.stringify(next));
-
-  const summary = typeof body.summary === 'string' && body.summary.trim()
-    ? body.summary.trim().slice(0, 200)
-    : 'Daten geändert';
-  await appendLog(env, {
-    ts: next.updatedAt,
-    who: who.name,
-    action: 'data.put',
-    summary,
-    auto: autoDiff(current.data, body.data) || undefined,
-    rev: next.rev
-  });
-
-  return json({ ok: true, rev: next.rev, updatedAt: next.updatedAt }, 200, origin);
-}
-
-async function createToken(request, env, origin) {
-  const who = await authenticate(request, env);
-  if (!who) return json({ error: 'Token ungültig' }, 401, origin);
-  if (!who.admin) return json({ error: 'Nur für Admins' }, 403, origin);
-
-  let body;
-  try { body = await request.json(); } catch (e) { return json({ error: 'Ungültiges JSON' }, 400, origin); }
-  const name = typeof body.name === 'string' ? body.name.trim().slice(0, 40) : '';
-  if (!name) return json({ error: 'Name fehlt' }, 400, origin);
-
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  const token = 'sa_' + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-  const hash = await sha256Hex(token);
-  const id = hash.slice(0, 12);
-
-  const tokens = (await env.SA_KV.get('tokens', 'json')) || {};
-  tokens[id] = {
-    name,
-    hash,
-    prefix: token.slice(0, 8),
-    createdAt: new Date().toISOString()
-  };
-  await env.SA_KV.put('tokens', JSON.stringify(tokens));
-  await appendLog(env, {
-    ts: new Date().toISOString(),
-    who: who.name,
-    action: 'token.create',
-    summary: 'Zugang für ' + name + ' erstellt'
-  });
-
-  return json({ ok: true, token, id }, 200, origin);
-}
-
-async function revokeToken(request, env, origin) {
-  const who = await authenticate(request, env);
-  if (!who) return json({ error: 'Token ungültig' }, 401, origin);
-  if (!who.admin) return json({ error: 'Nur für Admins' }, 403, origin);
-
-  let body;
-  try { body = await request.json(); } catch (e) { return json({ error: 'Ungültiges JSON' }, 400, origin); }
-  const tokens = (await env.SA_KV.get('tokens', 'json')) || {};
-  const t = tokens[body.id];
-  if (!t) return json({ error: 'Token nicht gefunden' }, 404, origin);
-  if (!t.revokedAt) {
-    t.revokedAt = new Date().toISOString();
-    await env.SA_KV.put('tokens', JSON.stringify(tokens));
-    await appendLog(env, {
-      ts: t.revokedAt,
-      who: who.name,
-      action: 'token.revoke',
-      summary: 'Zugang von ' + t.name + ' widerrufen'
-    });
-  }
+async function abmelden(request, env, origin) {
+  const wer = await sitzung(request, env);
+  if (wer) await env.SA_KV.delete('sess:' + wer.token);
   return json({ ok: true }, 200, origin);
+}
+
+async function werBinIch(request, env, origin) {
+  const wer = await sitzung(request, env);
+  if (!wer) return json({ error: 'Keine Sitzung' }, 401, origin);
+  return json({ id: wer.id, name: wer.name, admin: !!wer.admin }, 200, origin);
+}
+
+// ── Speichern ──────────────────────────────────────────────────────────────
+async function speichern(request, env, origin) {
+  const wer = await sitzung(request, env);
+  if (!wer) return json({ error: 'Nicht angemeldet' }, 401, origin);
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body.data !== 'object' || body.data === null) {
+    return json({ error: 'Kein Dokument im Rumpf' }, 400, origin);
+  }
+
+  const roh = JSON.stringify(body.data);
+  if (roh.length > MAX_DOC_BYTES) {
+    return json({ error: 'Dokument zu groß (' + roh.length + ' Bytes, erlaubt sind ' + MAX_DOC_BYTES + ')' }, 413, origin);
+  }
+
+  const aktuell = await ladeDokument(env);
+  if (body.baseRev != null && Number(body.baseRev) !== Number(aktuell.rev)) {
+    return json({ error: 'Jemand anderes war schneller', rev: aktuell.rev }, 409, origin);
+  }
+
+  const rev = Number(aktuell.rev || 0) + 1;
+  const updatedAt = new Date().toISOString();
+  await env.SA_KV.put('doc', JSON.stringify({ rev, updatedAt, data: body.data }));
+
+  // Log: die Zeilen vom Client, aber Name und Zeit setzt der Server.
+  const eintraege = Array.isArray(body.entries) ? body.entries.slice(0, 20) : [];
+  const zusammenfassung = String(body.summary || '').slice(0, 200);
+  const log = (await env.SA_KV.get('log', 'json')) || [];
+  const neu = (eintraege.length ? eintraege : [{ text: zusammenfassung || 'Daten geändert' }]).map((e) => ({
+    text: String(e.text || zusammenfassung || 'Daten geändert').slice(0, 200),
+    from: e.from != null ? String(e.from).slice(0, 60) : undefined,
+    to: e.to != null ? String(e.to).slice(0, 60) : undefined,
+    icon: String(e.icon || 'history').slice(0, 40),
+    tone: ['neutral', 'slime', 'banana', 'punsch', 'eis'].includes(e.tone) ? e.tone : 'neutral',
+    actor: wer.name,
+    time: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' }),
+    ts: updatedAt,
+    rev
+  }));
+  await env.SA_KV.put('log', JSON.stringify(neu.concat(log).slice(0, MAX_LOG)));
+
+  return json({ rev, updatedAt }, 200, origin);
+}
+
+// ── Codes ──────────────────────────────────────────────────────────────────
+async function codesLesen(request, env, origin) {
+  const wer = await sitzung(request, env);
+  if (!wer) return json({ error: 'Nicht angemeldet' }, 401, origin);
+  if (!wer.admin) return json({ error: 'Nur für Admins' }, 403, origin);
+  const codes = (await env.SA_KV.get('codes', 'json')) || {};
+  // Nur, WER einen Code hat. Nie den Code und nie den Hash.
+  const wers = {};
+  Object.keys(codes).forEach((id) => { wers[id] = true; });
+  return json({ codes: wers }, 200, origin);
+}
+
+async function codeSetzen(request, env, origin) {
+  const wer = await sitzung(request, env);
+  if (!wer) return json({ error: 'Nicht angemeldet' }, 401, origin);
+  if (!wer.admin) return json({ error: 'Nur für Admins' }, 403, origin);
+
+  const body = await request.json().catch(() => ({}));
+  const playerId = String(body.playerId || '');
+  if (!playerId) return json({ error: 'Welcher Affe?' }, 400, origin);
+
+  const doc = await ladeDokument(env);
+  if (!(doc.data.players || []).some((p) => p.id === playerId)) {
+    return json({ error: 'Diesen Affen gibt es nicht' }, 404, origin);
+  }
+
+  const codes = (await env.SA_KV.get('codes', 'json')) || {};
+
+  if (body.code === null || body.code === '') {
+    delete codes[playerId];
+    await env.SA_KV.put('codes', JSON.stringify(codes));
+    return json({ ok: true, gesetzt: false }, 200, origin);
+  }
+
+  const code = String(body.code);
+  if (!/^\d+$/.test(code) || code.length < LAENGE_MIN) {
+    return json({ error: 'Mindestens ' + LAENGE_MIN + ' Ziffern' }, 400, origin);
+  }
+
+  const salt = zufall(16);
+  codes[playerId] = { salt, hash: await ableiten(code, salt), setztAm: new Date().toISOString() };
+  await env.SA_KV.put('codes', JSON.stringify(codes));
+  return json({ ok: true, gesetzt: true }, 200, origin);
 }

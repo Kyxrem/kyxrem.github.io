@@ -1,0 +1,125 @@
+/* SpieleAffen Design System — tokens.
+ * Copied verbatim from the Claude Design handoff (project/tokens/*.css).
+ * Order matches project/styles.css. Do not hand-edit values here; they are the design.
+ *
+ * EINE Abweichung, und nur diese: der Abschnitt tokens/fonts.css lud beide
+ * Schriftpakete vom Google-CDN. Beides liegt jetzt lokal — siehe fonts.css für
+ * die Textschriften und js/icons.js für die Symbole. Der Grund steht dort.
+ * Alle Werte darunter sind unverändert.
+ */
+
+/* ── tokens/fonts.css (ersetzt: selbst gehostet statt CDN) ─────── */
+@import url("fonts.css");
+
+/* ── tokens/colors.css ─────────────────────────────────────────── */
+:root{
+/* ── Base: ink (the dark stack). Warm-black with a green cast, never pure #000. */
+--ink-1000:#07090500;--ink-950:#070905;--ink-900:#0B0D08;--ink-850:#101309;--ink-800:#14180E;--ink-700:#1B2013;--ink-600:#242A19;--ink-500:#323A23;--ink-400:#465031;
+/* ── Base: paper (light text on ink). Bone, not white. */
+--paper-100:#F4F7EC;--paper-200:#E2E8D6;--paper-300:#B9C2A8;--paper-400:#8E9880;--paper-500:#6B7360;
+/* ── Base: slime — the primary neon. Loud, acid, unmissable. */
+--slime-300:#E2FFA0;--slime-400:#D2FF62;--slime-500:#B9FF16;--slime-600:#9BDC00;--slime-700:#71A200;--slime-900:#2A3B00;
+/* ── Base: banana — the secondary neon, for streaks, coins, XP. */
+--banana-400:#FFE46B;--banana-500:#FFD429;--banana-600:#E0B500;--banana-900:#3A2E00;
+/* ── Base: punsch — the loud pink. Live states, penalties, "Strafrunde". Use sparingly. */
+--punsch-400:#FF74A8;--punsch-500:#FF3D8B;--punsch-600:#DB1F6C;--punsch-900:#3D0A22;
+/* ── Base: eis — cool blue, information only. Rarest colour in the system. */
+--eis-400:#7FD4FF;--eis-500:#29B6F0;--eis-900:#052A3A;
+
+/* ── Semantic: surfaces */
+--surface-app:var(--ink-900);--surface-sunken:var(--ink-950);--surface-card:var(--ink-800);--surface-card-hover:var(--ink-700);--surface-raised:var(--ink-700);--surface-inset:var(--ink-850);--surface-overlay:var(--ink-850);--surface-scrim:rgba(7,9,5,.78);--surface-neon:var(--slime-500);--surface-neon-soft:var(--slime-900);
+/* ── Semantic: text */
+--text-body:var(--paper-200);--text-strong:var(--paper-100);--text-muted:var(--paper-400);--text-faint:var(--paper-500);--text-neon:var(--slime-500);--text-on-neon:var(--ink-950);--text-link:var(--slime-500);--text-link-hover:var(--slime-300);
+/* ── Semantic: lines + focus */
+--line-subtle:var(--ink-700);--line:var(--ink-600);--line-strong:var(--ink-500);--line-neon:var(--slime-500);--focus-ring:var(--slime-500);--focus-ring-width:2px;--focus-ring-offset:2px;
+/* ── Semantic: intent */
+--intent-primary:var(--slime-500);--intent-primary-press:var(--slime-600);--intent-reward:var(--banana-500);--intent-live:var(--punsch-500);--intent-info:var(--eis-500);--intent-danger:var(--punsch-600);--intent-success:var(--slime-600);
+/* ── Semantic: player seats (deterministic per-player colour, cycle in order) */
+--seat-1:var(--slime-500);--seat-2:var(--banana-500);--seat-3:var(--punsch-500);--seat-4:var(--eis-400);--seat-5:#C39BFF;--seat-6:#FF8A3D;
+/* ── Semantic: podium */
+--rank-gold:var(--banana-500);--rank-silver:#C9D2BD;--rank-bronze:#C97B3D;
+/* ── Effects */
+--glow-neon:0 0 0 1px var(--slime-500),0 0 18px -2px rgba(185,255,22,.55);--glow-neon-soft:0 0 24px -6px rgba(185,255,22,.45);--glow-live:0 0 20px -4px rgba(255,61,139,.6);
+--tape-slime:repeating-linear-gradient(135deg,var(--slime-500) 0 10px,var(--ink-950) 10px 20px);
+--grid-faint:linear-gradient(var(--ink-700) 1px,transparent 1px),linear-gradient(90deg,var(--ink-700) 1px,transparent 1px);
+}
+
+/* ── tokens/typography.css ─────────────────────────────────────────── */
+:root{
+/* families */
+--font-display:"Chivo","Chivo Black",system-ui,sans-serif;--font-sans:"IBM Plex Sans",system-ui,sans-serif;--font-mono:"JetBrains Mono",ui-monospace,monospace;
+/* weights */
+--weight-regular:400;--weight-medium:500;--weight-semibold:600;--weight-bold:700;--weight-black:900;
+/* size scale (px, 1.25-ish, tuned for a 14px UI base) */
+--text-2xs:11px;--text-xs:12px;--text-sm:13px;--text-base:14px;--text-md:16px;--text-lg:19px;--text-xl:23px;--text-2xl:29px;--text-3xl:37px;--text-4xl:48px;--text-5xl:62px;--text-6xl:82px;
+/* line heights */
+--leading-tight:0.92;--leading-snug:1.1;--leading-normal:1.45;--leading-loose:1.65;
+/* tracking */
+--tracking-display:-0.03em;--tracking-tight:-0.01em;--tracking-normal:0;--tracking-wide:0.04em;--tracking-caps:0.12em;
+/* semantic roles */
+--type-hero-family:var(--font-display);--type-hero-size:var(--text-5xl);--type-hero-weight:var(--weight-black);--type-hero-leading:var(--leading-tight);--type-hero-tracking:var(--tracking-display);--type-hero-case:uppercase;
+--type-title-size:var(--text-2xl);--type-section-size:var(--text-lg);
+--type-eyebrow-size:var(--text-2xs);--type-eyebrow-tracking:var(--tracking-caps);--type-eyebrow-weight:var(--weight-bold);
+--type-body-size:var(--text-base);--type-body-leading:var(--leading-normal);
+--type-label-size:var(--text-xs);--type-label-weight:var(--weight-semibold);
+--type-score-family:var(--font-mono);--type-score-weight:var(--weight-extrabold,800);--type-score-tracking:-0.02em;
+}
+
+/* ── tokens/spacing.css ─────────────────────────────────────────── */
+:root{
+--space-0:0;--space-1:2px;--space-2:4px;--space-3:6px;--space-4:8px;--space-5:12px;--space-6:16px;--space-7:20px;--space-8:24px;--space-9:32px;--space-10:40px;--space-11:56px;--space-12:72px;--space-13:96px;
+/* semantic */
+--gap-inline:var(--space-4);--gap-stack:var(--space-5);--gap-card:var(--space-6);--gap-section:var(--space-9);
+--pad-control:var(--space-5);--pad-card:var(--space-6);--pad-panel:var(--space-8);--pad-screen:var(--space-9);
+--control-h-sm:28px;--control-h-md:36px;--control-h-lg:46px;
+--sidebar-w:232px;--rail-w:64px;--topbar-h:60px;--content-max:1180px;
+}
+
+/* ── tokens/radii.css ─────────────────────────────────────────── */
+:root{
+--radius-0:0;--radius-xs:3px;--radius-sm:5px;--radius-md:9px;--radius-lg:14px;--radius-xl:20px;--radius-pill:999px;
+/* semantic: SpieleAffen is boxy. Cards are 14, controls 9, chips are pills. Nothing is a blob. */
+--radius-card:var(--radius-lg);--radius-panel:var(--radius-xl);--radius-control:var(--radius-md);--radius-chip:var(--radius-pill);--radius-avatar:var(--radius-md);
+--border-hairline:1px;--border-standard:1.5px;--border-loud:2px;
+}
+
+/* ── tokens/shadows.css ─────────────────────────────────────────── */
+:root{
+/* On dark surfaces, depth comes from borders + neon glow, not soft grey shadows. */
+--shadow-none:none;
+--shadow-card:0 1px 0 0 rgba(244,247,236,.04) inset,0 2px 8px -4px rgba(0,0,0,.7);
+--shadow-raised:0 8px 24px -12px rgba(0,0,0,.85);
+--shadow-overlay:0 32px 64px -24px rgba(0,0,0,.9);
+--shadow-neon:var(--glow-neon-soft);
+--shadow-press-slime:0 3px 0 0 var(--slime-700);
+--shadow-press-paper:0 3px 0 0 var(--ink-950);
+--inset-hairline:inset 0 0 0 1px var(--line);
+}
+
+/* ── tokens/motion.css ─────────────────────────────────────────── */
+:root{
+--dur-instant:80ms;/* @kind other */--dur-fast:140ms;/* @kind other */--dur-base:220ms;/* @kind other */--dur-slow:380ms;/* @kind other */--dur-celebrate:700ms;/* @kind other */
+--ease-out:cubic-bezier(.2,.8,.3,1);/* @kind other */--ease-in:cubic-bezier(.5,0,1,1);/* @kind other */--ease-standard:cubic-bezier(.4,0,.2,1);/* @kind other */--ease-boing:cubic-bezier(.34,1.56,.64,1);/* @kind other */
+--transition-control:background-color var(--dur-fast) var(--ease-out),color var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out),transform var(--dur-fast) var(--ease-boing),box-shadow var(--dur-fast) var(--ease-out);/* @kind other */
+--press-translate:translateY(2px);/* @kind other */--hover-lift:translateY(-1px);/* @kind other */
+}
+@keyframes sa-boing{0%{transform:scale(1)}40%{transform:scale(1.12) rotate(-2deg)}100%{transform:scale(1)}}
+@keyframes sa-pulse-live{0%,100%{box-shadow:0 0 0 0 rgba(255,61,139,.55)}50%{box-shadow:0 0 0 6px rgba(255,61,139,0)}}
+@keyframes sa-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){:root{--dur-fast:1ms;/* @kind other */--dur-base:1ms;/* @kind other */--dur-slow:1ms;/* @kind other */--dur-celebrate:1ms;/* @kind other */}}
+
+/* ── tokens/base.css ─────────────────────────────────────────── */
+/* Minimal element defaults. Components carry their own styling; this only sets the stage. */
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--surface-app);color:var(--text-body);font-family:var(--font-sans);font-size:var(--type-body-size);line-height:var(--type-body-leading);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:var(--weight-black);line-height:var(--leading-snug);letter-spacing:var(--tracking-display);color:var(--text-strong);margin:0}
+h1{font-size:var(--text-4xl);text-transform:uppercase}h2{font-size:var(--text-2xl)}h3{font-size:var(--text-xl)}h4{font-size:var(--text-md)}
+p{margin:0;text-wrap:pretty}
+a{color:var(--text-link);text-decoration-color:color-mix(in oklab,var(--slime-500) 45%,transparent);text-underline-offset:3px}
+a:hover{color:var(--text-link-hover);text-decoration-color:currentColor}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:var(--focus-ring-width) solid var(--focus-ring);outline-offset:var(--focus-ring-offset)}
+::selection{background:var(--slime-500);color:var(--ink-950)}
+code,kbd,samp{font-family:var(--font-mono);font-size:.92em}
+*,*::before,*::after{box-sizing:border-box}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--ink-600);border-radius:var(--radius-pill);border:3px solid transparent;background-clip:content-box}::-webkit-scrollbar-track{background:transparent}
+

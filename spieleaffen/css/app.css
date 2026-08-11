@@ -1,0 +1,205 @@
+/* SpieleAffen — App-Layout.
+ *
+ * Die Schale aus ui_kits/dashboard/AppShell.jsx plus die Raster, die die
+ * Screens benutzen. Das Design ist eine feste 1440px-Bühne; die drei
+ * Haltepunkte unten sind der einzige Zusatz — und der Rail-Zustand ist mit
+ * --rail-w bereits im Token-Satz vorgesehen, also kein neuer Entwurf.
+ *
+ *   ≥1100px   Seitenleiste 232px, wie gezeichnet
+ *   900–1100  Seitenleiste fällt auf die 64px-Leiste zusammen
+ *   <900px    Seitenleiste wird zur festen Leiste am unteren Rand
+ */
+
+/* ═══ Schale ═════════════════════════════════════════════════════════════ */
+.sa-shell {
+  display: grid; grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh; background: var(--surface-app);
+}
+.sa-side {
+  display: flex; flex-direction: column; gap: var(--space-8);
+  padding: var(--space-7) var(--space-5);
+  border-right: 1px solid var(--line); background: var(--surface-sunken);
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.sa-side__brand { padding: 0 var(--space-3); display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.sa-wordmark {
+  font-family: var(--font-display); font-weight: 900; font-size: 20px;
+  text-transform: uppercase; letter-spacing: -.04em; color: var(--text-strong); line-height: 1;
+}
+.sa-wordmark em { font-style: normal; color: var(--slime-500); }
+.sa-nav { display: flex; flex-direction: column; gap: 2px; }
+.sa-side__foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-5); }
+.sa-nextnight {
+  padding: var(--space-5); background: var(--surface-card);
+  border: 1px solid var(--line); border-radius: var(--radius-card);
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.sa-nextnight__label {
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.sa-nextnight__date {
+  font-family: var(--font-display); font-weight: 900; font-size: 16px;
+  text-transform: uppercase; color: var(--text-strong);
+}
+.sa-me { display: flex; align-items: center; gap: var(--space-5); padding: 0 var(--space-3); }
+.sa-me__text { flex: 1; min-width: 0; font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-main { padding: var(--pad-screen); max-width: var(--content-max); width: 100%; }
+
+/* Raster- und Flex-Kinder haben min-width:auto und wachsen sonst über ihre Spur
+   hinaus — genau das schiebt am Telefon die ganze Seite nach rechts. */
+.sa-shell > *, .sa-cols > *, .sa-stack > *, .sa-main > * { min-width: 0; }
+.sa-scrollx { max-width: 100%; }
+
+/* ═══ Screen-Kopf ════════════════════════════════════════════════════════ */
+.sa-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: var(--space-8); margin-bottom: var(--gap-section);
+}
+.sa-head__text { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.sa-head__eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--slime-500);
+}
+.sa-head__title { font-size: var(--text-4xl); margin: 0; }
+.sa-head__sub { font-size: 15px; color: var(--text-muted); max-width: 560px; }
+.sa-head__actions { display: flex; gap: var(--space-5); flex-wrap: wrap; justify-content: flex-end; }
+
+/* ═══ Raster ═════════════════════════════════════════════════════════════ */
+.sa-stack { display: flex; flex-direction: column; gap: var(--gap-card); }
+.sa-stack--section { gap: var(--gap-section); }
+.sa-inline { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.sa-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap-card); margin-bottom: var(--gap-section); }
+.sa-cols { display: grid; gap: var(--gap-card); align-items: start; }
+.sa-cols--wide  { grid-template-columns: 1.35fr 1fr; }
+.sa-cols--side  { grid-template-columns: 1fr 300px; }
+.sa-cols--admin { grid-template-columns: 1fr 380px; }
+.sa-cols--half  { grid-template-columns: 1fr 1fr; }
+.sa-shelf { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--gap-card); }
+.sa-spacer { flex: 1; }
+.sa-section-gap { margin-bottom: var(--gap-section); }
+
+/* ═══ Wiederkehrende Kleinteile ══════════════════════════════════════════ */
+.sa-num { font-family: var(--font-mono); font-weight: 800; color: var(--text-strong); letter-spacing: var(--type-score-tracking); }
+.sa-meta { font-size: var(--text-xs); color: var(--text-faint); }
+.sa-meta--mono { font-family: var(--font-mono); }
+.sa-label { font-size: var(--text-xs); font-weight: 600; color: var(--text-muted); }
+.sa-eyebrow {
+  font-size: var(--type-eyebrow-size); font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-faint);
+}
+.sa-h3 { font-family: var(--font-display); font-weight: var(--weight-black); font-size: var(--text-lg); letter-spacing: var(--tracking-tight); color: var(--text-strong); margin: 0; }
+.sa-body { font-size: var(--text-sm); color: var(--text-muted); }
+.sa-strong { font-size: var(--text-base); font-weight: var(--weight-semibold); color: var(--text-strong); }
+.sa-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* Leerzustände sitzen auf dem 20px-Raster aus dem Token-Satz. */
+.sa-empty {
+  padding: var(--space-11) var(--pad-card); text-align: center;
+  background-image: var(--grid-faint); background-size: 20px 20px;
+  border-top: 1px solid var(--line-subtle);
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-5);
+}
+.sa-empty__text { font-size: var(--text-sm); color: var(--text-faint); }
+
+/* Diagonales Warnband — sparsam, für „Achtung"-Kanten. */
+.sa-tape { height: 6px; background: var(--tape-slime); border-radius: var(--radius-pill); }
+
+/* Tabellenzeilen (Admin, Affen) */
+.sa-thead {
+  display: grid; gap: var(--space-5); padding: var(--space-3) var(--pad-card);
+  background: var(--surface-inset);
+  border-top: 1px solid var(--line-subtle); border-bottom: 1px solid var(--line-subtle);
+}
+.sa-thead span {
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.sa-trow {
+  display: grid; gap: var(--space-5); align-items: center;
+  padding: var(--space-4) var(--pad-card); border-bottom: 1px solid var(--line-subtle);
+}
+.sa-trow.is-dirty { background: var(--punsch-900); }
+.sa-scrollx { overflow-x: auto; }
+
+/* Demo-Hinweis in der Seitenleiste */
+.sa-conn { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-3); }
+
+/* Nur für Screenreader */
+.sa-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ═══ Vollflächige Ladeansicht ═══════════════════════════════════════════ */
+.sa-boot { display: grid; place-items: center; min-height: 100vh; gap: var(--space-6); text-align: center; }
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* Haltepunkt 1: Seitenleiste fällt auf die Leiste zusammen                */
+/* ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  .sa-shell { grid-template-columns: var(--rail-w); }
+  .sa-side { padding: var(--space-7) var(--space-2); gap: var(--space-6); align-items: center; }
+  .sa-side__brand { padding: 0; }
+  .sa-wordmark { font-size: 0; }
+  /* Aus „SpieleAffen" wird das A in Slime — die Wortmarke ohne Wortmarke. */
+  .sa-wordmark em::before { content: "A"; font-size: 20px; }
+  .sa-nav { width: 100%; }
+  .sa-navitem { justify-content: center; padding: 0; }
+  .sa-navitem__label, .sa-navitem__badge { display: none; }
+  .sa-nextnight__label, .sa-nextnight__date, .sa-me__text { display: none; }
+  .sa-nextnight { padding: var(--space-3); border: none; background: none; }
+  .sa-nextnight .sa-btn { padding: 0; width: 40px; }
+  .sa-nextnight .sa-btn span:not(.sa-icon) { display: none; }
+  .sa-me { justify-content: center; padding: 0; }
+  .sa-conn { justify-content: center; padding: 0; }
+  .sa-conn .sa-badge { padding: 0 var(--space-3); }
+  .sa-cols--wide, .sa-cols--side, .sa-cols--admin { grid-template-columns: 1fr; }
+  .sa-shelf { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* Haltepunkt 2: Telefon — die Leiste wandert an den unteren Rand          */
+/* ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .sa-shell { grid-template-columns: 1fr; }
+  .sa-side {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    height: auto; width: 100%; z-index: 50;
+    flex-direction: row; align-items: center; gap: 0;
+    padding: var(--space-2) var(--space-3);
+    padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
+    border-right: none; border-top: 1px solid var(--line);
+    overflow: visible;
+  }
+  .sa-side__brand, .sa-side__foot { display: none; }
+  .sa-nav { flex-direction: row; justify-content: space-between; width: 100%; gap: 0; }
+  .sa-navitem { height: 44px; border-radius: var(--radius-control); }
+  .sa-navitem.is-active { background: var(--slime-900); }
+  .sa-navitem.is-active::before { top: auto; bottom: 2px; left: 50%; transform: translateX(-50%); width: 16px; height: 3px; }
+
+  .sa-main { padding: var(--space-6); padding-bottom: 96px; max-width: none; }
+  .sa-head { flex-direction: column; align-items: stretch; gap: var(--space-6); margin-bottom: var(--space-8); }
+  .sa-head__actions { justify-content: flex-start; }
+  .sa-head__title { font-size: var(--text-3xl); }
+  .sa-stats { grid-template-columns: repeat(2, 1fr); gap: var(--space-5); margin-bottom: var(--space-8); }
+  .sa-cols--half, .sa-shelf { grid-template-columns: 1fr; }
+  .sa-scrim { padding: var(--space-5); align-items: end; }
+  .sa-dialog { max-height: calc(100dvh - 2 * var(--space-5)); }
+  .sa-toasts { right: var(--space-5); left: var(--space-5); bottom: 84px; }
+  .sa-toast { max-width: none; }
+
+  /* Dichte Zeilen dürfen im Kasten scrollen, statt die Seite zu sprengen. */
+  .sa-scrollx > * { min-width: 560px; }
+  .sa-pad { min-width: 520px; }
+}
+
+@media (max-width: 560px) {
+  .sa-stats { grid-template-columns: 1fr; }
+  .sa-head__title { font-size: var(--text-2xl); }
+  .sa-scorerow { gap: var(--space-5); padding-left: var(--space-5); padding-right: var(--space-5); }
+  .sa-scorerow__meta { display: none; }
+  .sa-row { padding-left: var(--space-5); padding-right: var(--space-5); gap: var(--space-5); }
+  .sa-card--flush > .sa-card__head { padding-left: var(--space-5); padding-right: var(--space-5); }
+  .sa-btn--md { padding: 0 var(--space-5); }
+}

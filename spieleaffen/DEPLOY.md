@@ -1,114 +1,177 @@
-# SpieleAffen — Deployment
+# SpieleAffen — Einrichtung
 
-The app has two parts:
+Die App hat zwei Teile:
 
-| Part | What | Where | Cost |
+| Teil | Was | Wo | Kosten |
 |---|---|---|---|
-| Frontend | Static app (`spieleaffen/`) — read-only main page + token-gated edit page | GitHub Pages (this repo) | free |
-| Backend | `worker/worker.js` — data storage, personal access tokens, audit log | Cloudflare Worker + KV | free tier |
+| Frontend | Statische App (`spieleaffen/`) | GitHub Pages (dieses Repo) | frei |
+| Backend | `worker/worker.js` — Daten, Codes, Änderungs-Log | Cloudflare Worker + KV | freies Kontingent |
 
-Until the backend is configured, the main page runs on built-in demo data and
-shows a red **DEMO-DATEN** badge; the edit page shows setup instructions instead
-of the login. Nothing breaks without the backend — it just isn't shared/editable yet.
+Ohne Backend läuft die App im **Demo-Modus**: alle sieben Screens funktionieren,
+die Beispieldaten liegen im Browser, in der Seitenleiste steht ein rotes
+**DEMO**. Nichts geht kaputt — es ist nur nichts geteilt.
+
+---
 
 ## 1. Frontend — GitHub Pages
 
-Merge this branch into `main`. Since this repo is `kyxrem.github.io`, GitHub
-Pages serves it automatically:
+Branch nach `main` mergen. Da das Repo `kyxrem.github.io` heißt, liefert
+GitHub Pages es von selbst aus:
 
-- Main page (read-only): **https://kyxrem.github.io/spieleaffen/**
-- Edit page (token required): **https://kyxrem.github.io/spieleaffen/edit.html**
+**https://kyxrem.github.io/spieleaffen/**
 
-## 2. Backend — Cloudflare Worker (one-time, ~10 minutes)
+Es gibt nur diese eine Seite. Lesen darf jeder; eintragen darf, wer seinen
+eigenen vierstelligen Code hat.
 
-You need a free Cloudflare account and Node.js.
+---
+
+## 2. Backend — Cloudflare Worker (einmalig, ~10 Minuten)
+
+Du brauchst ein kostenloses Cloudflare-Konto und Node.js.
 
 ```bash
 cd spieleaffen/worker
 
-# 1. Log in to Cloudflare
+# 1. Bei Cloudflare anmelden
 npx wrangler login
 
-# 2. Create the KV namespace and paste the printed id into wrangler.toml
+# 2. KV-Namespace anlegen und die ausgegebene id in wrangler.toml eintragen
 npx wrangler kv namespace create SA_KV
 
-# 3. Set your admin secret (pick something long and random; keep it private)
+# 3. Admin-Schlüssel setzen — lang und zufällig, und für dich behalten.
+#    Damit kommst du auch rein, wenn noch kein Affe einen Code hat oder
+#    sich die Runde ausgesperrt hat.
 npx wrangler secret put ADMIN_TOKEN
 
-# 4. Deploy — prints your API URL, e.g. https://spieleaffen.<account>.workers.dev
+# 4. Hochladen — gibt deine API-URL aus, z. B. https://spieleaffen.<konto>.workers.dev
 npx wrangler deploy
 ```
 
-## 3. Connect the frontend to the backend
+### Frontend mit dem Backend verbinden
 
-Edit `spieleaffen/config.js`:
+`spieleaffen/config.js` bearbeiten:
 
 ```js
 window.SPIELEAFFEN_CONFIG = {
-  apiBase: 'https://spieleaffen.<account>.workers.dev'
+  apiBase: 'https://spieleaffen.<konto>.workers.dev'
 };
 ```
 
-Commit and push. Done — the main page now shows a green **LIVE** badge.
+Committen und pushen. Aus dem roten **DEMO** wird ein grünes **LIVE**.
 
-## 4. Create personal access tokens (one per person)
+---
 
-1. Open `…/spieleaffen/edit.html` and log in with your **ADMIN_TOKEN**.
-2. Go to the **Zugänge** tab.
-3. Create one token per person (Maik, Mattes, Bene, Torben, Benni, Tobi, …)
-   and send each person *their own* token privately (messenger of choice).
-   A token is displayed **only once** — the server stores only a SHA-256 hash.
-4. First-time setup while you're there: add the players in the **Spieler** tab
-   and create the first season (Saisons section, e.g. `Saison 1 · Herbst 26`).
+## 3. Erste Einrichtung
 
-Each person enters their token once on the edit page; it's remembered in their
-browser. From then on **every change they save is logged with their name** —
-see the **Protokoll** tab (client summary plus a server-side auto-diff, e.g.
-`Abende 19→20`). Tokens can be revoked any time in **Zugänge**.
+1. `…/spieleaffen/#admin` öffnen und den **ADMIN_TOKEN** ins Code-Feld tippen.
+   (Das Feld nimmt auch längere Eingaben als vier Ziffern — es prüft nur,
+   ob am Ende etwas Bekanntes herauskommt.)
+2. Unter **Affen** die Leute anlegen. Jeder bekommt eine der sechs Sitzfarben;
+   die Farbe gehört ihm ab dann für immer und taucht in Avatar, Tag und Balken
+   wieder auf.
+3. Unter **Codes** jedem seine vier Ziffern geben und sie ihm **persönlich**
+   schicken — Messenger deiner Wahl, nicht in die Gruppe.
+4. Mindestens einer sollte den Admin-Haken bekommen (Schild-Symbol in der
+   Affen-Liste), damit nicht nur der ADMIN_TOKEN korrigieren kann.
+5. Saisons und Spiele anlegen — beides steht im Datendokument und lässt sich
+   über die App pflegen.
 
-## How access control works
+Ab jetzt trägt jeder mit seinem eigenen Code ein, und **jede Änderung steht
+mit Namen im Änderungs-Log**, das alle sehen können.
 
-- **Main page is genuinely read-only**: it only ever calls `GET /api/data`
-  (public). All writes require `Authorization: Bearer <token>` and are enforced
-  by the Worker, not by the UI.
-- **Audit log**: every `PUT` appends `{who, when, summary, auto-diff, rev}`;
-  the log keeps the latest 500 entries and is readable by everyone (the group
-  can see who entered what — Sticheleien inklusive).
-- **Conflict safety**: saves carry the revision they were based on; a stale
-  save gets HTTP 409 and the edit page reloads and asks you to re-save.
-- **Admin vs. member**: the `ADMIN_TOKEN` secret can additionally manage
-  tokens; personal tokens can only read/write data.
+---
 
-### Optional hardening
+## Wie der Zugang funktioniert
 
-- Restrict CORS to your site: uncomment in `worker/wrangler.toml`:
-  ```toml
-  [vars]
-  ALLOW_ORIGIN = "https://kyxrem.github.io"
-  ```
-- Rotate the admin secret any time: `npx wrangler secret put ADMIN_TOKEN`.
+- **Lesen ist öffentlich.** `GET /api/data` und `GET /api/log` brauchen nichts.
+  Das ist Absicht: der Sinn des Logs ist, dass die Runde sieht, wer was
+  geändert hat.
+- **Schreiben braucht eine Sitzung.** Der Code wandert genau einmal über die
+  Leitung und wird gegen ein Sitzungs-Token getauscht (30 Tage gültig).
+- **Gespeichert wird nie ein Code**, sondern PBKDF2-SHA256 mit 100.000 Runden
+  und eigenem Salt je Affe.
+- **Geraten wird nicht:** nach sechs falschen Codes ist die IP für 15 Minuten
+  draußen.
+- **Konfliktsicher:** jeder Speichervorgang trägt die Revision, auf der er
+  beruht. Wer auf einem veralteten Stand aufsetzt, bekommt HTTP 409 und die
+  App lädt neu, statt die Änderung des anderen still zu überschreiben.
+- **Adminrechte** hängen am Affen (`admin: true`), nicht an einem geteilten
+  Passwort. Nur Admins setzen Codes, legen Affen an und korrigieren Ergebnisse.
 
-## Backup
+### Ehrlich zur Stärke der vier Ziffern
 
-The full dataset is one JSON document:
+Vier Ziffern sind zehntausend Möglichkeiten. Das ist schwach, und es soll hier
+auch nichts Wertvolleres schützen als eine Punktetabelle unter Freunden. Die
+Sperre nach sechs Fehlversuchen ist die eigentliche Verteidigung; das langsame
+Hashen schützt für den Fall, dass die Datenbank selbst einmal abhandenkommt.
 
-```bash
-curl https://spieleaffen.<account>.workers.dev/api/data > backup.json
+Wer mehr will: `LAENGE_MIN` in `worker/worker.js` hochsetzen und längere Codes
+vergeben. Die App nimmt sie an, das Eingabefeld muss dann in
+`js/screens/admin.js` auf dieselbe Länge (`length: 4`) angepasst werden.
+
+### Optional: CORS auf die eigene Seite beschränken
+
+In `worker/wrangler.toml` einkommentieren:
+
+```toml
+[vars]
+ALLOW_ORIGIN = "https://kyxrem.github.io"
 ```
 
-## Local development
+---
+
+## Sicherung
+
+Der ganze Datenbestand ist ein JSON-Dokument:
 
 ```bash
-cd spieleaffen/worker && npx wrangler dev   # API on http://localhost:8787
+curl https://spieleaffen.<konto>.workers.dev/api/data > backup.json
 ```
 
-Point `config.js` at `http://localhost:8787` and open `spieleaffen/index.html`
-via any static server.
+---
 
-## Scoring rules (baked into `core.js`)
+## Lokal entwickeln
 
-- Placement per game: **1st = 5, 2nd = 3, 3rd = 1** (ties share the place)
-- Showing up: **+1 per evening**
-- Best score prediction per game (“Tipp”): **+3** for whoever lands closest
-- Evening winner = most points that evening; streaks, Rote Laterne,
-  achievements and records all derive from the recorded results.
+```bash
+# Frontend
+python3 -m http.server 8765      # im Repo-Wurzelverzeichnis
+# → http://localhost:8765/spieleaffen/
+
+# Backend
+cd spieleaffen/worker && npx wrangler dev    # API auf http://localhost:8787
+```
+
+Dann in `config.js` `apiBase: 'http://localhost:8787'` eintragen.
+
+---
+
+## Tests
+
+Beides läuft ohne Netz und ohne Cloudflare-Konto:
+
+```bash
+node spieleaffen/test-engine.js          # 47 Prüfungen der Punkteregeln
+node spieleaffen/worker/test-worker.js   # 33 Prüfungen des Backends
+```
+
+`test-engine.js` prüft genau die Regeln, über die am Tisch gestritten wird:
+Platzierung 5/3/1, geteilte Plätze bei Gleichstand, +1 fürs Antreten, +3 für
+den besten Tipp, −20 Strafe, Abendsieger und Letzter des Abends.
+
+`test-worker.js` fährt den Worker gegen einen KV-Ersatz im Speicher: Anmelden,
+Sperre nach Fehlversuchen, Konflikt bei veralteter Revision, Rechte, und dass
+kein Code je im Klartext in der Datenbank landet.
+
+---
+
+## Punkteregeln (in `js/engine.js`)
+
+- Platzierung je Spiel: **1. = 5, 2. = 3, 3. = 1** (Gleichstand teilt den Platz)
+- Antreten: **+1 pro Abend** (einmal, nicht pro Spiel)
+- Bester Tipp je Spiel: **+3** für die kleinste Abweichung; bei Gleichstand
+  bekommen alle Nächsten den Bonus
+- Strafe: **−20** je Regelbruch
+- Abendsieger = meiste Punkte des Abends; Letzter nur, wenn er eindeutig ist
+
+Pokale, Rekorde, Serien und Angstgegner werden aus der Historie berechnet —
+nichts davon wird gespeichert, alles ergibt sich aus den eingetragenen Abenden.
