@@ -21,10 +21,19 @@
     return 'var(--seat-' + (((Number(seat) || 1) - 1) % n + 1) + ')';
   }
 
-  /* Zahlen tragen den typografischen Minus (−), nicht den Bindestrich.
-     Steht so in readme.md > Content fundamentals > Numbers. */
+  /* Zahlen tragen den typografischen Minus (−), nicht den Bindestrich — und
+     das Dezimalkomma, nicht den Punkt. Halbe Punkte gibt es seit die Plätze
+     geteilt werden; „3,5" liest sich deutsch, „3.5" wie ein Tippfehler.
+     Gerundet wird auf zwei Stellen, nachgestellte Nullen fallen weg. */
   function num(v) {
-    return String(v == null ? '' : v).replace(/-/g, '−');
+    if (v == null || v === '') return '';
+    if (typeof v === 'number' && isFinite(v)) {
+      var gerundet = Math.round(v * 100) / 100;
+      var text = String(gerundet);
+      if (text.indexOf('.') >= 0) text = text.replace('.', ',');
+      return text.replace(/-/g, '−');
+    }
+    return String(v).replace(/-/g, '−');
   }
 
   function initials(name) {

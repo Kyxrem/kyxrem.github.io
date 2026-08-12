@@ -21,7 +21,9 @@
  *   players: { id, name, short, seat 1..6, admin, archived }
  *   nights:  { id, date, title, hostId, status, dabei[], snacks[], games[] }
  *   games in nights: { id, gameId, title, lowerWins, durationMin, results[] }
- *   results: { playerId, score, tip }
+ *   results: { playerId, score, tip, treffer }
+ *     treffer zählt bei Wizard, wie oft die Ansage genau aufging — eine
+ *     Statistik, keine Punkte.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -220,6 +222,8 @@
         place: place,
         geteilt: proPlatz[place],
         placePts: platzPunkte(place, proPlatz[place]),
+        // Wie oft die Ansage aufging (Wizard). Zählt für die Statistik, nicht für Punkte.
+        treffer: Number(r.treffer) || 0,
         tipDiff: null, tipBest: false, exact: false
       };
     });
@@ -251,7 +255,7 @@
           gameId: g.id, title: g.title, place: ev[pid].place, geteilt: ev[pid].geteilt,
           placePts: ev[pid].placePts, score: ev[pid].score,
           tip: ev[pid].tip, tipDiff: ev[pid].tipDiff, tipBest: ev[pid].tipBest,
-          exact: ev[pid].exact
+          exact: ev[pid].exact, treffer: ev[pid].treffer
         });
       });
     });
@@ -343,6 +347,7 @@
             if (g.place === 1) s.gameWins += 1;
             if (g.tipBest) s.tipBonuses += 1;
             if (g.exact) s.tipExacts += 1;
+            s.tipExacts += g.treffer || 0;
           });
           if (ev.winners.indexOf(pid) >= 0) s.nightWins += 1;
           if (ev.losers.indexOf(pid) >= 0) s.nightLasts += 1;
@@ -559,6 +564,7 @@
           }
           if (g.tipBest) r.tipBonuses += 1;
           if (g.exact) r.tipExacts += 1;
+          r.tipExacts += g.treffer || 0;
           // Luftschloss: Tipp deutlich ÜBER dem Ergebnis — mind. 5 daneben und
           // relativ zur Punkteskala des Spiels (50 % drüber), damit ±5 bei
           // Wizard & Co. nicht trivial zählt.
@@ -680,8 +686,8 @@
         check: function (c) { return c.run.winStreak >= 3; } },
       { id: 'hellseher',      icon: 'visibility',    name: 'Hellseher',     desc: 'Eigenen Tipp exakt getroffen', tone: 'banana',
         check: function (c) { return c.run.tipExacts >= 1; } },
-      { id: 'scharfschuetze', icon: 'gps_fixed',     name: 'Scharfschütze', desc: 'Dreimal am nächsten am eigenen Tipp', tone: 'banana',
-        check: function (c) { return c.run.tipBonuses >= 3; } },
+      { id: 'scharfschuetze', icon: 'gps_fixed',     name: 'Scharfschütze', desc: 'Zehnmal die Ansage getroffen', tone: 'banana',
+        check: function (c) { return c.run.tipExacts >= 10; } },
       { id: 'allrounder',     icon: 'explore',       name: 'Allrounder',    desc: 'Drei verschiedene Spiele gewonnen', tone: 'banana',
         check: function (c) { return Object.keys(c.run.wonTitles).length >= 3; } },
       { id: 'spezialist',     icon: 'crown',         name: 'Spezialist',    desc: 'Fünf Siege im selben Spiel', tone: 'banana',

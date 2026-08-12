@@ -24,7 +24,7 @@
     saveError: null,
     me: null,            // {id, name, admin} sobald eingeloggt
     log: [],
-    view: 'uebersicht',
+    view: 'abend',
     toasts: []
   };
 

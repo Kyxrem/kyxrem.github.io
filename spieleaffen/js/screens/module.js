@@ -443,32 +443,41 @@
     });
   }
 
-  window.SA_SCREENS = window.SA_SCREENS || {};
-  window.SA_SCREENS.module = function (state, c) {
-    var SH = window.SA_SHELL;
-    var affen = S.affen('all', { includeEmpty: true });
+  /* Die Module sind kein eigener Bildschirm mehr: sie sind das Werkzeug für
+     eine laufende Partie und werden vom Abend-Screen eingesetzt. */
+  window.SA_MODULE = {
+    catan: catan,
+    wizard: wizard,
+    /* Aus der Wizard-Sitzung wird eine Partie: die Summen sind die Punktzahl,
+       die Reihenfolge liest die Engine daraus. Bestätigt wird sie von Hand —
+       der Block weiß, wie gespielt wurde, nicht ob ihr das so stehen lassen
+       wollt. Getroffene Ansagen wandern als Statistik mit, nicht als Punkte. */
+    wizardErgebnis: function (c, affen) {
+      var sitzung = aktuelle(c, 'wizard');
+      if (!sitzung || !(sitzung.runden || []).length) return null;
+      var spieler = (sitzung.players || []).map(function (pid) {
+        return affen.filter(function (a) { return a.id === pid; })[0];
+      }).filter(Boolean);
+      if (spieler.length < 2) return null;
 
-    return [
-      SH.ScreenHead({
-        eyebrow: 'Spielmodule',
-        title: modul === 'catan' ? 'Würfelstatistik' : 'Block der Wahrheit',
-        sub: modul === 'catan'
-          ? 'Was gefallen ist, gegen das, was fallen müsste. Ausreden werden geprüft.'
-          : 'Angesagt gegen geholt. ' + SA.plural(SA.wizardRunden(affen.length) || 10, 'Runde', 'Runden') +
-            ' bei ' + SA.plural(affen.length, 'Affe', 'Affen') + ', eine Quote, keine Gnade.',
-        actions: U.Tabs({
-          variant: 'pill', value: modul,
-          items: [{ id: 'catan', label: 'Catan' }, { id: 'wizard', label: 'Wizard' }],
-          onChange: function (id) { modul = id; S.emit(); }
+      var punkte = {}, treffer = {};
+      spieler.forEach(function (p) { punkte[p.id] = 0; treffer[p.id] = 0; });
+      (sitzung.runden || []).forEach(function (r) {
+        spieler.forEach(function (p) {
+          var cell = (r.cells || {})[p.id];
+          if (!cell || cell.bid == null) return;
+          punkte[p.id] += cell.points || 0;
+          if (cell.bid === cell.made) treffer[p.id] += 1;
+        });
+      });
+      return {
+        sitzung: sitzung,
+        runden: (sitzung.runden || []).length,
+        rundenGesamt: sitzung.rundenGesamt || SA.wizardRunden(spieler.length),
+        results: spieler.map(function (p) {
+          return { playerId: p.id, score: punkte[p.id], treffer: treffer[p.id] };
         })
-      }),
-      modul === 'catan' ? catan(c, affen) : wizard(c, affen)
-    ];
-  };
-
-  /* Aus dem Spiele-Regal heraus direkt ins passende Modul springen. */
-  window.SA_SCREENS.module.oeffne = function (art) {
-    modul = art === 'wizard' ? 'wizard' : 'catan';
-    S.navigate('module');
+      };
+    }
   };
 })();
