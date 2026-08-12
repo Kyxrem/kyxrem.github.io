@@ -128,7 +128,8 @@
     );
   }
 
-  function render(root, state) {
+  function render(root, state, opts) {
+    if (opts && opts.nurToasts) { renderToasts(state); return; }
     var c = S.computed();
     var screen = window.SA_SCREENS[state.view] || window.SA_SCREENS.uebersicht;
     window.SA_DOM.mount(root,

@@ -570,10 +570,41 @@
   letter-spacing: var(--type-score-tracking); color: var(--text-strong);
 }
 .sa-pad__total.is-best { color: var(--slime-500); }
-.sa-pad__stepper { display: flex; align-items: center; gap: var(--space-3); }
-.sa-pad__stepper input {
-  width: 38px; height: var(--control-h-sm); text-align: center;
-  font-family: var(--font-mono); font-weight: 800; font-size: var(--text-sm);
-  color: var(--text-strong); background: var(--surface-inset);
-  border: 1px solid var(--line-strong); border-radius: var(--radius-control); outline-offset: 2px;
+/* Zähler in der laufenden Runde: −/+ statt Zahlenfeld. Am Tisch wird getippt. */
+.sa-step__paar { display: flex; flex-direction: column; gap: var(--space-5); }
+/* Beschriftung über den Tasten, nicht daneben: ausgeschrieben lesbar, und die
+   Zelle bleibt in ihrer Spalte statt in die nächste zu rutschen. */
+.sa-step { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.sa-step__ctrl { display: flex; align-items: center; gap: var(--space-3); }
+.sa-step__label {
+  font-size: var(--text-2xs); font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-faint);
 }
+.sa-step__wert {
+  min-width: 26px; text-align: center;
+  font-family: var(--font-mono); font-weight: 800; font-size: var(--text-md);
+  color: var(--text-strong);
+}
+
+/* Verdeckte Ansage: ein großer Zähler im Dialog, damit man ihn im Halbdunkel
+   und mit einer Hand trifft. */
+.sa-ansage {
+  display: flex; align-items: center; justify-content: center; gap: var(--space-8);
+  padding: var(--space-7) 0;
+}
+.sa-ansage__zahl {
+  min-width: 84px; text-align: center;
+  font-family: var(--font-mono); font-weight: 800; font-size: var(--text-5xl);
+  letter-spacing: var(--type-score-tracking); color: var(--slime-500);
+}
+
+/* Mitzähler unter dem Block: wie viele Stiche noch fehlen. */
+.sa-pad__status {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--space-5); flex-wrap: wrap;
+  padding: var(--space-5) var(--pad-card);
+  border-top: var(--border-hairline) solid var(--line-subtle);
+}
+.sa-pad__stiche { font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--punsch-400); }
+.sa-pad__stiche.is-ok { color: var(--slime-500); }
+.sa-pad__stiche.is-zuviel { color: var(--intent-danger); }

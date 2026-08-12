@@ -100,6 +100,99 @@
     ];
   }
 
+  // ── Startaufstellung ─────────────────────────────────────────────────────
+  /* Nur die beiden Spiele mit eigenem Werkzeug — ohne sie im Regal sind die
+     Spielmodule nicht erreichbar. Alles andere trägt die Runde selbst ein.
+     Dazu eine laufende Saison, damit die Rangliste einen Zeitraum hat. */
+  function startaufstellung() {
+    var c = S.computed();
+    var fehlende = SA.modulSpiele().filter(function (g) {
+      return !(c.data.games || []).some(function (x) { return x.id === g.id || x.title === g.title; });
+    });
+    var brauchtSaison = !(c.data.seasons || []).length;
+    if (!fehlende.length && !brauchtSaison) {
+      S.toast('Steht schon', 'Catan und Wizard sind im Regal, die Saison läuft.', 'neutral');
+      return;
+    }
+    var saison = SA.startSaison(S.heute());
+
+    S.update(function (doc) {
+      doc.games = (doc.games || []).concat(fehlende);
+      if (brauchtSaison) doc.seasons = (doc.seasons || []).concat([saison]);
+    }, {
+      summary: 'Startaufstellung angelegt',
+      entries: fehlende.map(function (g) {
+        return { icon: 'extension', tone: 'slime', text: g.title + ' ins Regal gestellt.', to: 'Modul' };
+      }).concat(brauchtSaison
+        ? [{ icon: 'calendar-days', tone: 'slime', text: saison.name + ' angelegt.', to: SA.fmtDate(saison.start) + '–' + SA.fmtDate(saison.end) }]
+        : [])
+    }).then(function () {
+      S.toast('Steht', (fehlende.length ? fehlende.map(function (g) { return g.title; }).join(' und ') + ' im Regal. ' : '') +
+        'Der Rest kommt über „Spiel hinzufügen".', 'slime');
+    }).catch(function () { /* Meldung kam schon vom Store */ });
+  }
+
+  // ── Spiel hinzufügen ─────────────────────────────────────────────────────
+  function spielHinzufuegen() {
+    var c = S.computed();
+    var genres = ['Karten', 'Strategie', 'Party', 'Würfel', 'Sonst'];
+
+    var nameFeld = U.Input({ label: 'Wie heißt es?', placeholder: 'z. B. Skull King' });
+    var genreFeld = U.Select({ label: 'Genre', value: 'Karten', options: genres });
+    var dauerFeld = U.Input({ label: 'Dauer', value: '45', inputMode: 'numeric', suffix: 'min', icon: 'clock' });
+    var minFeld = U.Input({ label: 'Mindestens', value: '3', inputMode: 'numeric', suffix: 'Affen' });
+    var maxFeld = U.Input({ label: 'Höchstens', value: '6', inputMode: 'numeric', suffix: 'Affen' });
+    var wertung = U.Select({
+      label: 'Wertung', value: 'hi',
+      options: [{ value: 'hi', label: 'Höchste Punktzahl gewinnt' }, { value: 'lo', label: 'Niedrigste gewinnt' }]
+    });
+
+    SH.overlay(function (close) {
+      return U.Dialog({
+        tone: 'neon', width: 520, eyebrow: 'Neues Spiel', title: 'Was kommt ins Regal?', onClose: close,
+        children: [
+          nameFeld,
+          h('div.sa-cols.sa-cols--half', null, genreFeld, dauerFeld),
+          h('div.sa-cols.sa-cols--half', null, minFeld, maxFeld),
+          wertung,
+          h('span.sa-meta', 'Eigenes Werkzeug haben nur Catan und Wizard. Alles andere wird über „Ergebnis eintragen" gewertet.')
+        ],
+        footer: [
+          U.Button({ children: 'Abbrechen', variant: 'ghost', onClick: close }),
+          U.Button({
+            children: 'Ins Regal', iconLeft: 'plus',
+            onClick: function () {
+              var name = nameFeld.input.value.trim();
+              if (!name) { S.toast('Name fehlt', 'Namenlose Spiele findet später niemand wieder.', 'punsch'); return; }
+              if ((c.data.games || []).some(function (g) { return g.title.toLowerCase() === name.toLowerCase(); })) {
+                S.toast('Steht schon da', name + ' ist bereits im Regal.', 'punsch');
+                return;
+              }
+              var min = Number(minFeld.input.value) || 2;
+              var max = Number(maxFeld.input.value) || Math.max(min, 6);
+              var id = name.toLowerCase().replace(/[^a-z0-9]/g, '') || SA.uid('g');
+
+              S.update(function (doc) {
+                doc.games = (doc.games || []).concat([{
+                  id: id, title: name, genre: genreFeld.select.value,
+                  dauerMin: Number(dauerFeld.input.value) || null,
+                  minAffen: min, maxAffen: Math.max(min, max),
+                  lowerWins: wertung.select.value === 'lo', modul: null
+                }]);
+              }, {
+                summary: name + ' ins Regal gestellt',
+                entries: [{ icon: 'dices', tone: 'slime', text: name + ' ins Regal gestellt.', to: genreFeld.select.value }]
+              }).then(function () {
+                close();
+                S.toast('Steht im Regal', name + ' ist drin. Jetzt muss es nur noch jemand rausholen.', 'slime');
+              }).catch(function () { /* Meldung kam schon vom Store */ });
+            }
+          })
+        ]
+      });
+    });
+  }
+
   // ── Ergebnis eintragen ───────────────────────────────────────────────────
   /* Ein Spiel, ein Datum, je Affe Punkte + Tipp + Strafe. Daraus rechnet die
      Engine Platzierungen, Tipp-Bonus und Abendsieg — hier wird nichts addiert. */
@@ -107,6 +200,13 @@
     var c = S.computed();
     var affen = c.standings('all', { includeEmpty: true });
     if (affen.length < 2) { S.toast('Zu wenig Affen', 'Mindestens zwei, sonst ist es Solitär.', 'punsch'); return; }
+    // Ohne Spiel im Regal hat die Auswahl keinen Eintrag — und das Speichern
+    // lief vorher in einen Fehler, statt das zu sagen.
+    if (!c.shelf.length) {
+      S.toast('Leeres Regal', 'Erst ein Spiel anlegen — unter Spiele.', 'punsch');
+      S.navigate('spiele');
+      return;
+    }
 
     var spielFeld = U.Select({
       label: 'Spiel', value: (vorgabe && vorgabe.gameId) || (c.shelf[0] && c.shelf[0].id),
@@ -147,7 +247,8 @@
             children: 'Speichern', iconLeft: 'check',
             onClick: function () {
               var spielId = spielFeld.select.value;
-              var spiel = c.shelf.filter(function (g) { return g.id === spielId; })[0];
+              var spiel = c.shelf.filter(function (g) { return g.id === spielId; })[0] || c.shelf[0];
+              if (!spiel) { S.toast('Leeres Regal', 'Erst ein Spiel anlegen — unter Spiele.', 'punsch'); return; }
               var datum = datumFeld.input.value || S.heute();
               var results = zeilen.filter(function (z) { return z.punkte.input.value.trim() !== ''; })
                 .map(function (z) {
@@ -323,6 +424,8 @@
 
   window.SA_DIALOGS = {
     abendPlanen: abendPlanen,
+    startaufstellung: startaufstellung,
+    spielHinzufuegen: spielHinzufuegen,
     abendStarten: abendStarten,
     ergebnisEintragen: ergebnisEintragen,
     affeHinzufuegen: affeHinzufuegen,

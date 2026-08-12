@@ -10,7 +10,7 @@
  */
 (function () {
   'use strict';
-  var h = window.h, U = window.SA_UI, SA = window.SA, S = window.SA_STORE, T = window.SA_TEASE;
+  var h = window.h, U = window.SA_UI, SA = window.SA, S = window.SA_STORE, T = window.SA_TEASE, SH = window.SA_SHELL;
 
   var modul = 'catan';
   var WAYS = { 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 5, 9: 4, 10: 3, 11: 2, 12: 1 };
@@ -31,7 +31,9 @@
         : {
             id: SA.uid('w'), date: S.heute(),
             players: affen.slice(0, 6).map(function (a) { return a.id; }),
-            runden: [], aktiveRunde: 1, rundenGesamt: 10
+            runden: [], aktiveRunde: 1,
+            // 60 Karten, restlos verteilt — die Rundenzahl hängt an der Anzahl.
+            rundenGesamt: SA.wizardRunden(Math.min(affen.length, 6))
           });
     }, {
       summary: 'Neue Modul-Sitzung (' + art + ')',
@@ -126,11 +128,6 @@
   }
 
   // ══ Wizard · Block der Wahrheit ══════════════════════════════════════════
-  /* Wertung: Ansage getroffen = 20 + 10 je Stich. Daneben = −10 je Stich Differenz. */
-  function wizardPunkte(bid, made) {
-    return bid === made ? 20 + 10 * made : -10 * Math.abs(bid - made);
-  }
-
   var entwurf = {};   // {pid: {bid, made}} für die laufende Runde
 
   function wizard(c, affen) {
@@ -142,7 +139,8 @@
     }).filter(Boolean);
     if (!spieler.length) spieler = affen.slice(0, 6);
 
-    var rundenGesamt = sitzung.rundenGesamt || 10;
+    var rundenGesamt = sitzung.rundenGesamt || SA.wizardRunden(spieler.length) || 10;
+    var modus = sitzung.ansageModus === 'verdeckt' ? 'verdeckt' : 'offen';
     var aktiv = sitzung.aktiveRunde || 1;
     var gespielt = sitzung.runden || [];
 
@@ -165,21 +163,158 @@
       rows.push(vorhanden || { n: n, cards: n, cells: {} });
     }
 
-    function stepper(p) {
-      if (!entwurf[p.id]) entwurf[p.id] = { bid: 0, made: 0 };
-      var d = entwurf[p.id];
-      function feld(key, label) {
-        var input = h('input', {
-          value: String(d[key]), inputMode: 'numeric', 'aria-label': p.name + ' ' + label,
-          oninput: function (e) { d[key] = Math.max(0, Math.min(aktiv, Number(e.target.value.replace(/[^0-9]/g, '')) || 0)); }
-        });
-        return h('span.sa-pad__stepper', null, h('span.sa-meta', label), input);
+    /* Eingabe der laufenden Runde. Vorher standen hier zwei nackte Zahlenfelder
+       mit den Kürzeln G und M — man musste wissen, was gemeint ist, und traf sie
+       am Tisch schlecht. Jetzt: je ein Zähler mit −/+ und ausgeschriebener
+       Beschriftung, dazu unten eine Zeile, die mitzählt, wie viele Stiche noch
+       zu verteilen sind. */
+    function wert(p, key) {
+      if (!entwurf[p.id]) entwurf[p.id] = { bid: 0, made: 0, angesagt: false };
+      return entwurf[p.id][key];
+    }
+    function summe(key) {
+      return spieler.reduce(function (s, p) { return s + wert(p, key); }, 0);
+    }
+    /* Offen gilt die Ansage sofort — man sieht sie ja. Verdeckt erst, wenn der
+       Affe sie im Dialog bestätigt hat. */
+    function angesagt(p) { return modus === 'offen' || !!wert(p, 'angesagt'); }
+    function alleAngesagt() { return spieler.every(angesagt); }
+
+    var statusHost = h('div.sa-pad__status');
+    var abschliessen = U.Button({
+      children: 'Runde abschließen', size: 'sm', variant: 'live', iconLeft: 'check',
+      onClick: function () { rundeAbschliessen(); }
+    });
+
+    function zeichneStatus() {
+      var offen = aktiv - summe('made');
+      var fehlendeAnsagen = spieler.filter(function (p) { return !angesagt(p); }).length;
+      // Zwei Bedingungen: alle haben angesagt, und die Stiche gehen auf. Sonst
+      // ist die Runde nicht wertbar — der Knopf bleibt zu, die Zeile sagt warum.
+      abschliessen.disabled = offen !== 0 || fehlendeAnsagen > 0;
+      window.SA_DOM.mount(statusHost,
+        fehlendeAnsagen
+          ? h('span.sa-pad__stiche', (fehlendeAnsagen === 1 ? 'Es fehlt noch ' : 'Es fehlen noch ') +
+              SA.plural(fehlendeAnsagen, 'Ansage', 'Ansagen') + '.')
+          : h('span', { class: ['sa-pad__stiche', offen === 0 ? 'is-ok' : offen < 0 ? 'is-zuviel' : null] },
+              offen === 0 ? 'Alle ' + SA.plural(aktiv, 'Stich', 'Stiche') + ' verteilt.'
+                : offen > 0 ? 'Noch ' + SA.plural(offen, 'Stich', 'Stiche') + ' zu verteilen.'
+                : SA.plural(-offen, 'Stich', 'Stiche') + ' zu viel — so viele gibt es nicht.'),
+        modus === 'verdeckt'
+          ? h('span.sa-meta', 'Verdeckt: die Ansagen stehen erst am Rundenende in der Tabelle.')
+          : h('span.sa-meta', 'Angesagt zusammen: ' + summe('bid') +
+              (summe('bid') === aktiv ? ' — geht genau auf. Einer lügt.' : ''))
+      );
+    }
+
+    /* Zähler mit −/+ für einen Wert der laufenden Runde. */
+    function zaehler(p, key, lang, aufAenderung) {
+      var zahl = h('span.sa-step__wert', String(wert(p, key)));
+      function setze(delta) {
+        var v = Math.max(0, Math.min(aktiv, wert(p, key) + delta));
+        entwurf[p.id][key] = v;
+        zahl.textContent = String(v);
+        if (aufAenderung) aufAenderung(v);
+        zeichneStatus();
       }
-      return h('span', { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' } },
-        feld('bid', 'G'), feld('made', 'M'));
+      return h('span.sa-step__ctrl', null,
+        U.IconButton({ icon: 'minus', label: p.name + ': ' + lang + ' weniger', variant: 'outline', size: 'sm', onClick: function () { setze(-1); } }),
+        zahl,
+        U.IconButton({ icon: 'plus', label: p.name + ': ' + lang + ' mehr', variant: 'outline', size: 'sm', onClick: function () { setze(1); } }));
+    }
+
+    /* Verdeckte Ansage: das Gerät wandert einmal um den Tisch. Der Wert steht
+       nur in diesem Dialog; in der Tabelle bleibt bis zur Wertung ein „Steht".
+       Er wird bewusst nicht ins Dokument geschrieben — was dort landet, kann
+       jeder über die öffentliche Schnittstelle lesen. Ein Neuladen kostet also
+       die Ansagen der laufenden Runde. */
+    function ansageDialog(p, aufFertig) {
+      var stand = wert(p, 'bid');
+      SH.overlay(function (close) {
+        var zahl = h('span.sa-ansage__zahl', String(stand));
+        function setze(delta) {
+          stand = Math.max(0, Math.min(aktiv, stand + delta));
+          zahl.textContent = String(stand);
+        }
+        return U.Dialog({
+          tone: 'neon', width: 420, onClose: close,
+          eyebrow: 'Runde ' + aktiv + ' · verdeckt',
+          title: p.name + ', wie viele?',
+          children: [
+            h('span.sa-body', 'Nur du siehst das. In der Tabelle steht danach bloß, dass du angesagt hast.'),
+            h('div.sa-ansage', null,
+              U.IconButton({ icon: 'minus', label: 'Weniger', variant: 'outline', size: 'lg', onClick: function () { setze(-1); } }),
+              zahl,
+              U.IconButton({ icon: 'plus', label: 'Mehr', variant: 'outline', size: 'lg', onClick: function () { setze(1); } })),
+            h('span.sa-meta', 'Zwischen 0 und ' + aktiv + '. Danach das Gerät weitergeben.')
+          ],
+          footer: [
+            U.Button({ children: 'Abbrechen', variant: 'ghost', onClick: close }),
+            U.Button({
+              children: 'Merken', iconLeft: 'lock',
+              onClick: function () {
+                entwurf[p.id].bid = stand;
+                entwurf[p.id].angesagt = true;
+                close();
+                if (aufFertig) aufFertig();
+                zeichneStatus();
+              }
+            })
+          ]
+        });
+      });
+    }
+
+    function stepper(p) {
+      var ansageHost = h('span.sa-step__ctrl');
+      function zeichneAnsage() {
+        if (modus === 'offen') {
+          window.SA_DOM.mount(ansageHost, zaehler(p, 'bid', 'Ansage'));
+          return;
+        }
+        var steht = wert(p, 'angesagt');
+        window.SA_DOM.mount(ansageHost, U.Button({
+          children: steht ? 'Steht' : 'Ansagen',
+          size: 'sm', variant: steht ? 'secondary' : 'primary',
+          iconLeft: steht ? 'lock' : 'pencil',
+          onClick: function () { ansageDialog(p, zeichneAnsage); }
+        }));
+      }
+      zeichneAnsage();
+
+      return h('span.sa-step__paar', null,
+        h('span.sa-step', null, h('span.sa-step__label', 'Ansage'), ansageHost),
+        h('span.sa-step', null, h('span.sa-step__label', 'Geholt'), zaehler(p, 'made', 'Geholte Stiche')));
+    }
+
+    /* Beim Wechsel werden die Ansagen der laufenden Runde zurückgesetzt: von
+       offen auf verdeckt haben alle die Zahlen ohnehin schon gesehen, und
+       andersherum wäre die stille Enthüllung eine Überraschung. */
+    function modusWechseln(neuerModus) {
+      if (neuerModus === modus) return;
+      S.update(function (doc) {
+        var s = letzteSitzung(doc, 'wizard');
+        if (!s) return false;
+        s.ansageModus = neuerModus;
+      }, {
+        summary: 'Wizard-Ansagen jetzt ' + neuerModus,
+        entries: [{ icon: neuerModus === 'verdeckt' ? 'lock' : 'lock-open', tone: 'neutral',
+          text: 'Ansagen im Block der Wahrheit jetzt ' + neuerModus + '.', from: modus, to: neuerModus }]
+      }).then(function () {
+        entwurf = {};
+        S.toast(neuerModus === 'verdeckt' ? 'Verdeckt' : 'Offen',
+          neuerModus === 'verdeckt'
+            ? 'Jeder sagt für sich an. Gerät weitergeben, nicht schielen.'
+            : 'Ansagen wieder für alle sichtbar. Die laufende Runde fängt von vorn an.',
+          'neutral');
+      }).catch(function () { /* Meldung kam schon vom Store */ });
     }
 
     function rundeAbschliessen() {
+      if (!alleAngesagt()) {
+        S.toast('Erst ansagen', 'Es fehlen noch Ansagen. Gerät weitergeben.', 'punsch');
+        return;
+      }
       var summe = spieler.reduce(function (s, p) { return s + ((entwurf[p.id] || {}).made || 0); }, 0);
       if (summe !== aktiv) {
         S.toast('Zahlen, bitte.', 'In Runde ' + aktiv + ' gibt es genau ' + aktiv + ' Stiche, gezählt wurden ' + summe + '.', 'punsch');
@@ -188,7 +323,7 @@
       var cells = {};
       spieler.forEach(function (p) {
         var d = entwurf[p.id] || { bid: 0, made: 0 };
-        cells[p.id] = { bid: d.bid, made: d.made, points: wizardPunkte(d.bid, d.made) };
+        cells[p.id] = { bid: d.bid, made: d.made, points: SA.wizardPunkte(d.bid, d.made) };
       });
       var luegner = spieler.filter(function (p) { return cells[p.id].bid !== cells[p.id].made; });
 
@@ -200,11 +335,13 @@
         s.aktiveRunde = Math.min(rundenGesamt, aktiv + 1);
       }, { summary: 'Wizard-Runde ' + aktiv + ' gewertet' }).then(function () {
         entwurf = {};
-        S.toast('Runde ' + aktiv + ' steht', luegner.length
+        S.toast(modus === 'verdeckt' ? 'Aufgedeckt' : 'Runde ' + aktiv + ' steht', luegner.length
           ? luegner.map(function (p) { return p.name; }).join(' & ') + ' lag daneben. Wie angekündigt.'
           : 'Alle richtig. Verdächtig.', luegner.length ? 'punsch' : 'slime');
       }).catch(function () { /* Meldung kam schon vom Store */ });
     }
+
+    zeichneStatus();
 
     var quoten = spieler.map(function (p) {
       return { p: p, quote: versuche[p.id] ? treffer[p.id] / versuche[p.id] : null, treffer: treffer[p.id], versuche: versuche[p.id] };
@@ -222,13 +359,25 @@
               h('h3.sa-card__title', 'Block der Wahrheit')),
             h('div.sa-inline', null,
               U.Badge({ children: 'Runde ' + aktiv + ' / ' + rundenGesamt, tone: 'punsch', dot: true }),
-              U.Button({ children: 'Runde abschließen', size: 'sm', variant: 'live', iconLeft: 'check', onClick: rundeAbschliessen }))),
+              U.Tabs({
+                variant: 'pill', value: modus,
+                items: [{ id: 'offen', label: 'Offen' }, { id: 'verdeckt', label: 'Verdeckt' }],
+                onChange: function (id) { modusWechseln(id); }
+              }),
+              abschliessen)),
           h('div.sa-scrollx', null, U.ScorePad({
             players: spieler, rounds: rows, totals: totals, activeRound: aktiv,
-            renderActiveCell: stepper
+            renderActiveCell: stepper,
+            // Die Zähler brauchen mehr Platz als die fertigen Zellen.
+            style: { '--sa-pad-cols': '64px repeat(' + spieler.length + ', minmax(112px, 1fr))' }
           })),
-          h('div', { style: { padding: 'var(--space-5) var(--pad-card)' } },
-            h('span.sa-meta', 'G = gesagt, M = gemacht. Treffer bringt 20 + 10 je Stich, daneben kostet 10 je Stich Differenz.'))
+          statusHost,
+          h('div', { style: { padding: '0 var(--pad-card) var(--space-5)' } },
+            h('span.sa-meta', 'Ansage getroffen: 20 Punkte plus 10 je Stich. Daneben: 10 Minus je Stich Differenz. ' +
+              rundenGesamt + ' Runden, weil ' + SA.plural(spieler.length, 'Affe', 'Affen') + ' sich 60 Karten teilen. ' +
+              (modus === 'verdeckt'
+                ? 'Verdeckt heißt: jeder sagt allein am Gerät an, sichtbar wird es erst bei der Wertung.'
+                : 'Offen heißt: angesagt wird mit ±1 am Tisch, alle sehen alles.')))
         ]
       }),
 
@@ -291,7 +440,8 @@
         title: modul === 'catan' ? 'Würfelstatistik' : 'Block der Wahrheit',
         sub: modul === 'catan'
           ? 'Was gefallen ist, gegen das, was fallen müsste. Ausreden werden geprüft.'
-          : 'Gesagt gegen gemacht. Zehn Runden, eine Quote, keine Gnade.',
+          : 'Angesagt gegen geholt. ' + SA.plural(SA.wizardRunden(affen.length) || 10, 'Runde', 'Runden') +
+            ' bei ' + SA.plural(affen.length, 'Affe', 'Affen') + ', eine Quote, keine Gnade.',
         actions: U.Tabs({
           variant: 'pill', value: modul,
           items: [{ id: 'catan', label: 'Catan' }, { id: 'wizard', label: 'Wizard' }],

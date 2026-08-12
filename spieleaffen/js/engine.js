@@ -106,6 +106,52 @@
     return n + ' ' + (Math.abs(n) === 1 ? einzahl : mehrzahl);
   }
 
+  // ── Wizard ────────────────────────────────────────────────────────────────
+  /* Das Blatt hat 60 Karten und wird restlos verteilt: In der letzten Runde
+     bekommt jeder so viele Karten, wie noch reichen. Also hängt die Rundenzahl
+     an der Anzahl der Mitspieler — 3 Affen spielen 20 Runden, 6 Affen zehn. */
+  var WIZARD_KARTEN = 60;
+  function wizardRunden(anzahlAffen) {
+    var n = Number(anzahlAffen) || 0;
+    if (n < 2) return 0;
+    return Math.max(1, Math.floor(WIZARD_KARTEN / n));
+  }
+
+  /* Ansage getroffen: 20 Punkte plus 10 je Stich.
+     Danebengelegen: 10 Minus je Stich Differenz — nach oben wie nach unten. */
+  function wizardPunkte(gesagt, gemacht) {
+    var g = Number(gesagt) || 0, m = Number(gemacht) || 0;
+    return g === m ? 20 + 10 * m : -10 * Math.abs(g - m);
+  }
+
+  // ── Startaufstellung ──────────────────────────────────────────────────────
+  /* Nur die Spiele mit eigenem Werkzeug. Ohne sie im Regal sind die
+     Spielmodule nicht erreichbar; alles andere trägt die Runde selbst ein. */
+  function modulSpiele() {
+    return [
+      { id: 'catan',  title: 'Catan',  genre: 'Strategie', dauerMin: 90, minAffen: 3, maxAffen: 4, lowerWins: false, modul: 'catan' },
+      { id: 'wizard', title: 'Wizard', genre: 'Karten',    dauerMin: 45, minAffen: 3, maxAffen: 6, lowerWins: false, modul: 'wizard' }
+    ];
+  }
+
+  /* Eine Saison, die heute läuft — als Startpunkt für die Rangliste.
+     Ein Quartal, weil ein Spieleabend-Jahr sonst zu lang für eine Tabelle ist.
+     Quartalsenden liegen fest auf 31.03., 30.06., 30.09. und 31.12., deshalb
+     spielt der Februar hier keine Rolle. */
+  var QUARTAL_NAMEN = ['Winter', 'Frühjahr', 'Sommer', 'Herbst'];
+  var QUARTAL_ENDE = ['03-31', '06-30', '09-30', '12-31'];
+  function startSaison(todayIso) {
+    var t = todayIso || new Date().toISOString().slice(0, 10);
+    var jahr = Number(t.slice(0, 4));
+    var quartal = Math.floor((Number(t.slice(5, 7)) - 1) / 3);
+    return {
+      id: 's' + jahr + '-q' + (quartal + 1),
+      name: 'Saison · ' + QUARTAL_NAMEN[quartal] + ' ' + String(jahr).slice(2),
+      start: jahr + '-' + String(quartal * 3 + 1).padStart(2, '0') + '-01',
+      end: jahr + '-' + QUARTAL_ENDE[quartal]
+    };
+  }
+
   function uid(prefix) {
     return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
   }
@@ -712,6 +758,10 @@
     shortCode: shortCode,
     rankBy: rankBy,
     plural: plural,
+    wizardRunden: wizardRunden,
+    wizardPunkte: wizardPunkte,
+    modulSpiele: modulSpiele,
+    startSaison: startSaison,
     uid: uid
   };
 });
