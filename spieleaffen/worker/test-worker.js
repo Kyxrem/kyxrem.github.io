@@ -117,6 +117,84 @@ const DOKUMENT = {
   }));
   ok(r.status === 200, 'Aber eintragen darf er');
 
+  section('Ein Affe ohne Rechte kommt nicht an das Affen-Verzeichnis');
+  /* Die Oberfläche sperrt diese Knöpfe — aber PUT /api/data kann jeder von
+     Hand schicken. Also muss es der Worker abfangen, nicht der Browser. */
+  const kopie = () => JSON.parse(JSON.stringify(DOKUMENT));
+  const alsBene = async (data, summary) => alsJson(await anfrage('PUT', '/api/data', {
+    token: beneToken, body: { data, summary: summary || 'Bene ändert etwas' }
+  }));
+
+  let d = kopie();
+  d.players.filter((p) => p.id === 'bene')[0].admin = true;
+  r = await alsBene(d, 'Bene macht sich zum Admin');
+  ok(r.status === 403, 'Er kann sich nicht selbst zum Admin machen', JSON.stringify(r.body));
+
+  d = kopie();
+  d.players.filter((p) => p.id === 'maik')[0].admin = false;
+  r = await alsBene(d, 'Bene entmachtet Maik');
+  ok(r.status === 403, 'Und Maik die Rechte auch nicht nehmen', JSON.stringify(r.body));
+
+  d = kopie();
+  d.players.push({ id: 'schwarz', name: 'Schwarzer Peter', seat: 5, admin: true });
+  r = await alsBene(d, 'Bene legt einen Admin an');
+  ok(r.status === 403, 'Einen neuen Affen anlegen darf er nicht', JSON.stringify(r.body));
+
+  d = kopie();
+  d.players = d.players.filter((p) => p.id !== 'maik');
+  r = await alsBene(d, 'Bene löscht Maik');
+  ok(r.status === 403, 'Und einen herausnehmen erst recht nicht');
+
+  d = kopie();
+  d.players.filter((p) => p.id === 'maik')[0].seat = 5;
+  r = await alsBene(d, 'Bene färbt Maik um');
+  ok(r.status === 403, 'Fremde Sitzfarben sind tabu', JSON.stringify(r.body));
+
+  d = kopie();
+  d.players.filter((p) => p.id === 'bene')[0].name = 'Bene der Große';
+  r = await alsBene(d, 'Bene benennt sich um');
+  ok(r.status === 403, 'Nicht einmal den eigenen Namen — nur die Farbe', JSON.stringify(r.body));
+
+  d = kopie();
+  d.players.filter((p) => p.id === 'bene')[0].seat = 1;   // Maik sitzt da
+  r = await alsBene(d, 'Bene nimmt Maiks Farbe');
+  ok(r.status === 403, 'Eine belegte Farbe nehmen geht nicht — das wäre ein Tausch', JSON.stringify(r.body));
+
+  d = kopie();
+  d.players.filter((p) => p.id === 'bene')[0].seat = 4;   // frei
+  r = await alsBene(d, 'Bene nimmt eine freie Farbe');
+  ok(r.status === 200, 'Eine freie Farbe für sich selbst darf er nehmen', JSON.stringify(r.body));
+
+  d = kopie();
+  d.players.filter((p) => p.id === 'bene')[0].seat = 6;   // Tobi ist archiviert
+  r = await alsBene(d, 'Bene nimmt die Farbe des Archivierten');
+  ok(r.status === 200, 'Auch die eines Archivierten — dessen Farbe ist wieder frei', JSON.stringify(r.body));
+
+  section('Der Admin darf all das');
+  d = kopie();
+  d.players.filter((p) => p.id === 'bene')[0].admin = true;
+  r = await alsJson(await anfrage('PUT', '/api/data', {
+    token: adminToken, body: { data: d, summary: 'Admin macht Bene zum Admin' }
+  }));
+  ok(r.status === 200, 'Ein Admin vergibt Adminrechte', JSON.stringify(r.body));
+
+  section('Genommene Rechte gelten sofort, nicht erst beim nächsten Anmelden');
+  /* Benes Sitzung wurde angelegt, als er noch keine Rechte hatte. Jetzt hat er
+     welche — die Prüfung liest sie aus dem Dokument, nicht aus der Sitzung. */
+  d = kopie();
+  d.players.filter((p) => p.id === 'bene')[0].admin = true;
+  d.players.filter((p) => p.id === 'maik')[0].seat = 5;
+  r = await alsBene(d, 'Bene, jetzt Admin, färbt Maik um');
+  ok(r.status === 200, 'Mit frisch vergebenen Rechten geht es sofort', JSON.stringify(r.body));
+
+  // Und wieder zurück, damit die folgenden Prüfungen ihren Bene vorfinden.
+  r = await alsJson(await anfrage('PUT', '/api/data', {
+    token: adminToken, body: { data: DOKUMENT, summary: 'Stand zurücksetzen' }
+  }));
+  ok(r.status === 200, 'Der Ausgangsstand steht wieder');
+  r = await alsBene(kopie(), 'Bene versucht es noch einmal');
+  ok(r.status === 200, 'Ohne Änderung am Verzeichnis darf Bene weiter schreiben');
+
   section('Das Log nennt den Namen, nicht die Rolle');
   r = await alsJson(await anfrage('GET', '/api/log'));
   ok(r.status === 200, 'Das Log ist öffentlich lesbar');

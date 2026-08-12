@@ -180,29 +180,44 @@
            Nicht-Admins gesperrt, was dieser Knopf hier nicht war. */
         h('div.sa-card__head', null,
           h('div.sa-card__heading', null, h('h3.sa-h3', 'Affen'))),
+        /* Ein Affe ohne Rechte darf genau eine Sache: seine eigene Farbe. Alles
+           andere ist hier gesperrt — und im Worker noch einmal, weil sich eine
+           gesperrte Schaltfläche umgehen lässt, eine 403 nicht. */
         aktiv.map(function (p) {
           var stand = S.affen('all', { includeEmpty: true }).filter(function (a) { return a.id === p.id; })[0] || { nights: 0, wins: 0 };
+          var istAdmin = S.istAdmin();
+          var ichSelbst = !!(S.get().me && S.get().me.id === p.id);
+          var darfFarbe = istAdmin || ichSelbst;
           return h('div.sa-row', null,
             U.PlayerAvatar({ name: p.name, seat: p.seat }),
             h('span', { style: { flex: 1, display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 } },
-              h('span.sa-strong.sa-truncate', p.name + (p.admin ? ' · Admin' : '')),
+              h('span.sa-strong.sa-truncate', p.name + (p.admin ? ' · Admin' : '') + (ichSelbst ? ' · Du' : '')),
               h('span.sa-meta', SA.seatName(p.seat) + ' · ' + stand.nights + ' Abende · ' + stand.wins + ' Siege')),
-            U.Tag({
-              children: SA.seatName(p.seat), color: U.seatVar(p.seat), size: 'sm',
-              onClick: function () { window.SA_DIALOGS.sitzfarbeAendern(p.id); }
-            }),
+            darfFarbe
+              ? U.Tag({
+                  children: SA.seatName(p.seat), color: U.seatVar(p.seat), size: 'sm',
+                  onClick: function () { window.SA_DIALOGS.sitzfarbeAendern(p.id); }
+                })
+              : U.Tag({ children: SA.seatName(p.seat), color: U.seatVar(p.seat), size: 'sm' }),
             U.IconButton({
-              icon: 'palette', label: 'Sitzfarbe von ' + p.name + ' ändern', variant: 'outline', size: 'sm',
+              icon: 'palette',
+              label: darfFarbe ? 'Sitzfarbe von ' + p.name + ' ändern' : 'Fremde Sitzfarben ändert nur ein Admin',
+              variant: 'outline', size: 'sm', disabled: !darfFarbe,
               onClick: function () { window.SA_DIALOGS.sitzfarbeAendern(p.id); }
             }),
             U.IconButton({
               icon: p.admin ? 'admin_panel_settings' : 'shield',
-              label: p.admin ? p.name + ' die Adminrechte nehmen' : p.name + ' zum Admin machen',
-              variant: 'outline', size: 'sm', active: !!p.admin,
+              // Immer mit „Adminrechte" beschriftet, in jedem Zustand — sonst
+              // heißt derselbe Knopf je nach Rechtelage anders.
+              label: !istAdmin ? 'Adminrechte ändern darf nur ein Admin'
+                : p.admin ? 'Adminrechte von ' + p.name + ' nehmen' : 'Adminrechte für ' + p.name + ' vergeben',
+              variant: 'outline', size: 'sm', active: !!p.admin, disabled: !istAdmin,
               onClick: function () { adminUmschalten(c, p); }
             }),
             U.IconButton({
-              icon: 'archive', label: 'Archivieren: ' + p.name, variant: 'outline', size: 'sm',
+              icon: 'archive',
+              label: istAdmin ? 'Archivieren: ' + p.name : 'Archivieren darf nur ein Admin',
+              variant: 'outline', size: 'sm', disabled: !istAdmin,
               onClick: function () { archivieren(p); }
             }));
         }),
@@ -215,13 +230,21 @@
               U.PlayerAvatar({ name: p.name, seat: p.seat, size: 'sm' }),
               h('span.sa-body', { style: { flex: 1 } }, p.name),
               h('span.sa-meta', SA.seatName(p.seat) + (belegt ? ' inzwischen belegt' : ' frei')),
-              U.Button({ children: 'Zurückholen', size: 'sm', variant: 'ghost', iconLeft: 'undo', disabled: belegt, onClick: function () { zurueckholen(p); } }));
+              U.Button({
+                children: 'Zurückholen', size: 'sm', variant: 'ghost', iconLeft: 'undo',
+                disabled: belegt || !S.istAdmin(),
+                title: !S.istAdmin() ? 'Zurückholen darf nur ein Admin' : null,
+                onClick: function () { zurueckholen(p); }
+              }));
           })
         ] : null,
         /* Der Knopf steht oben im Kartenkopf — hier nur noch die Auskunft,
            wie viele Farben überhaupt zu haben sind. */
         h('div.sa-row', null,
-          h('span.sa-body', SA.SEATS.length + ' Sitzfarben, ' + frei.length + ' frei. Archivieren gibt eine zurück, Tauschen kostet keine.'))
+          h('span.sa-body', SA.SEATS.length + ' Sitzfarben, ' + frei.length + ' frei. ' +
+            (S.istAdmin()
+              ? 'Archivieren gibt eine zurück, Tauschen kostet keine.'
+              : 'Ändern darfst du deine eigene, und nur auf eine freie.')))
       ]
     });
   }
