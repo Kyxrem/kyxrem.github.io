@@ -662,3 +662,10 @@
    bleibt sie — man soll ja erkennen, wem sie gehört. */
 .sa-palette__feld.is-gesperrt { opacity: .45; cursor: not-allowed; }
 .sa-palette__feld.is-gesperrt:hover { background: var(--surface-inset); border-color: var(--line); }
+
+/* Die feststehende Ansage in der Stich-Phase: gleiche Höhe wie ein Zähler,
+   damit die Zeile nicht springt, wenn die Phase wechselt. */
+.sa-step__fest {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 28px;
+}
