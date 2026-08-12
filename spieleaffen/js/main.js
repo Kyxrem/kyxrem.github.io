@@ -28,7 +28,7 @@
   S.init().then(function () {
     var state = S.get();
     if (!gueltig(state.view)) state.view = 'uebersicht';
-    S.on(function (s) { SH.render(root, s); });
+    S.on(function (s, opts) { SH.render(root, s, opts); });
     SH.render(root, state);
     if (state.loadError) {
       S.toast('Offline', 'Server nicht erreichbar. Du siehst den letzten Stand.', 'banana');

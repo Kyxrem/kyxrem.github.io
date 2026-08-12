@@ -28,7 +28,15 @@
   var TIP_BONUS = 3;             // bester Tipp je Spiel
   var STRAFE_POINTS = 20;        // Abzug je Strafe
 
-  var SEATS = [1, 2, 3, 4, 5, 6];
+  /* Sitzfarben. Sechs kommen aus dem Handoff, drei sind nachgereicht — die
+     Begründung und die Messung stehen bei den Tokens (css/tokens.css). Namen
+     statt Nummern, damit „ich nehm Minze" am Tisch überhaupt sagbar ist. */
+  var SEATS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  var SEAT_NAMEN = {
+    1: 'Slime', 2: 'Banane', 3: 'Punsch', 4: 'Eis', 5: 'Traube',
+    6: 'Mandarine', 7: 'Chili', 8: 'Blaubeere', 9: 'Minze'
+  };
+  function seatName(seat) { return SEAT_NAMEN[Number(seat)] || ('Seat ' + seat); }
 
   // ── Helfer ────────────────────────────────────────────────────────────────
   function byDateAsc(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
@@ -106,15 +114,74 @@
     return n + ' ' + (Math.abs(n) === 1 ? einzahl : mehrzahl);
   }
 
+  // ── Wizard ────────────────────────────────────────────────────────────────
+  /* Das Blatt hat 60 Karten und wird restlos verteilt: In der letzten Runde
+     bekommt jeder so viele Karten, wie noch reichen. Also hängt die Rundenzahl
+     an der Anzahl der Mitspieler — 3 Affen spielen 20 Runden, 6 Affen zehn. */
+  var WIZARD_KARTEN = 60;
+  function wizardRunden(anzahlAffen) {
+    var n = Number(anzahlAffen) || 0;
+    if (n < 2) return 0;
+    return Math.max(1, Math.floor(WIZARD_KARTEN / n));
+  }
+
+  /* Ansage getroffen: 20 Punkte plus 10 je Stich.
+     Danebengelegen: 10 Minus je Stich Differenz — nach oben wie nach unten. */
+  function wizardPunkte(gesagt, gemacht) {
+    var g = Number(gesagt) || 0, m = Number(gemacht) || 0;
+    return g === m ? 20 + 10 * m : -10 * Math.abs(g - m);
+  }
+
+  // ── Startaufstellung ──────────────────────────────────────────────────────
+  /* Nur die Spiele mit eigenem Werkzeug. Ohne sie im Regal sind die
+     Spielmodule nicht erreichbar; alles andere trägt die Runde selbst ein. */
+  function modulSpiele() {
+    return [
+      { id: 'catan',  title: 'Catan',  genre: 'Strategie', dauerMin: 90, minAffen: 3, maxAffen: 4, lowerWins: false, modul: 'catan' },
+      { id: 'wizard', title: 'Wizard', genre: 'Karten',    dauerMin: 45, minAffen: 3, maxAffen: 6, lowerWins: false, modul: 'wizard' }
+    ];
+  }
+
+  /* Eine Saison, die heute läuft — als Startpunkt für die Rangliste.
+     Ein Quartal, weil ein Spieleabend-Jahr sonst zu lang für eine Tabelle ist.
+     Quartalsenden liegen fest auf 31.03., 30.06., 30.09. und 31.12., deshalb
+     spielt der Februar hier keine Rolle. */
+  var QUARTAL_NAMEN = ['Winter', 'Frühjahr', 'Sommer', 'Herbst'];
+  var QUARTAL_ENDE = ['03-31', '06-30', '09-30', '12-31'];
+  function startSaison(todayIso) {
+    var t = todayIso || new Date().toISOString().slice(0, 10);
+    var jahr = Number(t.slice(0, 4));
+    var quartal = Math.floor((Number(t.slice(5, 7)) - 1) / 3);
+    return {
+      id: 's' + jahr + '-q' + (quartal + 1),
+      name: 'Saison · ' + QUARTAL_NAMEN[quartal] + ' ' + String(jahr).slice(2),
+      start: jahr + '-' + String(quartal * 3 + 1).padStart(2, '0') + '-01',
+      end: jahr + '-' + QUARTAL_ENDE[quartal]
+    };
+  }
+
   function uid(prefix) {
     return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
   }
 
-  /* Freie Sitzfarben: sechs Stück, aktive Affen belegen je eine. */
+  /* Freie Sitzfarben: aktive Affen belegen je eine, der Rest steht zur Wahl. */
   function freeSeats(players) {
     var taken = (players || []).filter(function (p) { return !p.archived; })
       .map(function (p) { return Number(p.seat); });
     return SEATS.filter(function (s) { return taken.indexOf(s) < 0; });
+  }
+
+  /* Wer sitzt auf welcher Farbe? Sitzfarbe → aktiver Affe oder null.
+     Archivierte zählen nicht: ihre Farbe ist wieder zu haben. */
+  function seatVergabe(players) {
+    var out = {};
+    SEATS.forEach(function (s) { out[s] = null; });
+    (players || []).forEach(function (p) {
+      if (p.archived) return;
+      var s = Number(p.seat);
+      if (out[s] === null) out[s] = p;
+    });
+    return out;
   }
 
   // ── Spiel auswerten ───────────────────────────────────────────────────────
@@ -617,7 +684,7 @@
         check: function (c) { return c.run.points >= 100; } },
       { id: 'comeback',       icon: 'rocket_launch', name: 'Comeback',      desc: 'Abendsieg direkt nach letztem Platz', tone: 'banana',
         check: function (c) { return c.comeback; } },
-      { id: 'affenbande',     icon: 'users',         name: 'Affenbande',    desc: 'Abend mit allen sechs Affen', tone: 'banana',
+      { id: 'affenbande',     icon: 'users',         name: 'Affenbande',    desc: 'Abend mit sechs Affen am Tisch', tone: 'banana',
         check: function (c) { return c.allSix; } },
       { id: 'saisonmeister',  icon: 'military_tech', name: 'Saisonmeister', desc: 'Eine Saison gewonnen', tone: 'banana',
         check: function () { return false; /* wird separat vergeben */ } },
@@ -690,6 +757,8 @@
     TIP_BONUS: TIP_BONUS,
     STRAFE_POINTS: STRAFE_POINTS,
     SEATS: SEATS,
+    SEAT_NAMEN: SEAT_NAMEN,
+    seatName: seatName,
     compute: compute,
     evalGame: evalGame,
     evalNight: evalNight,
@@ -699,6 +768,7 @@
     statusLines: statusLines,
     banterForNight: banterForNight,
     freeSeats: freeSeats,
+    seatVergabe: seatVergabe,
     emptyDoc: emptyDoc,
     fmtDate: fmtDate,
     fmtDateShort: fmtDateShort,
@@ -712,6 +782,10 @@
     shortCode: shortCode,
     rankBy: rankBy,
     plural: plural,
+    wizardRunden: wizardRunden,
+    wizardPunkte: wizardPunkte,
+    modulSpiele: modulSpiele,
+    startSaison: startSaison,
     uid: uid
   };
 });

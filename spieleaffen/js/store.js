@@ -33,7 +33,11 @@
   var toastSeq = 0;
 
   function on(fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; }
-  function emit() { listeners.forEach(function (fn) { fn(state); }); }
+  function emit(opts) { listeners.forEach(function (fn) { fn(state, opts); }); }
+  /* Eine kommende oder gehende Meldung ist kein Grund, den ganzen Screen neu
+     zu bauen: wer genau in dem Moment tippt, träfe sonst ins Leere, weil der
+     Knopf unter dem Finger ausgetauscht wird. */
+  function emitToasts() { emit({ nurToasts: true }); }
   function get() { return state; }
 
   /* SA.compute() ist nicht billig — Ergebnis halten, bis sich das Dokument ändert. */
@@ -61,12 +65,12 @@
   function toast(title, message, tone) {
     var entry = { id: ++toastSeq, title: title, message: message, tone: tone || 'slime' };
     state.toasts = state.toasts.concat([entry]);
-    emit();
+    emitToasts();
     setTimeout(function () { dismiss(entry.id); }, 4200);
   }
   function dismiss(id) {
     state.toasts = state.toasts.filter(function (t) { return t.id !== id; });
-    emit();
+    emitToasts();
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────

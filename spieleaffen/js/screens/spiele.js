@@ -96,21 +96,30 @@
     }
     function zeichneRegal() {
       var treffer = filtern(shelf);
-      window.SA_DOM.mount(regalHost, treffer.length
-        ? h('div.sa-shelf', treffer.map(karte))
-        : U.Card({
-            padding: '0', tone: 'sunken',
-            children: h('div.sa-empty', null,
-              U.Icon('dices', { size: 32, color: 'var(--text-faint)' }),
-              h('span.sa-empty__text', 'Nichts gefunden. Tipp: weniger tippen, mehr spielen.'),
-              U.Button({
+      if (treffer.length) { window.SA_DOM.mount(regalHost, h('div.sa-shelf', treffer.map(karte))); return; }
+
+      // Ein leeres Regal ist etwas anderes als eine Suche ohne Treffer: im
+      // ersten Fall fehlt der Runde der Einstieg, im zweiten nur ein Filter.
+      var leeresRegal = !shelf.length;
+      window.SA_DOM.mount(regalHost, U.Card({
+        padding: '0', tone: 'sunken',
+        children: h('div.sa-empty', null,
+          U.Icon('dices', { size: 32, color: 'var(--text-faint)' }),
+          h('span.sa-empty__text', leeresRegal
+            ? 'Das Regal ist leer. Catan und Wizard bringen eigenes Werkzeug mit — der Rest kommt von Hand dazu.'
+            : 'Nichts gefunden. Tipp: weniger tippen, mehr spielen.'),
+          leeresRegal
+            ? h('div.sa-inline', { style: { justifyContent: 'center' } },
+                U.Button({ children: 'Catan und Wizard anlegen', iconLeft: 'extension', onClick: window.SA_DIALOGS.startaufstellung }),
+                U.Button({ children: 'Eigenes Spiel', variant: 'secondary', iconLeft: 'plus', onClick: window.SA_DIALOGS.spielHinzufuegen }))
+            : U.Button({
                 children: 'Filter zurücksetzen', size: 'sm', variant: 'ghost', iconLeft: 'undo',
                 onClick: function () {
                   genre = 'alle'; selten = false; suchFeld.input.value = '';
                   zeichnePillen(); zeichneSchalter(); zeichneRegal();
                 }
               }))
-          }));
+      }));
     }
     zeichneAktuell = zeichneRegal;
     zeichnePillen();
@@ -121,8 +130,13 @@
       SH.ScreenHead({
         eyebrow: 'Regal',
         title: 'Spiele',
-        sub: SA.plural(shelf.length, 'Spiel', 'Spiele') + ' im Schrank. Manche davon sogar gespielt.',
-        actions: U.Button({ children: 'Abend planen', iconLeft: 'plus', onClick: window.SA_DIALOGS.abendPlanen })
+        sub: shelf.length
+          ? SA.plural(shelf.length, 'Spiel', 'Spiele') + ' im Schrank. Manche davon sogar gespielt.'
+          : 'Noch nichts im Schrank. Ohne Spiel kein Ergebnis.',
+        actions: [
+          U.Button({ children: 'Abend planen', variant: 'secondary', iconLeft: 'calendar-days', onClick: window.SA_DIALOGS.abendPlanen }),
+          U.Button({ children: 'Spiel hinzufügen', iconLeft: 'plus', onClick: window.SA_DIALOGS.spielHinzufuegen })
+        ]
       }),
       h('div.sa-inline.sa-section-gap', { style: { justifyContent: 'space-between' } },
         pillenHost,

@@ -189,6 +189,10 @@
   .sa-toasts { right: var(--space-5); left: var(--space-5); bottom: 84px; }
   .sa-toast { max-width: none; }
 
+  /* Ein offener Dialog klebt hier unten am Rand. Meldungen weichen dann nach
+     oben aus, statt ihm die letzte Zeile zuzudecken. */
+  body.sa-hat-overlay .sa-toasts { bottom: auto; top: var(--space-5); }
+
   /* Dichte Zeilen dürfen im Kasten scrollen, statt die Seite zu sprengen. */
   .sa-scrollx > * { min-width: 560px; }
   .sa-pad { min-width: 520px; }

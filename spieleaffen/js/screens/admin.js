@@ -285,13 +285,13 @@
         x.archived = true;
       }, {
         summary: p.name + ' archiviert',
-        entries: [{ icon: 'archive', tone: 'punsch', text: p.name + ' archiviert. Seat ' + p.seat + ' ist wieder frei.' }]
+        entries: [{ icon: 'archive', tone: 'punsch', text: p.name + ' archiviert. ' + SA.seatName(p.seat) + ' ist wieder frei.' }]
       }).then(function () { S.toast('Archiviert', p.name + ' ist raus. Die Punkte bleiben stehen.', 'punsch'); })
         .catch(function () { /* Meldung kam schon vom Store */ });
     }
     function zurueckholen(p) {
       if (aktiv.some(function (x) { return Number(x.seat) === Number(p.seat); })) {
-        S.toast('Geht nicht', 'Seat ' + p.seat + ' ist inzwischen belegt.', 'punsch');
+        S.toast('Geht nicht', SA.seatName(p.seat) + ' ist inzwischen belegt.', 'punsch');
         return;
       }
       S.update(function (doc) {
@@ -300,7 +300,7 @@
         x.archived = false;
       }, {
         summary: p.name + ' zurückgeholt',
-        entries: [{ icon: 'undo', tone: 'slime', text: p.name + ' zurückgeholt (Seat ' + p.seat + ').' }]
+        entries: [{ icon: 'undo', tone: 'slime', text: p.name + ' zurückgeholt (' + SA.seatName(p.seat) + ').' }]
       }).then(function () { S.toast('Zurück', p.name + ' spielt wieder mit. Mutig.', 'slime'); })
         .catch(function () { /* Meldung kam schon vom Store */ });
     }
@@ -317,8 +317,15 @@
             U.PlayerAvatar({ name: p.name, seat: p.seat }),
             h('span', { style: { flex: 1, display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 } },
               h('span.sa-strong.sa-truncate', p.name + (p.admin ? ' · Admin' : '')),
-              h('span.sa-meta', 'Seat ' + p.seat + ' · ' + stand.nights + ' Abende · ' + stand.wins + ' Siege')),
-            U.Tag({ children: 'Seat ' + p.seat, color: U.seatVar(p.seat), size: 'sm' }),
+              h('span.sa-meta', SA.seatName(p.seat) + ' · ' + stand.nights + ' Abende · ' + stand.wins + ' Siege')),
+            U.Tag({
+              children: SA.seatName(p.seat), color: U.seatVar(p.seat), size: 'sm',
+              onClick: function () { window.SA_DIALOGS.sitzfarbeAendern(p.id); }
+            }),
+            U.IconButton({
+              icon: 'palette', label: 'Sitzfarbe von ' + p.name + ' ändern', variant: 'outline', size: 'sm',
+              onClick: function () { window.SA_DIALOGS.sitzfarbeAendern(p.id); }
+            }),
             U.IconButton({
               icon: p.admin ? 'admin_panel_settings' : 'shield',
               label: p.admin ? p.name + ' die Adminrechte nehmen' : p.name + ' zum Admin machen',
@@ -338,12 +345,12 @@
             return h('div.sa-row', { style: { opacity: .7 } },
               U.PlayerAvatar({ name: p.name, seat: p.seat, size: 'sm' }),
               h('span.sa-body', { style: { flex: 1 } }, p.name),
-              h('span.sa-meta', belegt ? 'Seat ' + p.seat + ' inzwischen belegt' : 'Seat ' + p.seat + ' frei'),
+              h('span.sa-meta', SA.seatName(p.seat) + (belegt ? ' inzwischen belegt' : ' frei')),
               U.Button({ children: 'Zurückholen', size: 'sm', variant: 'ghost', iconLeft: 'undo', disabled: belegt, onClick: function () { zurueckholen(p); } }));
           })
         ] : null,
         h('div.sa-row', { style: { justifyContent: 'space-between' } },
-          h('span.sa-body', 'Sechs Sitzfarben, ' + frei.length + ' frei. Archivieren gibt eine zurück.'),
+          h('span.sa-body', SA.SEATS.length + ' Sitzfarben, ' + frei.length + ' frei. Archivieren gibt eine zurück, Tauschen kostet keine.'),
           U.Button({ children: 'Affe hinzufügen', size: 'sm', iconLeft: 'user-plus', onClick: window.SA_DIALOGS.affeHinzufuegen }))
       ]
     });

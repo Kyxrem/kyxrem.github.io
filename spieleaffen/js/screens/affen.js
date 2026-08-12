@@ -16,7 +16,7 @@
         h('div.sa-card__head', null,
           h('div.sa-card__heading', null,
             h('h3.sa-h3', 'Alle Affen'),
-            h('span.sa-meta', SA.plural(affen.length, 'Affe', 'Affen') + ' aktiv · Sitzfarbe gehört für immer')),
+            h('span.sa-meta', SA.plural(affen.length, 'Affe', 'Affen') + ' aktiv · Sitzfarbe je einmal, tauschbar im Admin')),
           U.Button({ children: 'Ergebnis eintragen', size: 'sm', iconLeft: 'edit_note', onClick: function () { window.SA_DIALOGS.ergebnisEintragen(); } })),
         h('div.sa-scrollx', null, h('div', null,
           h('div.sa-thead', { style: { gridTemplateColumns: SPALTEN } },

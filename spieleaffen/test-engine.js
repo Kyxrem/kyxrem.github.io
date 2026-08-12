@@ -116,10 +116,32 @@ var summe = tabelle.reduce(function (s, r) { return s + r.nights; }, 0);
 eq(summe > 0, true, 'Abende sind gezählt (' + summe + ')');
 eq(c.standings('all', { includeArchived: true }).length, 6, 'Mit Archiv sind es sechs');
 
-section('Sitzfarben: sechs Stück, jede höchstens einmal vergeben');
+section('Sitzfarben: jede höchstens einmal vergeben');
 var seats = c.players.filter(function (p) { return !p.archived; }).map(function (p) { return p.seat; });
 eq(seats.length, new Set(seats).size, 'Keine Sitzfarbe doppelt belegt');
-eq(SA.freeSeats(c.players), [6], 'Seat 6 ist frei, weil Tobi archiviert ist');
+eq(SA.freeSeats(c.players), [6, 7, 8, 9], 'Frei ist alles ab Seat 6 — Tobi ist archiviert');
+
+var vergabe = SA.seatVergabe(c.players);
+eq(Object.keys(vergabe).length, SA.SEATS.length, 'Die Vergabe kennt jede Sitzfarbe');
+eq(vergabe[6], null, 'Seat 6 ist unbesetzt — der archivierte Tobi zählt nicht');
+eq([1, 2, 3, 4, 5].every(function (s) { return vergabe[s] && vergabe[s].seat === s; }), true,
+  'Jede belegte Farbe zeigt auf den Affen, der darauf sitzt');
+
+// Farben haben Namen, damit „ich nehm Minze" am Tisch funktioniert.
+eq(SA.SEATS.every(function (s) { return /^[A-Za-zÄÖÜäöü]+$/.test(SA.seatName(s)); }), true,
+  'Jede Sitzfarbe trägt einen Namen', JSON.stringify(SA.SEATS.map(SA.seatName)));
+eq(new Set(SA.SEATS.map(SA.seatName)).size, SA.SEATS.length, 'Kein Name doppelt');
+eq(SA.seatName(3), 'Punsch', 'Seat 3 heißt nach dem Token, das dahintersteckt');
+
+// Und jede Farbe braucht ihren Token, sonst bleibt der Avatar durchsichtig.
+var tokens = require('fs').readFileSync(__dirname + '/css/tokens.css', 'utf8');
+eq(SA.SEATS.filter(function (s) { return tokens.indexOf('--seat-' + s + ':') < 0; }), [],
+  'Zu jeder Sitzfarbe steht ein --seat-N in den Tokens');
+var zwei = SA.seatVergabe([
+  { id: 'a', name: 'Anna', seat: 2 },
+  { id: 'b', name: 'Ben', seat: 2 }
+]);
+eq(zwei[2].id, 'a', 'Bei doppelter Belegung gewinnt der erste — die Vergabe rät nicht');
 
 section('Pokale');
 eq(c.achievements.length, 15, 'Fünfzehn Pokale im Katalog');
@@ -138,6 +160,44 @@ eq(c.shelf.length, 8, 'Acht Spiele im Regal');
 eq(c.shelf[0].plays >= c.shelf[c.shelf.length - 1].plays, true, 'Nach Häufigkeit sortiert');
 eq(c.shelf.some(function (g) { return g.modul === 'catan'; }), true, 'Catan hat ein Modul');
 eq(c.shelf.some(function (g) { return g.modul === 'wizard'; }), true, 'Wizard hat ein Modul');
+
+section('Wizard: die Rundenzahl hängt an der Anzahl der Affen');
+// 60 Karten, restlos verteilt — mehr Mitspieler heißt weniger Runden.
+eq(SA.wizardRunden(3), 20, 'Drei Affen spielen 20 Runden');
+eq(SA.wizardRunden(4), 15, 'Vier Affen spielen 15 Runden');
+eq(SA.wizardRunden(5), 12, 'Fünf Affen spielen 12 Runden');
+eq(SA.wizardRunden(6), 10, 'Sechs Affen spielen 10 Runden');
+eq(SA.wizardRunden(1), 0, 'Alleine geht es nicht');
+eq(SA.wizardRunden(0), 0, 'Ohne Affen erst recht nicht');
+eq(SA.wizardRunden(7) * 7 <= 60, true, 'Die Runden passen immer ins Blatt');
+
+section('Wizard: Wertung');
+eq(SA.wizardPunkte(0, 0), 20, 'Null angesagt, null geholt: 20');
+eq(SA.wizardPunkte(1, 1), 30, 'Einen angesagt und geholt: 20 + 10');
+eq(SA.wizardPunkte(3, 3), 50, 'Drei getroffen: 20 + 30');
+eq(SA.wizardPunkte(2, 0), -20, 'Zwei angesagt, keinen geholt: −20');
+eq(SA.wizardPunkte(0, 2), -20, 'Zu viele geholt kostet genauso viel');
+eq(SA.wizardPunkte(5, 4), -10, 'Einer daneben: −10');
+
+section('Startaufstellung');
+var start = SA.modulSpiele();
+eq(start.length, 2, 'Nur die zwei Spiele mit eigenem Werkzeug');
+eq(start.map(function (g) { return g.modul; }).sort(), ['catan', 'wizard'], 'Catan und Wizard');
+eq(start.every(function (g) { return g.title && g.genre && g.minAffen && g.maxAffen; }), true,
+  'Jedes trägt alles, was das Regal anzeigt');
+
+var saison = SA.startSaison('2026-08-11');
+eq(saison.start <= '2026-08-11' && saison.end >= '2026-08-11', true,
+  'Die Startsaison umfasst den heutigen Tag', JSON.stringify(saison));
+// Quartale, nicht Monate: der Februar gehört zum ersten, das im März endet.
+eq(SA.startSaison('2026-02-15').start, '2026-01-01', 'Februar beginnt im ersten Quartal');
+eq(SA.startSaison('2026-02-15').end, '2026-03-31', 'und endet mit dem März');
+eq(SA.startSaison('2026-12-31').end, '2026-12-31', 'Silvester ist noch drin');
+eq(['2026-01-01','2026-04-01','2026-07-01','2026-11-30'].map(function (d) {
+  var s = SA.startSaison(d); return s.start <= d && s.end >= d;
+}), [true, true, true, true], 'Jedes Quartal enthält seinen eigenen Tag');
+eq(SA.compute({ players: [], seasons: [saison], games: SA.modulSpiele(), nights: [] }).shelf.length, 2,
+  'Die Startaufstellung läuft durch die Auswertung');
 
 section('Determinismus: zweimal rechnen ergibt dasselbe');
 var wieder = SA.compute(require('./demo-data.js'));
