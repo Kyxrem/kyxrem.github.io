@@ -194,8 +194,9 @@
   }
 
   // ── Ergebnis eintragen ───────────────────────────────────────────────────
-  /* Ein Spiel, ein Datum, je Affe Punkte + Tipp. Daraus rechnet die Engine
-     Platzierungen, Tipp-Bonus und Abendsieg — hier wird nichts addiert. */
+  /* Ein Spiel, ein Datum, je Affe die Punktzahl aus dem Spiel. Daraus rechnet
+     die Engine Plätze, Siegpunkte und Abendsieg — hier wird nichts addiert.
+     Getippt wird nur bei Wizard; dafür gibt es den Block der Wahrheit. */
   function ergebnisEintragen(vorgabe) {
     var c = S.computed();
     var affen = c.standings('all', { includeEmpty: true });
@@ -217,8 +218,7 @@
 
     var zeilen = affen.map(function (a) {
       var punkte = U.Input({ size: 'sm', inputMode: 'numeric', placeholder: '—' });
-      var tipp = U.Input({ size: 'sm', inputMode: 'numeric', placeholder: '—' });
-      return { affe: a, punkte: punkte, tipp: tipp };
+      return { affe: a, punkte: punkte };
     });
 
     SH.overlay(function (close) {
@@ -228,14 +228,14 @@
           h('div.sa-cols.sa-cols--half', null, spielFeld, datumFeld),
           dauerFeld,
           h('div.sa-card.sa-card--flush', null,
-            h('div.sa-thead', { style: { gridTemplateColumns: '1fr 92px 92px' } },
-              h('span', 'Affe'), h('span', 'Punkte'), h('span', 'Tipp')),
+            h('div.sa-thead', { style: { gridTemplateColumns: '1fr 92px' } },
+              h('span', 'Affe'), h('span', 'Punkte')),
             zeilen.map(function (z) {
-              return h('div.sa-trow', { style: { gridTemplateColumns: '1fr 92px 92px' } },
+              return h('div.sa-trow', { style: { gridTemplateColumns: '1fr 92px' } },
                 h('span.sa-inline', null,
                   U.PlayerAvatar({ name: z.affe.name, seat: z.affe.seat, size: 'sm' }),
                   h('span.sa-strong.sa-truncate', z.affe.name)),
-                z.punkte, z.tipp);
+                z.punkte);
             })),
           h('span.sa-meta', 'Leer lassen heißt: war nicht dabei. Die Plätze rechnet die App daraus.')
         ],
@@ -250,9 +250,7 @@
               var datum = datumFeld.input.value || S.heute();
               var results = zeilen.filter(function (z) { return z.punkte.input.value.trim() !== ''; })
                 .map(function (z) {
-                  var r = { playerId: z.affe.id, score: Number(z.punkte.input.value) };
-                  if (z.tipp.input.value.trim() !== '') r.tip = Number(z.tipp.input.value);
-                  return r;
+                  return { playerId: z.affe.id, score: Number(z.punkte.input.value) };
                 });
               if (results.length < 2) { S.toast('Zahlen, bitte.', 'Mindestens zwei Affen brauchen ein Ergebnis.', 'punsch'); return; }
 

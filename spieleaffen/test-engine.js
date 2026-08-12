@@ -74,39 +74,42 @@ var g3 = SA.evalGame({ lowerWins: true, results: [
 ] });
 eq([g3.b.place, g3.c.place, g3.a.place], [1, 2, 3], 'Niedrigste Punktzahl führt');
 
-// ── Tipp-Bonus ──────────────────────────────────────────────────────────────
-section('Tipp-Bonus: +3 für die kleinste Abweichung');
+// ── Tipps: Statistik, keine Punkte ──────────────────────────────────────────
+section('Tippen wird gezählt, aber nicht bezahlt');
 var g4 = SA.evalGame({ results: [
   { playerId: 'a', score: 100, tip: 90 },   // 10 daneben
-  { playerId: 'b', score: 80, tip: 82 },    // 2 daneben  → Bonus
+  { playerId: 'b', score: 80, tip: 82 },    // 2 daneben  → am nächsten dran
   { playerId: 'c', score: 60 }              // kein Tipp
 ] });
-eq(g4.b.tipPts, 3, 'Bester Tipper bekommt 3');
-eq(g4.a.tipPts, 0, 'Schlechterer Tipper bekommt nichts');
-eq(g4.c.tipPts, 0, 'Wer nicht tippt, bekommt nichts');
+eq(g4.b.tipBest, true, 'Der Nächste am eigenen Tipp ist markiert');
+eq(g4.a.tipBest, false, 'Der Weitere nicht');
+eq(g4.c.tipBest, false, 'Wer nicht tippt, ist nie der Nächste');
 eq(g4.c.tipDiff, null, 'Ohne Tipp keine Abweichung');
+eq(g4.b.tipPts, undefined, 'Es gibt keine Tipp-Punkte mehr');
+eq([g4.a.placePts, g4.b.placePts, g4.c.placePts], [4, 3, 2],
+  'Der Tipp verschiebt keine Platzpunkte');
 
 var g5 = SA.evalGame({ results: [
   { playerId: 'a', score: 100, tip: 95 }, { playerId: 'b', score: 50, tip: 45 }
 ] });
-eq([g5.a.tipPts, g5.b.tipPts], [3, 3], 'Gleiche Abweichung: alle Nächsten bekommen den Bonus');
+eq([g5.a.tipBest, g5.b.tipBest], [true, true], 'Gleiche Abweichung: beide gelten als am nächsten');
 
 var g6 = SA.evalGame({ results: [{ playerId: 'a', score: 42, tip: 42 }] });
-eq([g6.a.exact, g6.a.tipPts], [true, 3], 'Exakter Tipp gilt als getroffen');
+eq(g6.a.exact, true, 'Exakter Tipp gilt als getroffen');
 
 // ── Abend ───────────────────────────────────────────────────────────────────
-section('Abend: Platz plus Tipp, kein Punkt fürs Antreten');
+section('Abend: nur Platzpunkte — kein Antreten, kein Tipp');
 var n1 = SA.evalNight({ games: [{
   title: 'Wizard',
   results: [
-    { playerId: 'a', score: 100, tip: 98 },  // 4 Platz + 3 Tipp = 7
-    { playerId: 'b', score: 80 },            // 3 Platz         = 3
-    { playerId: 'c', score: 60 },            // 2 Platz         = 2
-    { playerId: 'd', score: 40 },            // 1 Platz         = 1
-    { playerId: 'e', score: 20 }             // nichts          = 0
+    { playerId: 'a', score: 100, tip: 98 },  // Platz 1, Tipp getroffen = 4
+    { playerId: 'b', score: 80 },            // Platz 2                 = 3
+    { playerId: 'c', score: 60 },            // Platz 3                 = 2
+    { playerId: 'd', score: 40 },            // Platz 4                 = 1
+    { playerId: 'e', score: 20 }             // Platz 5                 = 0
   ]
 }] });
-eq(n1.per.a.total, 7, 'a: 4 + 3 = 7');
+eq(n1.per.a.total, 4, 'a: nur der Platz — der gute Tipp bringt nichts');
 eq(n1.per.b.total, 3, 'b: nur der Platz');
 eq(n1.per.e.total, 0, 'Der Letzte bekommt null — genau darum gibt es keinen Antreten-Punkt');
 eq(n1.per.a.partPts, undefined, 'Antreten-Punkte gibt es nicht mehr');
@@ -155,6 +158,28 @@ eq(tabelle.every(function (r) { return Math.round(r.points * 100) === r.points *
 var summe = tabelle.reduce(function (s, r) { return s + r.nights; }, 0);
 eq(summe > 0, true, 'Abende sind gezählt (' + summe + ')');
 eq(c.standings('all', { includeArchived: true }).length, 6, 'Mit Archiv sind es sechs');
+
+section('Gesamttabelle: nur Siegpunkte');
+// Zwei Abende, einer davon mit lauter guten Tipps. Die Tabelle darf davon
+// nichts mitbekommen — sonst hinge sie an einem einzigen Spiel.
+var nurPlaetze = SA.compute({
+  players: [{ id: 'a', name: 'A', seat: 1 }, { id: 'b', name: 'B', seat: 2 }],
+  seasons: [], games: [], modules: {}, houseRules: [],
+  nights: [{
+    id: 'n1', date: '2026-01-06', title: 'Test', status: 'fertig', dabei: ['a', 'b'],
+    games: [{ id: 'g1', title: 'Wizard', results: [
+      { playerId: 'a', score: 10, tip: 10 },   // Platz 1, Tipp exakt
+      { playerId: 'b', score: 5 }              // Platz 2, kein Tipp
+    ] }]
+  }]
+});
+var zeilen = nurPlaetze.standings('all');
+var aZeile = zeilen.filter(function (r) { return r.id === 'a'; })[0];
+var bZeile = zeilen.filter(function (r) { return r.id === 'b'; })[0];
+eq(aZeile.points, 4, 'Platz 1 bringt 4 — der exakte Tipp bringt nichts dazu');
+eq(bZeile.points, 3, 'Platz 2 bringt 3');
+eq(aZeile.tipExacts, 1, 'Getroffen wurde er trotzdem gezählt');
+eq(aZeile.tipBonuses, 1, 'Und als Nächster am eigenen Tipp auch');
 
 section('Sitzfarben: jede höchstens einmal vergeben');
 var seats = c.players.filter(function (p) { return !p.archived; }).map(function (p) { return p.seat; });

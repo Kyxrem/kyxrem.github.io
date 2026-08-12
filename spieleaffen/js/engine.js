@@ -8,9 +8,13 @@
  *   – Gleichstand: die Punkte der belegten Plätze kommen in einen Topf und
  *     werden geteilt. Zwei Erste bekommen (4+3)/2 = 3,5, der Nächste steht
  *     auf Platz 3 und bekommt 2.
- *   – Bester Tipp je Spiel: +3 (Gleichstand: alle Nächsten)
  * Abendsieger = meiste Punkte des Abends.
- * Es gibt keinen Punkt fürs Antreten — sonst bekäme der Letzte nie null.
+ *
+ * Punkte kommen ausschließlich aus Platzierungen. Kein Punkt fürs Antreten —
+ * sonst bekäme der Letzte nie null —, und keiner fürs richtige Tippen: Tippen
+ * gibt es nur bei Wizard, und ein Bonus daraus würde die Gesamttabelle
+ * schieflegen, weil er nur an einem einzigen Spiel hängt. Getippt wird
+ * trotzdem gezählt: als Statistik und für Pokale, nicht als Punkte.
  *
  * Datendokument:
  *   { meta, players[], seasons[], games[], nights[], modules{}, houseRules[] }
@@ -26,7 +30,6 @@
   'use strict';
 
   var PLACE_POINTS = [4, 3, 2, 1];  // 1. bis 4. — ab dem 5. Platz nichts
-  var TIP_BONUS = 3;                // bester Tipp je Spiel
 
   /* Punkte für einen Platz. Teilen sich mehrere Affen denselben Platz, kommen
      die Punkte aller dadurch belegten Plätze in einen Topf und werden gleich
@@ -197,7 +200,7 @@
   }
 
   // ── Spiel auswerten ───────────────────────────────────────────────────────
-  // → je playerId: {score, tip, place, geteilt, placePts, tipPts, tipDiff, exact}
+  // → je playerId: {score, tip, place, geteilt, placePts, tipDiff, tipBest, exact}
   function evalGame(game) {
     var res = (game.results || []).filter(function (r) { return r.score != null && r.score !== ''; });
     if (!res.length) return {};
@@ -217,10 +220,10 @@
         place: place,
         geteilt: proPlatz[place],
         placePts: platzPunkte(place, proPlatz[place]),
-        tipPts: 0, tipDiff: null, exact: false
+        tipDiff: null, tipBest: false, exact: false
       };
     });
-    // Tipp-Bonus: kleinste Abweichung |score − tip| unter allen Tippern
+    // Wer lag am nächsten an seinem Tipp? Nur fürs Protokoll — kein Bonus.
     var tippers = res.filter(function (r) { return r.tip === 0 || r.tip; });
     if (tippers.length) {
       var best = Infinity;
@@ -229,7 +232,8 @@
         var d = Math.abs(Number(r.score) - Number(r.tip));
         out[r.playerId].tipDiff = d;
         out[r.playerId].exact = d === 0;
-        if (d === best) out[r.playerId].tipPts = TIP_BONUS;
+        // Nur fürs Protokoll: der Nächste am eigenen Tipp. Punkte gibt es dafür nicht.
+        out[r.playerId].tipBest = d === best;
       });
     }
     return out;
@@ -241,20 +245,19 @@
     (night.games || []).forEach(function (g) {
       var ev = evalGame(g);
       Object.keys(ev).forEach(function (pid) {
-        if (!per[pid]) per[pid] = { placePts: 0, tipPts: 0, total: 0, games: [] };
+        if (!per[pid]) per[pid] = { placePts: 0, total: 0, games: [] };
         per[pid].placePts = rund(per[pid].placePts + ev[pid].placePts);
-        per[pid].tipPts += ev[pid].tipPts;
         per[pid].games.push({
           gameId: g.id, title: g.title, place: ev[pid].place, geteilt: ev[pid].geteilt,
           placePts: ev[pid].placePts, score: ev[pid].score,
-          tip: ev[pid].tip, tipDiff: ev[pid].tipDiff, tipPts: ev[pid].tipPts,
+          tip: ev[pid].tip, tipDiff: ev[pid].tipDiff, tipBest: ev[pid].tipBest,
           exact: ev[pid].exact
         });
       });
     });
     var pids = Object.keys(per);
     pids.forEach(function (pid) {
-      per[pid].total = rund(per[pid].placePts + per[pid].tipPts);
+      per[pid].total = rund(per[pid].placePts);
       var placeSum = 0;
       per[pid].games.forEach(function (g) { placeSum += g.place; });
       per[pid].avgPlace = per[pid].games.length ? placeSum / per[pid].games.length : 0;
@@ -282,7 +285,7 @@
   function newStats() {
     return {
       nights: 0, nightWins: 0, nightLasts: 0, points: 0,
-      placePts: 0, tipPts: 0,
+      placePts: 0,
       gamesPlayed: 0, gameWins: 0, tipBonuses: 0, tipExacts: 0,
       placements: []
     };
@@ -334,12 +337,11 @@
           s.nights += 1;
           s.points = rund(s.points + e.total);
           s.placePts = rund(s.placePts + e.placePts);
-          s.tipPts += e.tipPts;
           s.gamesPlayed += e.games.length;
           s.placements.push(e.place);
           e.games.forEach(function (g) {
             if (g.place === 1) s.gameWins += 1;
-            if (g.tipPts > 0) s.tipBonuses += 1;
+            if (g.tipBest) s.tipBonuses += 1;
             if (g.exact) s.tipExacts += 1;
           });
           if (ev.winners.indexOf(pid) >= 0) s.nightWins += 1;
@@ -555,7 +557,7 @@
             r.wonTitles[g.title] = true;
             r.winsByTitle[g.title] = (r.winsByTitle[g.title] || 0) + 1;
           }
-          if (g.tipPts > 0) r.tipBonuses += 1;
+          if (g.tipBest) r.tipBonuses += 1;
           if (g.exact) r.tipExacts += 1;
           // Luftschloss: Tipp deutlich ÜBER dem Ergebnis — mind. 5 daneben und
           // relativ zur Punkteskala des Spiels (50 % drüber), damit ±5 bei
@@ -678,7 +680,7 @@
         check: function (c) { return c.run.winStreak >= 3; } },
       { id: 'hellseher',      icon: 'visibility',    name: 'Hellseher',     desc: 'Eigenen Tipp exakt getroffen', tone: 'banana',
         check: function (c) { return c.run.tipExacts >= 1; } },
-      { id: 'scharfschuetze', icon: 'gps_fixed',     name: 'Scharfschütze', desc: 'Dreimal den Tipp-Bonus geholt', tone: 'banana',
+      { id: 'scharfschuetze', icon: 'gps_fixed',     name: 'Scharfschütze', desc: 'Dreimal am nächsten am eigenen Tipp', tone: 'banana',
         check: function (c) { return c.run.tipBonuses >= 3; } },
       { id: 'allrounder',     icon: 'explore',       name: 'Allrounder',    desc: 'Drei verschiedene Spiele gewonnen', tone: 'banana',
         check: function (c) { return Object.keys(c.run.wonTitles).length >= 3; } },
@@ -762,7 +764,6 @@
 
   return {
     PLACE_POINTS: PLACE_POINTS,
-    TIP_BONUS: TIP_BONUS,
     SEATS: SEATS,
     SEAT_NAMEN: SEAT_NAMEN,
     seatName: seatName,

@@ -177,7 +177,7 @@
         title: reiter === 'pokale' ? 'Pokale' : 'Wer führt',
         sub: reiter === 'pokale'
           ? 'Vierzehn Auszeichnungen. Zwei davon will niemand.'
-          : 'Punkte kommen aus der Platzierung je Spiel und dem besten Tipp.',
+          : 'Punkte kommen einzig aus der Platzierung je Spiel.',
         actions: U.Button({ children: 'Ergebnis eintragen', variant: 'secondary', iconLeft: 'edit_note', onClick: function () { window.SA_DIALOGS.ergebnisEintragen(); } })
       }),
       h('div.sa-stack.sa-section-gap', null, reiterRow, unterwahl),
@@ -193,7 +193,8 @@
     return U.Card({
       tone: 'sunken', eyebrow: 'Wie es zählt', title: 'Die Rechnung',
       children: h('div', { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } },
-        [['Platz 1 / 2 / 3 / 4', '4 / 3 / 2 / 1'], ['Ab Platz 5', '0'], ['Geteilter Platz', 'Topf durch Köpfe'], ['Bester Tipp', '+3']]
+        [['Platz 1 / 2 / 3 / 4', '4 / 3 / 2 / 1'], ['Ab Platz 5', '0'],
+         ['Geteilter Platz', 'Topf durch Köpfe'], ['Richtig getippt', 'zählt, zahlt nicht']]
           .map(function (z) {
             return h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 'var(--space-5)' } },
               h('span.sa-body', z[0]), h('span.sa-num', { style: { fontSize: '14px' } }, z[1]));

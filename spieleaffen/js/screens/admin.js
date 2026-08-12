@@ -9,7 +9,7 @@
  * 2. Korrigiert werden Ergebnisse, nicht Endstände. Punkte, Siege und Abende
  *    rechnet die Engine aus den Abenden aus; sie direkt zu überschreiben hieße,
  *    neben die Wahrheit eine zweite zu stellen. Genau das soll das Log ja
- *    verhindern. Also wird an der Quelle korrigiert: Punktzahl und Tipp.
+ *    verhindern. Also wird an der Quelle korrigiert: die Punktzahl aus dem Spiel.
  */
 (function () {
   'use strict';
@@ -17,7 +17,7 @@
 
   var reiter = 'ergebnisse';
   var abendId = null;
-  var entwurf = {};   // {spielId: {playerId: {score, tip}}}
+  var entwurf = {};   // {spielId: {playerId: {score}}}
 
   // ══ Ergebnisse korrigieren ═══════════════════════════════════════════════
   function ergebnisse(c) {
@@ -39,7 +39,7 @@
         h('div.sa-card__head', null,
           h('div.sa-card__heading', null,
             h('h3.sa-h3', 'Ergebnisse ändern'),
-            h('span.sa-meta', 'Punktzahl und Tipp — Plätze und Punkte rechnet die Engine daraus.')),
+            h('span.sa-meta', 'Die Punktzahl aus dem Spiel — Plätze und Siegpunkte rechnet die Engine daraus.')),
           null),
         h('div', { style: { padding: '0 var(--pad-card) var(--space-5)' } },
           U.Tabs({
@@ -54,7 +54,7 @@
     });
   }
 
-  var SPALTEN = '1fr 92px 92px 108px';
+  var SPALTEN = '1fr 92px 108px';
 
   function spielBlock(c, abend, spiel) {
     entwurf[spiel.id] = entwurf[spiel.id] || {};
@@ -68,7 +68,7 @@
       return (spiel.results || []).some(function (r) {
         var d = entwurf[spiel.id][r.playerId] || {};
         return (d.score !== undefined && Number(d.score) !== Number(r.score)) ||
-               (d.tip !== undefined && String(d.tip) !== String(r.tip == null ? '' : r.tip));
+               false;
       });
     }
 
@@ -92,10 +92,6 @@
           aenderungen.push({ pid: r.playerId, feld: 'score', von: r.score, zu: Number(d.score),
             text: 'Punktzahl von ' + name + ' bei ' + spiel.title + ' korrigiert.' });
         }
-        if (d.tip !== undefined && String(d.tip) !== String(r.tip == null ? '' : r.tip)) {
-          aenderungen.push({ pid: r.playerId, feld: 'tip', von: r.tip == null ? '—' : r.tip, zu: d.tip === '' ? '—' : Number(d.tip),
-            text: 'Tipp von ' + name + ' bei ' + spiel.title + ' korrigiert.' });
-        }
       });
       if (!aenderungen.length) return;
 
@@ -108,7 +104,6 @@
           var r = g.results.filter(function (x) { return x.playerId === a.pid; })[0];
           if (!r) return;
           if (a.feld === 'score') r.score = a.zu;
-          if (a.feld === 'tip') { if (a.zu === '—') delete r.tip; else r.tip = a.zu; }
         });
       }, {
         summary: spiel.title + ' am ' + SA.fmtDate(abend.date) + ' korrigiert',
@@ -126,22 +121,18 @@
     return h('div.sa-scrollx', null,
       h('div', null,
         h('div.sa-thead', { style: { gridTemplateColumns: SPALTEN } },
-          h('span', spiel.title), h('span', 'Punkte'), h('span', 'Tipp'), h('span', '')),
+          h('span', spiel.title), h('span', 'Punkte'), h('span', '')),
         (spiel.results || []).map(function (r, i) {
         var affe = c.playerById[r.playerId] || { name: r.playerId, seat: 1 };
         var punkte = U.Input({
           size: 'sm', inputMode: 'numeric', value: String(r.score),
           onInput: function (e) { entwurf[spiel.id][r.playerId] = entwurf[spiel.id][r.playerId] || {}; entwurf[spiel.id][r.playerId].score = e.target.value; pruefeDreckig(); }
         });
-        var tipp = U.Input({
-          size: 'sm', inputMode: 'numeric', value: r.tip == null ? '' : String(r.tip), placeholder: '—',
-          onInput: function (e) { entwurf[spiel.id][r.playerId] = entwurf[spiel.id][r.playerId] || {}; entwurf[spiel.id][r.playerId].tip = e.target.value; pruefeDreckig(); }
-        });
         var node = h('div.sa-trow', { style: { gridTemplateColumns: SPALTEN } },
           h('span.sa-inline', { style: { flexWrap: 'nowrap', minWidth: 0 } },
             U.PlayerAvatar({ name: affe.name, seat: affe.seat, size: 'sm' }),
             h('span.sa-strong.sa-truncate', affe.name)),
-          punkte, tipp,
+          punkte,
           i === 0 ? h('span', { style: { display: 'flex', justifyContent: 'flex-end' } }, speichern) : h('span'));
         zeilenNodes.push(node);
         return node;

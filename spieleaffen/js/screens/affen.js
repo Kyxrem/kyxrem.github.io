@@ -53,6 +53,9 @@
     var erster = affen[0], letzter = affen[affen.length - 1];
     var abstand = erster.points - affen[1].points;
     var beste = affen.slice().sort(function (a, b) { return b.quote - a.quote; })[0];
+    /* Richtig getippt bringt keine Punkte mehr — sichtbar bleibt es trotzdem,
+       sonst wäre der Block der Wahrheit nur für den Abend gut. */
+    var hellseher = affen.slice().sort(function (a, b) { return b.tipExacts - a.tipExacts; })[0];
     var spruch = T.teaseRang(affen);
 
     return U.Card({
@@ -63,6 +66,9 @@
           zeile('Führt', erster.name, erster.points + ' Pkt'),
           zeile('Abstand auf Platz 2', abstand > 0 ? abstand + ' Punkte' : 'keiner', abstand > 0 ? '' : 'Gleichstand'),
           zeile('Beste Quote', beste.name, beste.quote + '%'),
+          hellseher && hellseher.tipExacts
+            ? zeile('Am öftesten richtig getippt', hellseher.name, SA.plural(hellseher.tipExacts, 'Treffer', 'Treffer'))
+            : null,
           zeile('Hält die Laterne', letzter.name, letzter.points + ' Pkt'))
       ]
     });
