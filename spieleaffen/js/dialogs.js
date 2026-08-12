@@ -304,8 +304,8 @@
   }
 
   // ── Affe hinzufügen ──────────────────────────────────────────────────────
-  /* Sitzfarben sind Identität: sechs Stück, jede höchstens einmal vergeben.
-     Ist keine frei, muss erst jemand ins Archiv. */
+  /* Sitzfarben sind Identität: jede höchstens einmal vergeben. Ist keine
+     frei, muss erst jemand ins Archiv — oder zwei tauschen im Admin. */
   function affeHinzufuegen() {
     var c = S.computed();
     var belegt = c.players.filter(function (p) { return !p.archived; }).map(function (p) { return Number(p.seat); });
@@ -314,9 +314,9 @@
     var nameFeld = U.Input({ label: 'Name', placeholder: 'z. B. Ana Sol' });
     var seatFeld = U.Select({
       label: 'Sitzfarbe', value: String(frei[0] || ''),
-      hint: frei.length ? undefined : 'Alle sechs Farben sind belegt. Erst einer geht, dann kommt einer.',
+      hint: frei.length ? undefined : 'Alle ' + SA.SEATS.length + ' Farben sind belegt. Erst einer geht, dann kommt einer.',
       options: (frei.length ? [] : [{ value: '', label: 'Keine frei' }]).concat(SA.SEATS.map(function (s) {
-        return { value: String(s), label: 'Seat ' + s + (belegt.indexOf(s) >= 0 ? ' · belegt' : '') };
+        return { value: String(s), label: SA.seatName(s) + (belegt.indexOf(s) >= 0 ? ' · belegt' : '') };
       }))
     });
     var codeFeld = U.PinInput({ label: 'Eigener Code (vier Ziffern)', length: 4, hint: 'Damit trägt der Affe selbst ein. Kann später geändert werden.' });
@@ -368,8 +368,8 @@
                 }
                 doc.players.push({ id: id, name: name, short: SA.initials(name), seat: seat, admin: false, archived: false });
               }, {
-                summary: 'Affe ' + name + ' angelegt (Seat ' + seat + ')',
-                entries: [{ icon: 'person_add', tone: 'slime', text: 'Neuer Affe: ' + name + '.', to: 'Seat ' + seat }]
+                summary: 'Affe ' + name + ' angelegt (' + SA.seatName(seat) + ')',
+                entries: [{ icon: 'person_add', tone: 'slime', text: 'Neuer Affe: ' + name + '.', to: SA.seatName(seat) }]
               }).then(function (res) {
                 if (res === null) return;
                 if (code) {
@@ -424,7 +424,7 @@
 
   // ── Sitzfarbe ändern ─────────────────────────────────────────────────────
   /* Die Sitzfarbe ist Identität: Avatar, Tag, Balken, alles hängt daran.
-     Deshalb sechs feste Farben, jede höchstens einmal — und wer die Farbe
+     Deshalb ein fester Satz Farben, jede höchstens einmal — und wer die Farbe
      eines anderen nimmt, tauscht mit ihm, statt sie ihm wegzunehmen. */
   function sitzfarbeAendern(spielerId) {
     var c = S.computed();
@@ -447,10 +447,12 @@
             class: ['sa-palette__feld', gewaehlt === s && 'is-gewaehlt'],
             style: { '--sa-seat': U.seatVar(s) },
             'aria-pressed': gewaehlt === s ? 'true' : 'false',
-            'aria-label': 'Sitzfarbe ' + s + (inhaber ? ' — ' + (eigene ? 'deine' : inhaber.name) : ' — frei'),
+            title: SA.seatName(s),
+            'aria-label': SA.seatName(s) + (inhaber ? ' — ' + (eigene ? 'deine Farbe' : inhaber.name) : ' — frei'),
             onclick: function () { gewaehlt = s; zeichnen(); }
           },
             h('span.sa-palette__punkt'),
+            h('span.sa-palette__name', SA.seatName(s)),
             h('span.sa-palette__wer', inhaber ? (eigene ? 'du' : SA.shortCode(inhaber)) : 'frei'));
         }));
 
@@ -458,7 +460,7 @@
         window.SA_DOM.mount(vorschau, [
           U.PlayerAvatar({ name: p.name, seat: gewaehlt, size: 'xl' }),
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 } },
-            h('span.sa-strong', p.name),
+            h('span.sa-strong', p.name + ' · ' + SA.seatName(gewaehlt)),
             h('span.sa-meta', gewaehlt === alt ? 'Die aktuelle Farbe.'
               : tauschMit ? 'Diese Farbe hat ' + tauschMit.name + '. Ihr tauscht.'
               : 'Frei. Ab dann überall in dieser Farbe.'))
@@ -469,7 +471,7 @@
       return U.Dialog({
         tone: 'neon', width: 480, eyebrow: 'Sitzfarbe', title: p.name + ', welche Farbe?', onClose: close,
         children: [
-          h('span.sa-body', 'Sechs Farben, jede höchstens einmal. Sie steckt in Avatar, Tag und jedem Balken.'),
+          h('span.sa-body', SA.SEATS.length + ' Farben, jede höchstens einmal. Sie steckt in Avatar, Tag und jedem Balken.'),
           palette,
           vorschau
         ],
@@ -496,13 +498,13 @@
                   text: tauschMit
                     ? p.name + ' und ' + tauschMit.name + ' haben die Sitzfarben getauscht.'
                     : 'Sitzfarbe von ' + p.name + ' geändert.',
-                  from: 'Seat ' + alt, to: 'Seat ' + gewaehlt
+                  from: SA.seatName(alt), to: SA.seatName(gewaehlt)
                 }]
               }).then(function () {
                 close();
                 S.toast('Neue Farbe', tauschMit
                   ? p.name + ' und ' + tauschMit.name + ' haben getauscht. Gewöhnungssache.'
-                  : p.name + ' ist jetzt Seat ' + gewaehlt + '. Steht überall.', 'slime');
+                  : p.name + ' ist jetzt ' + SA.seatName(gewaehlt) + '. Steht überall.', 'slime');
               }).catch(function () { /* Meldung kam schon vom Store */ });
             }
           })

@@ -123,3 +123,19 @@ code,kbd,samp{font-family:var(--font-mono);font-size:.92em}
 *,*::before,*::after{box-sizing:border-box}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--ink-600);border-radius:var(--radius-pill);border:3px solid transparent;background-clip:content-box}::-webkit-scrollbar-track{background:transparent}
 
+
+/* ── NACHTRAG — nicht aus dem Handoff ──────────────────────────
+ * Der Handoff zeichnet sechs Sitzfarben. Für größere Runden (und weil man
+ * sich die Farbe aussuchen können soll) kommen drei dazu. Sie sind nicht
+ * frei erfunden: gemessen im OKLab-Abstand liegt jede mindestens so weit
+ * von allen anderen entfernt wie das engste Paar des Handoffs selbst
+ * (Slime ↔ Banane, 0.139) — bis auf Chili, das mit 0.132 knapp darunter
+ * bleibt, weil Punsch die rote Ecke schon besetzt.
+ * Ein zweites Gelb gibt es bewusst nicht: zwischen Slime und Banane ist
+ * kein Platz mehr, jeder Kandidat lag unter 0.13.
+ */
+:root{
+--seat-7:#E8401F;   /* Chili — das echte Rot neben dem pinken Punsch */
+--seat-8:#4D8BFF;   /* Blaubeere — Blau, satter als das kühle Eis */
+--seat-9:#3DFFC1;   /* Minze — Grün, das nicht nach Slime aussieht */
+}

@@ -610,9 +610,10 @@
 .sa-pad__stiche.is-zuviel { color: var(--intent-danger); }
 
 /* ═══ Sitzfarben-Palette ═════════════════════════════════════════════════ */
-/* Sechs Farben, jede höchstens einmal. Wer schon eine hat, steht mit Kürzel
-   drin — dann wird getauscht statt weggenommen. */
-.sa-palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--space-4); }
+/* Jede Farbe höchstens einmal. Wer schon eine hat, steht mit Kürzel drin —
+   dann wird getauscht statt weggenommen. Drei Spalten: neun Farben ergeben
+   ein sauberes Quadrat, und der Name passt in jede Zelle. */
+.sa-palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
 .sa-palette__feld {
   display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
   padding: var(--space-5) var(--space-2);
@@ -623,11 +624,19 @@
 .sa-palette__feld:hover { background: var(--surface-card-hover); border-color: var(--line-strong); }
 .sa-palette__feld.is-gewaehlt { border-color: var(--sa-seat); background: color-mix(in oklab, var(--sa-seat) 12%, var(--ink-900)); }
 .sa-palette__feld:not(:disabled):active { transform: var(--press-translate); }
+/* Anderswo tragen Sitzfarben nur einen Hauch Füllung — hier nicht. Ein
+   Farbfeld, das die Farbe nicht zeigt, taugt nicht zum Aussuchen. */
 .sa-palette__punkt {
   width: 26px; height: 26px; border-radius: var(--radius-avatar);
-  background: color-mix(in oklab, var(--sa-seat) 30%, var(--ink-900));
-  border: var(--border-standard) solid var(--sa-seat);
+  background: var(--sa-seat);
+  box-shadow: 0 0 0 1px var(--ink-900) inset;
 }
+/* Der Name trägt die Farbe, das Kürzel darunter sagt, wem sie gehört. */
+.sa-palette__name {
+  font-size: var(--text-2xs); font-weight: var(--weight-bold); color: var(--text-body);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sa-palette__feld.is-gewaehlt .sa-palette__name { color: var(--sa-seat); }
 .sa-palette__wer {
   font-size: var(--text-2xs); font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-faint);

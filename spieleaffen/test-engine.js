@@ -116,16 +116,27 @@ var summe = tabelle.reduce(function (s, r) { return s + r.nights; }, 0);
 eq(summe > 0, true, 'Abende sind gezählt (' + summe + ')');
 eq(c.standings('all', { includeArchived: true }).length, 6, 'Mit Archiv sind es sechs');
 
-section('Sitzfarben: sechs Stück, jede höchstens einmal vergeben');
+section('Sitzfarben: jede höchstens einmal vergeben');
 var seats = c.players.filter(function (p) { return !p.archived; }).map(function (p) { return p.seat; });
 eq(seats.length, new Set(seats).size, 'Keine Sitzfarbe doppelt belegt');
-eq(SA.freeSeats(c.players), [6], 'Seat 6 ist frei, weil Tobi archiviert ist');
+eq(SA.freeSeats(c.players), [6, 7, 8, 9], 'Frei ist alles ab Seat 6 — Tobi ist archiviert');
 
 var vergabe = SA.seatVergabe(c.players);
-eq(Object.keys(vergabe).length, 6, 'Die Vergabe kennt alle sechs Sitzfarben');
+eq(Object.keys(vergabe).length, SA.SEATS.length, 'Die Vergabe kennt jede Sitzfarbe');
 eq(vergabe[6], null, 'Seat 6 ist unbesetzt — der archivierte Tobi zählt nicht');
 eq([1, 2, 3, 4, 5].every(function (s) { return vergabe[s] && vergabe[s].seat === s; }), true,
   'Jede belegte Farbe zeigt auf den Affen, der darauf sitzt');
+
+// Farben haben Namen, damit „ich nehm Minze" am Tisch funktioniert.
+eq(SA.SEATS.every(function (s) { return /^[A-Za-zÄÖÜäöü]+$/.test(SA.seatName(s)); }), true,
+  'Jede Sitzfarbe trägt einen Namen', JSON.stringify(SA.SEATS.map(SA.seatName)));
+eq(new Set(SA.SEATS.map(SA.seatName)).size, SA.SEATS.length, 'Kein Name doppelt');
+eq(SA.seatName(3), 'Punsch', 'Seat 3 heißt nach dem Token, das dahintersteckt');
+
+// Und jede Farbe braucht ihren Token, sonst bleibt der Avatar durchsichtig.
+var tokens = require('fs').readFileSync(__dirname + '/css/tokens.css', 'utf8');
+eq(SA.SEATS.filter(function (s) { return tokens.indexOf('--seat-' + s + ':') < 0; }), [],
+  'Zu jeder Sitzfarbe steht ein --seat-N in den Tokens');
 var zwei = SA.seatVergabe([
   { id: 'a', name: 'Anna', seat: 2 },
   { id: 'b', name: 'Ben', seat: 2 }

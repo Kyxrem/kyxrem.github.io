@@ -28,7 +28,15 @@
   var TIP_BONUS = 3;             // bester Tipp je Spiel
   var STRAFE_POINTS = 20;        // Abzug je Strafe
 
-  var SEATS = [1, 2, 3, 4, 5, 6];
+  /* Sitzfarben. Sechs kommen aus dem Handoff, drei sind nachgereicht — die
+     Begründung und die Messung stehen bei den Tokens (css/tokens.css). Namen
+     statt Nummern, damit „ich nehm Minze" am Tisch überhaupt sagbar ist. */
+  var SEATS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  var SEAT_NAMEN = {
+    1: 'Slime', 2: 'Banane', 3: 'Punsch', 4: 'Eis', 5: 'Traube',
+    6: 'Mandarine', 7: 'Chili', 8: 'Blaubeere', 9: 'Minze'
+  };
+  function seatName(seat) { return SEAT_NAMEN[Number(seat)] || ('Seat ' + seat); }
 
   // ── Helfer ────────────────────────────────────────────────────────────────
   function byDateAsc(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
@@ -156,7 +164,7 @@
     return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
   }
 
-  /* Freie Sitzfarben: sechs Stück, aktive Affen belegen je eine. */
+  /* Freie Sitzfarben: aktive Affen belegen je eine, der Rest steht zur Wahl. */
   function freeSeats(players) {
     var taken = (players || []).filter(function (p) { return !p.archived; })
       .map(function (p) { return Number(p.seat); });
@@ -676,7 +684,7 @@
         check: function (c) { return c.run.points >= 100; } },
       { id: 'comeback',       icon: 'rocket_launch', name: 'Comeback',      desc: 'Abendsieg direkt nach letztem Platz', tone: 'banana',
         check: function (c) { return c.comeback; } },
-      { id: 'affenbande',     icon: 'users',         name: 'Affenbande',    desc: 'Abend mit allen sechs Affen', tone: 'banana',
+      { id: 'affenbande',     icon: 'users',         name: 'Affenbande',    desc: 'Abend mit sechs Affen am Tisch', tone: 'banana',
         check: function (c) { return c.allSix; } },
       { id: 'saisonmeister',  icon: 'military_tech', name: 'Saisonmeister', desc: 'Eine Saison gewonnen', tone: 'banana',
         check: function () { return false; /* wird separat vergeben */ } },
@@ -749,6 +757,8 @@
     TIP_BONUS: TIP_BONUS,
     STRAFE_POINTS: STRAFE_POINTS,
     SEATS: SEATS,
+    SEAT_NAMEN: SEAT_NAMEN,
+    seatName: seatName,
     compute: compute,
     evalGame: evalGame,
     evalNight: evalNight,

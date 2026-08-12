@@ -14,7 +14,12 @@
   var h = window.h;
   var Icon = window.SA_ICON.Icon;
 
-  function seatVar(seat) { return 'var(--seat-' + (((Number(seat) || 1) - 1) % 6 + 1) + ')'; }
+  /* Der Rest hält die Farbe im Bereich, falls doch mal eine Nummer aus der
+     Reihe kommt — die Zahl der Sitzfarben steht in der Engine. */
+  function seatVar(seat) {
+    var n = (window.SA && window.SA.SEATS ? window.SA.SEATS.length : 9);
+    return 'var(--seat-' + (((Number(seat) || 1) - 1) % n + 1) + ')';
+  }
 
   /* Zahlen tragen den typografischen Minus (−), nicht den Bindestrich.
      Steht so in readme.md > Content fundamentals > Numbers. */
