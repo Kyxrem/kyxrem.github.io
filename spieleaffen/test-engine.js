@@ -121,6 +121,17 @@ var seats = c.players.filter(function (p) { return !p.archived; }).map(function 
 eq(seats.length, new Set(seats).size, 'Keine Sitzfarbe doppelt belegt');
 eq(SA.freeSeats(c.players), [6], 'Seat 6 ist frei, weil Tobi archiviert ist');
 
+var vergabe = SA.seatVergabe(c.players);
+eq(Object.keys(vergabe).length, 6, 'Die Vergabe kennt alle sechs Sitzfarben');
+eq(vergabe[6], null, 'Seat 6 ist unbesetzt — der archivierte Tobi zählt nicht');
+eq([1, 2, 3, 4, 5].every(function (s) { return vergabe[s] && vergabe[s].seat === s; }), true,
+  'Jede belegte Farbe zeigt auf den Affen, der darauf sitzt');
+var zwei = SA.seatVergabe([
+  { id: 'a', name: 'Anna', seat: 2 },
+  { id: 'b', name: 'Ben', seat: 2 }
+]);
+eq(zwei[2].id, 'a', 'Bei doppelter Belegung gewinnt der erste — die Vergabe rät nicht');
+
 section('Pokale');
 eq(c.achievements.length, 15, 'Fünfzehn Pokale im Katalog');
 eq(c.achievements.every(function (a) { return !/[\u{1F300}-\u{1FAFF}]/u.test(a.name + a.desc); }), true,

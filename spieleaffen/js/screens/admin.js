@@ -318,7 +318,14 @@
             h('span', { style: { flex: 1, display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 } },
               h('span.sa-strong.sa-truncate', p.name + (p.admin ? ' · Admin' : '')),
               h('span.sa-meta', 'Seat ' + p.seat + ' · ' + stand.nights + ' Abende · ' + stand.wins + ' Siege')),
-            U.Tag({ children: 'Seat ' + p.seat, color: U.seatVar(p.seat), size: 'sm' }),
+            U.Tag({
+              children: 'Seat ' + p.seat, color: U.seatVar(p.seat), size: 'sm',
+              onClick: function () { window.SA_DIALOGS.sitzfarbeAendern(p.id); }
+            }),
+            U.IconButton({
+              icon: 'palette', label: 'Sitzfarbe von ' + p.name + ' ändern', variant: 'outline', size: 'sm',
+              onClick: function () { window.SA_DIALOGS.sitzfarbeAendern(p.id); }
+            }),
             U.IconButton({
               icon: p.admin ? 'admin_panel_settings' : 'shield',
               label: p.admin ? p.name + ' die Adminrechte nehmen' : p.name + ' zum Admin machen',

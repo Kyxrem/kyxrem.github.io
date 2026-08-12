@@ -43,6 +43,7 @@
     closeOverlay();
     overlayHost = builder(closeOverlay);
     document.body.appendChild(overlayHost);
+    document.body.classList.add('sa-hat-overlay');
     document.addEventListener('keydown', escClose);
     var first = overlayHost.querySelector('input, select, button');
     if (first) setTimeout(function () { first.focus(); }, 30);
@@ -50,6 +51,7 @@
   function closeOverlay() {
     if (overlayHost && overlayHost.parentNode) overlayHost.parentNode.removeChild(overlayHost);
     overlayHost = null;
+    document.body.classList.remove('sa-hat-overlay');
     document.removeEventListener('keydown', escClose);
   }
   function escClose(e) { if (e.key === 'Escape') closeOverlay(); }

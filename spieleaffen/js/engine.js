@@ -163,6 +163,19 @@
     return SEATS.filter(function (s) { return taken.indexOf(s) < 0; });
   }
 
+  /* Wer sitzt auf welcher Farbe? Sitzfarbe → aktiver Affe oder null.
+     Archivierte zählen nicht: ihre Farbe ist wieder zu haben. */
+  function seatVergabe(players) {
+    var out = {};
+    SEATS.forEach(function (s) { out[s] = null; });
+    (players || []).forEach(function (p) {
+      if (p.archived) return;
+      var s = Number(p.seat);
+      if (out[s] === null) out[s] = p;
+    });
+    return out;
+  }
+
   // ── Spiel auswerten ───────────────────────────────────────────────────────
   // → je playerId: {score, tip, place, placePts, tipPts, tipDiff, exact, strafe, strafePts}
   function evalGame(game) {
@@ -745,6 +758,7 @@
     statusLines: statusLines,
     banterForNight: banterForNight,
     freeSeats: freeSeats,
+    seatVergabe: seatVergabe,
     emptyDoc: emptyDoc,
     fmtDate: fmtDate,
     fmtDateShort: fmtDateShort,
