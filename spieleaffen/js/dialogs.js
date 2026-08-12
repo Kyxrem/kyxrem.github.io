@@ -548,6 +548,16 @@
     var c = S.computed();
     var p = c.playerById[spielerId];
     if (!p) return;
+    /* Ohne Adminrechte gilt: die eigene Farbe, und nur eine freie. Ein Tausch
+       würde einem anderen Affen die seine wegnehmen — das ist eine
+       Admin-Entscheidung. Der Worker weist es ohnehin ab; hier steht es,
+       damit niemand erst tippt und dann eine Fehlermeldung bekommt. */
+    var istAdmin = S.istAdmin();
+    var ichSelbst = !!(S.get().me && S.get().me.id === p.id);
+    if (!istAdmin && !ichSelbst) {
+      S.toast('Nicht deine Farbe', 'Fremde Sitzfarben ändert nur ein Admin.', 'punsch');
+      return;
+    }
     var vergabe = SA.seatVergabe(c.players);
     var alt = Number(p.seat);
     var gewaehlt = alt;
@@ -560,14 +570,18 @@
         window.SA_DOM.mount(palette, SA.SEATS.map(function (s) {
           var inhaber = vergabe[s];
           var eigene = inhaber && inhaber.id === p.id;
+          // Belegte Farben sind für Nicht-Admins nicht wählbar: kein Tausch.
+          var gesperrt = !istAdmin && !!inhaber && !eigene;
           return h('button', {
             type: 'button',
-            class: ['sa-palette__feld', gewaehlt === s && 'is-gewaehlt'],
+            class: ['sa-palette__feld', gewaehlt === s && 'is-gewaehlt', gesperrt && 'is-gesperrt'],
             style: { '--sa-seat': U.seatVar(s) },
+            disabled: gesperrt,
             'aria-pressed': gewaehlt === s ? 'true' : 'false',
-            title: SA.seatName(s),
-            'aria-label': SA.seatName(s) + (inhaber ? ' — ' + (eigene ? 'deine Farbe' : inhaber.name) : ' — frei'),
-            onclick: function () { gewaehlt = s; zeichnen(); }
+            title: gesperrt ? SA.seatName(s) + ' hat ' + inhaber.name + ' — tauschen darf nur ein Admin' : SA.seatName(s),
+            'aria-label': SA.seatName(s) + (inhaber ? ' — ' + (eigene ? 'deine Farbe' : inhaber.name +
+              (gesperrt ? ', tauschen darf nur ein Admin' : '')) : ' — frei'),
+            onclick: function () { if (gesperrt) return; gewaehlt = s; zeichnen(); }
           },
             h('span.sa-palette__punkt'),
             h('span.sa-palette__name', SA.seatName(s)),
@@ -589,7 +603,8 @@
       return U.Dialog({
         tone: 'neon', width: 480, eyebrow: 'Sitzfarbe', title: p.name + ', welche Farbe?', onClose: close,
         children: [
-          h('span.sa-body', SA.SEATS.length + ' Farben, jede höchstens einmal. Sie steckt in Avatar, Tag und jedem Balken.'),
+          h('span.sa-body', SA.SEATS.length + ' Farben, jede höchstens einmal. Sie steckt in Avatar, Tag und jedem Balken.' +
+            (istAdmin ? '' : ' Belegte sind für dich zu — tauschen darf nur ein Admin.')),
           palette,
           vorschau
         ],

@@ -11,6 +11,8 @@
  *   POST /api/logout        Token      → beendet die Sitzung
  *   GET  /api/me            Token      → {id, name, admin}
  *   PUT  /api/data          Token      → {data, baseRev, summary, entries}; 409 bei Konflikt
+ *                                       403, wenn ein Nicht-Admin mehr am Affen-
+ *                                       Verzeichnis ändert als die eigene Sitzfarbe
  *   GET  /api/codes         Admin      → {codes:{playerId:true}} — nur wer einen hat, nie welchen
  *   POST /api/codes         Admin      → setzt oder löscht den Code eines Affen
  *
@@ -226,6 +228,42 @@ async function werBinIch(request, env, origin) {
 }
 
 // ── Speichern ──────────────────────────────────────────────────────────────
+/* Wer kein Admin ist, darf am Affen-Verzeichnis genau eine Sache ändern: die
+   eigene Sitzfarbe, und nur auf eine freie. Affen anlegen, archivieren,
+   Adminrechte vergeben, fremde Farben tauschen — das bleibt Admins.
+
+   Diese Prüfung steht hier und nicht nur in der Oberfläche. Die Oberfläche
+   kann jeder umgehen, der PUT /api/data selbst schickt; vorher hätte sich
+   damit jeder Angemeldete zum Admin machen können. */
+function spielerAenderungErlaubt(alteListe, neueListe, wer) {
+  if (wer.admin) return null;
+  const alt = Array.isArray(alteListe) ? alteListe : [];
+  const neu = Array.isArray(neueListe) ? neueListe : [];
+  if (alt.length !== neu.length) return 'Affen anlegen oder herausnehmen darf nur ein Admin.';
+
+  const altById = new Map(alt.map((p) => [p.id, p]));
+  // Vergleich ohne die Sitzfarbe: alles andere muss unverändert bleiben.
+  const ohneSeat = (x) => JSON.stringify(Object.keys(x).filter((k) => k !== 'seat').sort()
+    .map((k) => [k, x[k]]));
+
+  for (const p of neu) {
+    const a = altById.get(p.id);
+    if (!a) return 'Affen anlegen darf nur ein Admin.';
+    const eigen = wer.id != null && p.id === wer.id;
+    if (ohneSeat(a) !== ohneSeat(p)) {
+      return eigen
+        ? 'An dir selbst darfst du die Sitzfarbe ändern, sonst nichts.'
+        : 'Die Daten anderer Affen ändert nur ein Admin.';
+    }
+    if (Number(a.seat) !== Number(p.seat)) {
+      if (!eigen) return 'Fremde Sitzfarben ändert nur ein Admin.';
+      const belegt = neu.some((x) => x.id !== p.id && !x.archived && Number(x.seat) === Number(p.seat));
+      if (belegt) return 'Die Farbe ist belegt. Tauschen darf nur ein Admin.';
+    }
+  }
+  return null;
+}
+
 async function speichern(request, env, origin) {
   const wer = await sitzung(request, env);
   if (!wer) return json({ error: 'Nicht angemeldet' }, 401, origin);
@@ -244,6 +282,17 @@ async function speichern(request, env, origin) {
   if (body.baseRev != null && Number(body.baseRev) !== Number(aktuell.rev)) {
     return json({ error: 'Jemand anderes war schneller', rev: aktuell.rev }, 409, origin);
   }
+
+  /* Die Adminrechte kommen aus dem Dokument, nicht aus der Sitzung: wem sie
+     genommen wurden, der soll sie nicht bis zum nächsten Anmelden behalten.
+     Nur der Weg über den ADMIN_TOKEN (id null) hat kein Gegenstück im Dokument. */
+  const imDokument = wer.id != null
+    ? (aktuell.data.players || []).filter((p) => p.id === wer.id)[0]
+    : null;
+  const rechte = { id: wer.id, admin: wer.id != null ? !!(imDokument && imDokument.admin) : !!wer.admin };
+
+  const verboten = spielerAenderungErlaubt(aktuell.data.players, body.data.players, rechte);
+  if (verboten) return json({ error: verboten }, 403, origin);
 
   const rev = Number(aktuell.rev || 0) + 1;
   const updatedAt = new Date().toISOString();

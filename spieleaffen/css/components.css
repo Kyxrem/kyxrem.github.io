@@ -657,3 +657,8 @@
   padding: var(--space-5); background: var(--surface-inset);
   border: 1px solid var(--line); border-radius: var(--radius-control);
 }
+
+/* Eine belegte Farbe, die man ohne Adminrechte nicht nehmen darf. Sichtbar
+   bleibt sie — man soll ja erkennen, wem sie gehört. */
+.sa-palette__feld.is-gesperrt { opacity: .45; cursor: not-allowed; }
+.sa-palette__feld.is-gesperrt:hover { background: var(--surface-inset); border-color: var(--line); }
