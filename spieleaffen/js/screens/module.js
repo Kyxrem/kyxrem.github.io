@@ -128,7 +128,15 @@
   }
 
   // ══ Wizard · Block der Wahrheit ══════════════════════════════════════════
-  var entwurf = {};   // {pid: {bid, made}} für die laufende Runde
+  /* Der Entwurf ist die laufende, noch nicht gewertete Runde. Er lebt außerhalb
+     der Zeichenfunktion, damit ein Neuzeichnen die halbe Eingabe nicht wegwirft
+     — und muss genau deshalb zurückgesetzt werden, BEVOR der Speicher die
+     nächste Runde anstößt. Stand er noch, trug die neue Runde die alten
+     Ansagen: in der Tabelle „Steht", obwohl niemand angesagt hatte. */
+  var entwurf = {};   // {pid: {bid, made, angesagt}} für die laufende Runde
+  /* Welche Runde gerade aufgedeckt wurde — die Zeile blitzt einmal auf, damit
+     das Aufdecken ein Moment ist und nicht bloß ein stiller Tabellenwechsel. */
+  var aufgedeckt = null;
 
   function wizard(c, affen) {
     var sitzung = aktuelle(c, 'wizard');
@@ -292,6 +300,8 @@
        andersherum wäre die stille Enthüllung eine Überraschung. */
     function modusWechseln(neuerModus) {
       if (neuerModus === modus) return;
+      entwurf = {};        // aus demselben Grund vor dem Speichern, nicht danach
+      aufgedeckt = null;
       S.update(function (doc) {
         var s = letzteSitzung(doc, 'wizard');
         if (!s) return false;
@@ -301,7 +311,6 @@
         entries: [{ icon: neuerModus === 'verdeckt' ? 'lock' : 'lock-open', tone: 'neutral',
           text: 'Ansagen im Block der Wahrheit jetzt ' + neuerModus + '.', from: modus, to: neuerModus }]
       }).then(function () {
-        entwurf = {};
         S.toast(neuerModus === 'verdeckt' ? 'Verdeckt' : 'Offen',
           neuerModus === 'verdeckt'
             ? 'Jeder sagt für sich an. Gerät weitergeben, nicht schielen.'
@@ -327,6 +336,12 @@
       });
       var luegner = spieler.filter(function (p) { return cells[p.id].bid !== cells[p.id].made; });
 
+      /* Vor dem Speichern leeren, nicht danach: der Speicher zeichnet neu,
+         sobald die Runde steht. Käme das Zurücksetzen erst im .then, liefe die
+         nächste Runde mit den Ansagen der vorigen weiter. */
+      entwurf = {};
+      aufgedeckt = modus === 'verdeckt' ? aktiv : null;
+
       S.update(function (doc) {
         var s = letzteSitzung(doc, 'wizard');
         if (!s) return false;
@@ -334,7 +349,6 @@
         s.runden.sort(function (a, b) { return a.n - b.n; });
         s.aktiveRunde = Math.min(rundenGesamt, aktiv + 1);
       }, { summary: 'Wizard-Runde ' + aktiv + ' gewertet' }).then(function () {
-        entwurf = {};
         S.toast(modus === 'verdeckt' ? 'Aufgedeckt' : 'Runde ' + aktiv + ' steht', luegner.length
           ? luegner.map(function (p) { return p.name; }).join(' & ') + ' lag daneben. Wie angekündigt.'
           : 'Alle richtig. Verdächtig.', luegner.length ? 'punsch' : 'slime');
@@ -367,7 +381,7 @@
               abschliessen)),
           h('div.sa-scrollx', null, U.ScorePad({
             players: spieler, rounds: rows, totals: totals, activeRound: aktiv,
-            renderActiveCell: stepper,
+            revealRound: aufgedeckt, renderActiveCell: stepper,
             // Die Zähler brauchen mehr Platz als die fertigen Zellen.
             style: { '--sa-pad-cols': '64px repeat(' + spieler.length + ', minmax(112px, 1fr))' }
           })),

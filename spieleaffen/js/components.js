@@ -537,7 +537,9 @@
 
       rounds.map(function (r) {
         var live = r.n === o.activeRound;
-        return h('div', { class: ['sa-pad__row', live && 'is-live'] },
+        // Verdeckt gespielte Runden werden beim Werten aufgedeckt — die Zeile
+        // blitzt einmal auf, sonst wechselt die Tabelle lautlos.
+        return h('div', { class: ['sa-pad__row', live && 'is-live', r.n === o.revealRound && 'is-aufgedeckt'] },
           h('span.sa-pad__n', null,
             h('span.sa-pad__num', String(r.n)),
             h('span.sa-pad__cards', r.cards ? r.cards + ' K' : '')),

@@ -308,9 +308,10 @@
     return U.Card({
       padding: '0',
       children: [
+        /* „Affe hinzufügen" steht im Kopf der Seite — und ist dort für
+           Nicht-Admins gesperrt, was dieser Knopf hier nicht war. */
         h('div.sa-card__head', null,
-          h('div.sa-card__heading', null, h('h3.sa-h3', 'Affen')),
-          U.Button({ children: 'Affe hinzufügen', size: 'sm', iconLeft: 'user-plus', onClick: window.SA_DIALOGS.affeHinzufuegen })),
+          h('div.sa-card__heading', null, h('h3.sa-h3', 'Affen'))),
         aktiv.map(function (p) {
           var stand = S.affen('all', { includeEmpty: true }).filter(function (a) { return a.id === p.id; })[0] || { nights: 0, wins: 0 };
           return h('div.sa-row', null,
@@ -349,9 +350,10 @@
               U.Button({ children: 'Zurückholen', size: 'sm', variant: 'ghost', iconLeft: 'undo', disabled: belegt, onClick: function () { zurueckholen(p); } }));
           })
         ] : null,
-        h('div.sa-row', { style: { justifyContent: 'space-between' } },
-          h('span.sa-body', SA.SEATS.length + ' Sitzfarben, ' + frei.length + ' frei. Archivieren gibt eine zurück, Tauschen kostet keine.'),
-          U.Button({ children: 'Affe hinzufügen', size: 'sm', iconLeft: 'user-plus', onClick: window.SA_DIALOGS.affeHinzufuegen }))
+        /* Der Knopf steht oben im Kartenkopf — hier nur noch die Auskunft,
+           wie viele Farben überhaupt zu haben sind. */
+        h('div.sa-row', null,
+          h('span.sa-body', SA.SEATS.length + ' Sitzfarben, ' + frei.length + ' frei. Archivieren gibt eine zurück, Tauschen kostet keine.'))
       ]
     });
   }

@@ -51,12 +51,13 @@
           h('span.sa-body', next
             ? SA.fmtDateLong(next.date) + (next.zeit ? ', ' + next.zeit : '') + ' · ' + (next.dabei || []).length + ' Affen zugesagt.'
             : 'Kein Termin, keine Punkte, keine Ausreden. Auffällig ruhig hier.'),
-          h('div.sa-inline', null,
-            U.Button({ children: 'Abend planen', iconLeft: 'plus', onClick: window.SA_DIALOGS.abendPlanen }),
-            next ? U.Button({
-              children: 'Abend starten', variant: 'secondary', iconLeft: 'play',
+          /* „Abend planen" steht schon im Kopf der Seite — hier nur das, was es
+             sonst nirgends gibt: den geplanten Abend starten. */
+          next ? h('div.sa-inline', null,
+            U.Button({
+              children: 'Abend starten', iconLeft: 'play',
               onClick: function () { window.SA_DIALOGS.abendStarten(next); }
-            }) : null)
+            })) : null
         ]
       });
     }

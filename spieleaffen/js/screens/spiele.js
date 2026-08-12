@@ -133,8 +133,9 @@
         sub: shelf.length
           ? SA.plural(shelf.length, 'Spiel', 'Spiele') + ' im Schrank. Manche davon sogar gespielt.'
           : 'Noch nichts im Schrank. Ohne Spiel kein Ergebnis.',
+        /* Auf dem Regal-Screen geht es ums Regal. „Abend planen" steht in der
+           Seitenleiste und auf der Übersicht. */
         actions: [
-          U.Button({ children: 'Abend planen', variant: 'secondary', iconLeft: 'calendar-days', onClick: window.SA_DIALOGS.abendPlanen }),
           U.Button({ children: 'Spiel hinzufügen', iconLeft: 'plus', onClick: window.SA_DIALOGS.spielHinzufuegen })
         ]
       }),

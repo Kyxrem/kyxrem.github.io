@@ -16,8 +16,9 @@
         h('div.sa-card__head', null,
           h('div.sa-card__heading', null,
             h('h3.sa-h3', 'Alle Affen'),
-            h('span.sa-meta', SA.plural(affen.length, 'Affe', 'Affen') + ' aktiv · Sitzfarbe je einmal, tauschbar im Admin')),
-          U.Button({ children: 'Ergebnis eintragen', size: 'sm', iconLeft: 'edit_note', onClick: function () { window.SA_DIALOGS.ergebnisEintragen(); } })),
+            h('span.sa-meta', SA.plural(affen.length, 'Affe', 'Affen') + ' aktiv · Sitzfarbe je einmal, tauschbar im Admin'))),
+        /* „Ergebnis eintragen" steht im Kopf der Seite — nicht zwei Zeilen
+           darunter noch einmal. */
         h('div.sa-scrollx', null, h('div', null,
           h('div.sa-thead', { style: { gridTemplateColumns: SPALTEN } },
             h('span', 'Affe'), h('span', 'Punkte'), h('span', 'Abende'),
@@ -39,8 +40,8 @@
                 : h('span.sa-meta.sa-meta--mono', '—'));
           }) : h('div.sa-empty', null,
             U.Icon('users', { size: 32, color: 'var(--text-faint)' }),
-            h('span.sa-empty__text', 'Noch niemand. Sehr mutig.'),
-            U.Button({ children: 'Affe hinzufügen', size: 'sm', iconLeft: 'user-plus', onClick: window.SA_DIALOGS.affeHinzufuegen })))
+            // Der Knopf steht eine Handbreit darüber im Kopf der Seite.
+            h('span.sa-empty__text', 'Noch niemand. Sehr mutig.')))
         )
       ]
     });
