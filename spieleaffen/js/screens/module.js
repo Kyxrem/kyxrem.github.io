@@ -138,6 +138,15 @@
      das Aufdecken ein Moment ist und nicht bloß ein stiller Tabellenwechsel. */
   var aufgedeckt = null;
 
+  /* Eine Runde hat zwei Phasen, und sie gehören getrennt:
+       'ansagen' — nur die Ansage ist eingebbar
+       'stiche'  — die Ansagen stehen, jetzt werden die Stiche gezählt
+     Standen beide Felder nebeneinander, sah man beim Ansagen schon, wie die
+     Runde läuft. Genau das soll man nicht: erst sagt man, dann spielt man.
+     Wie der Entwurf lebt die Phase außerhalb der Zeichenfunktion — und wird
+     wie er VOR dem Speichern zurückgesetzt, nicht danach. */
+  var phase = 'ansagen';
+
   function wizard(c, affen) {
     var sitzung = aktuelle(c, 'wizard');
     if (!sitzung) return leer('Block der Wahrheit', 'Noch keine Sitzung. Noch nichts gelogen.', function () { neueSitzung('wizard', affen); });
@@ -189,30 +198,76 @@
     function alleAngesagt() { return spieler.every(angesagt); }
 
     var statusHost = h('div.sa-pad__status');
-    var abschliessen = U.Button({
-      children: 'Runde abschließen', size: 'sm', variant: 'live', iconLeft: 'check',
-      onClick: function () { rundeAbschliessen(); }
-    });
+    /* Ein Knopf, zwei Beschriftungen — je nach Phase führt er weiter oder
+       schließt ab. Zwei Knöpfe nebeneinander wären eine Wahl, die es nicht gibt.
+       Daneben in der Stich-Phase der Weg zurück, falls jemand sich vertippt hat. */
+    var knopfHost = h('div.sa-inline');
+    var padHost = h('div.sa-scrollx');
+
+    function zuDenStichen() {
+      if (!alleAngesagt()) { S.toast('Erst ansagen', 'Es fehlen noch Ansagen.', 'punsch'); return; }
+      phase = 'stiche';
+      zeichnePad();
+      zeichneKnoepfe();
+      zeichneStatus();
+    }
+
+    function zeichneKnoepfe() {
+      var fehlt = spieler.filter(function (p) { return !angesagt(p); }).length;
+      var offen = aktiv - summe('made');
+      window.SA_DOM.mount(knopfHost, phase === 'ansagen'
+        ? U.Button({
+            children: 'Ansagen stehen', size: 'sm', variant: 'live', iconLeft: 'check',
+            disabled: fehlt > 0, onClick: zuDenStichen
+          })
+        : [
+            U.Button({
+              children: 'Ansagen ändern', size: 'sm', variant: 'ghost', iconLeft: 'undo',
+              onClick: function () { phase = 'ansagen'; zeichnePad(); zeichneKnoepfe(); zeichneStatus(); }
+            }),
+            U.Button({
+              children: 'Runde abschließen', size: 'sm', variant: 'live', iconLeft: 'check',
+              disabled: offen !== 0, onClick: function () { rundeAbschliessen(); }
+            })
+          ]);
+    }
+
+    function zeichnePad() {
+      window.SA_DOM.mount(padHost, U.ScorePad({
+        players: spieler, rounds: rows, totals: totals, activeRound: aktiv,
+        revealRound: aufgedeckt, renderActiveCell: stepper,
+        // Die Zähler brauchen mehr Platz als die fertigen Zellen.
+        style: { '--sa-pad-cols': '64px repeat(' + spieler.length + ', minmax(112px, 1fr))' }
+      }));
+    }
 
     function zeichneStatus() {
-      var offen = aktiv - summe('made');
       var fehlendeAnsagen = spieler.filter(function (p) { return !angesagt(p); }).length;
-      // Zwei Bedingungen: alle haben angesagt, und die Stiche gehen auf. Sonst
-      // ist die Runde nicht wertbar — der Knopf bleibt zu, die Zeile sagt warum.
-      abschliessen.disabled = offen !== 0 || fehlendeAnsagen > 0;
+      var offen = aktiv - summe('made');
+
+      zeichneKnoepfe();
+      if (phase === 'ansagen') {
+        window.SA_DOM.mount(statusHost,
+          fehlendeAnsagen
+            ? h('span.sa-pad__stiche', (fehlendeAnsagen === 1 ? 'Es fehlt noch ' : 'Es fehlen noch ') +
+                SA.plural(fehlendeAnsagen, 'Ansage', 'Ansagen') + '.')
+            : h('span.sa-pad__stiche.is-ok', 'Alle haben angesagt. Jetzt wird gespielt.'),
+          modus === 'verdeckt'
+            ? h('span.sa-meta', 'Verdeckt: die Ansagen stehen erst am Rundenende in der Tabelle.')
+            : h('span.sa-meta', 'Angesagt zusammen: ' + summe('bid') +
+                (summe('bid') === aktiv ? ' — geht genau auf. Einer lügt.' : '')));
+        return;
+      }
+
       window.SA_DOM.mount(statusHost,
-        fehlendeAnsagen
-          ? h('span.sa-pad__stiche', (fehlendeAnsagen === 1 ? 'Es fehlt noch ' : 'Es fehlen noch ') +
-              SA.plural(fehlendeAnsagen, 'Ansage', 'Ansagen') + '.')
-          : h('span', { class: ['sa-pad__stiche', offen === 0 ? 'is-ok' : offen < 0 ? 'is-zuviel' : null] },
-              offen === 0 ? 'Alle ' + SA.plural(aktiv, 'Stich', 'Stiche') + ' verteilt.'
-                : offen > 0 ? 'Noch ' + SA.plural(offen, 'Stich', 'Stiche') + ' zu verteilen.'
-                : SA.plural(-offen, 'Stich', 'Stiche') + ' zu viel — so viele gibt es nicht.'),
-        modus === 'verdeckt'
-          ? h('span.sa-meta', 'Verdeckt: die Ansagen stehen erst am Rundenende in der Tabelle.')
-          : h('span.sa-meta', 'Angesagt zusammen: ' + summe('bid') +
-              (summe('bid') === aktiv ? ' — geht genau auf. Einer lügt.' : ''))
-      );
+        h('span', { class: ['sa-pad__stiche', offen === 0 ? 'is-ok' : offen < 0 ? 'is-zuviel' : null] },
+          offen === 0 ? 'Alle ' + SA.plural(aktiv, 'Stich', 'Stiche') + ' verteilt.'
+            : offen > 0 ? 'Noch ' + SA.plural(offen, 'Stich', 'Stiche') + ' zu verteilen.'
+            : SA.plural(-offen, 'Stich', 'Stiche') + ' zu viel — so viele gibt es nicht.'),
+        h('span.sa-meta', modus === 'verdeckt'
+          ? 'Die Ansagen stehen und bleiben verdeckt, bis die Runde gewertet ist.'
+          : 'Angesagt zusammen: ' + summe('bid') +
+            (summe('bid') === aktiv ? ' — geht genau auf. Einer lügt.' : '')));
     }
 
     /* Zähler mit −/+ für einen Wert der laufenden Runde. */
@@ -273,25 +328,37 @@
       });
     }
 
+    /* Je Phase genau ein Feld. In der Ansage-Phase gibt es die Stiche noch
+       nicht zu sehen — sonst sagt man an, während man den Stand schon kennt.
+       In der Stich-Phase steht die Ansage fest daneben: offen als Zahl,
+       verdeckt als „Steht", damit sie bis zur Wertung geheim bleibt. */
     function stepper(p) {
-      var ansageHost = h('span.sa-step__ctrl');
-      function zeichneAnsage() {
-        if (modus === 'offen') {
-          window.SA_DOM.mount(ansageHost, zaehler(p, 'bid', 'Ansage'));
-          return;
-        }
-        var steht = wert(p, 'angesagt');
-        window.SA_DOM.mount(ansageHost, U.Button({
-          children: steht ? 'Steht' : 'Ansagen',
-          size: 'sm', variant: steht ? 'secondary' : 'primary',
-          iconLeft: steht ? 'lock' : 'pencil',
-          onClick: function () { ansageDialog(p, zeichneAnsage); }
-        }));
+      if (phase === 'ansagen') {
+        var ansageHost = h('span.sa-step__ctrl');
+        var zeichneAnsage = function () {
+          if (modus === 'offen') {
+            window.SA_DOM.mount(ansageHost, zaehler(p, 'bid', 'Ansage'));
+            return;
+          }
+          var steht = wert(p, 'angesagt');
+          window.SA_DOM.mount(ansageHost, U.Button({
+            children: steht ? 'Steht' : 'Ansagen',
+            size: 'sm', variant: steht ? 'secondary' : 'primary',
+            iconLeft: steht ? 'lock' : 'pencil',
+            onClick: function () { ansageDialog(p, function () { zeichneAnsage(); zeichneStatus(); }); }
+          }));
+        };
+        zeichneAnsage();
+        return h('span.sa-step__paar', null,
+          h('span.sa-step', null, h('span.sa-step__label', 'Ansage'), ansageHost));
       }
-      zeichneAnsage();
 
       return h('span.sa-step__paar', null,
-        h('span.sa-step', null, h('span.sa-step__label', 'Ansage'), ansageHost),
+        h('span.sa-step', null,
+          h('span.sa-step__label', 'Ansage'),
+          h('span.sa-step__fest', modus === 'verdeckt'
+            ? U.Badge({ children: 'Steht', tone: 'neutral', size: 'sm', icon: 'lock' })
+            : h('span.sa-num', { style: { fontSize: '19px' } }, String(wert(p, 'bid'))))),
         h('span.sa-step', null, h('span.sa-step__label', 'Geholt'), zaehler(p, 'made', 'Geholte Stiche')));
     }
 
@@ -301,6 +368,7 @@
     function modusWechseln(neuerModus) {
       if (neuerModus === modus) return;
       entwurf = {};        // aus demselben Grund vor dem Speichern, nicht danach
+      phase = 'ansagen';
       aufgedeckt = null;
       S.update(function (doc) {
         var s = letzteSitzung(doc, 'wizard');
@@ -340,6 +408,7 @@
          sobald die Runde steht. Käme das Zurücksetzen erst im .then, liefe die
          nächste Runde mit den Ansagen der vorigen weiter. */
       entwurf = {};
+      phase = 'ansagen';
       aufgedeckt = modus === 'verdeckt' ? aktiv : null;
 
       S.update(function (doc) {
@@ -355,6 +424,7 @@
       }).catch(function () { /* Meldung kam schon vom Store */ });
     }
 
+    zeichnePad();
     zeichneStatus();
 
     var quoten = spieler.map(function (p) {
@@ -378,13 +448,8 @@
                 items: [{ id: 'offen', label: 'Offen' }, { id: 'verdeckt', label: 'Verdeckt' }],
                 onChange: function (id) { modusWechseln(id); }
               }),
-              abschliessen)),
-          h('div.sa-scrollx', null, U.ScorePad({
-            players: spieler, rounds: rows, totals: totals, activeRound: aktiv,
-            revealRound: aufgedeckt, renderActiveCell: stepper,
-            // Die Zähler brauchen mehr Platz als die fertigen Zellen.
-            style: { '--sa-pad-cols': '64px repeat(' + spieler.length + ', minmax(112px, 1fr))' }
-          })),
+              knopfHost)),
+          padHost,
           statusHost,
           h('div', { style: { padding: '0 var(--pad-card) var(--space-5)' } },
             h('span.sa-meta', 'Ansage getroffen: 20 Punkte plus 10 je Stich. Daneben: 10 Minus je Stich Differenz. ' +
