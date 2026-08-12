@@ -1,6 +1,6 @@
 /* SpieleAffen — Abend läuft.
  * Aus ui_kits/dashboard/NightScreen.jsx: Rundenfortschritt, Punkteingabe je
- * Affe (±5, Strafe −20), Einstellungen des Abends.
+ * Affe (±5), Einstellungen des Abends.
  *
  * Punsch ist hier erlaubt — es läuft ja wirklich etwas.
  */
@@ -39,23 +39,6 @@
     });
   }
 
-  function strafe(live, affe) {
-    S.update(function (doc) {
-      var n = doc.nights.filter(function (x) { return x.id === live.id; })[0];
-      if (!n) return false;
-      var g = (n.games || [])[0];
-      if (!g) return false;
-      var r = (g.results || []).filter(function (x) { return x.playerId === affe.id; })[0];
-      if (!r) { r = { playerId: affe.id, score: 0 }; g.results.push(r); }
-      r.strafe = true;
-    }, {
-      summary: 'Strafe für ' + affe.name,
-      entries: [{ icon: 'skull', tone: 'punsch', text: 'Strafe für ' + affe.name + '.', to: '−' + SA.STRAFE_POINTS + ' Pkt' }]
-    }).then(function () {
-      S.toast('Strafe notiert', SA.STRAFE_POINTS + ' Punkte weg. Selbst schuld.', 'punsch');
-    }).catch(function () { /* Meldung kam schon vom Store */ });
-  }
-
   window.SA_SCREENS = window.SA_SCREENS || {};
   window.SA_SCREENS.abend = function (state, c) {
     var live = c.liveNight;
@@ -89,9 +72,6 @@
     var spiel = spielDesAbends(live);
     var stand = {};
     (spiel ? spiel.results || [] : []).forEach(function (r) { stand[r.playerId] = Number(r.score) || 0; });
-    var strafen = {};
-    (spiel ? spiel.results || [] : []).forEach(function (r) { if (r.strafe) strafen[r.playerId] = true; });
-
     var alle = S.affen('all', { includeEmpty: true });
     var dabei = alle.filter(function (a) { return (live.dabei || []).indexOf(a.id) >= 0; });
     if (!dabei.length) dabei = alle;
@@ -120,9 +100,7 @@
         var wert = ansicht === 'gesamt' ? (saisonPunkte[a.id] || 0) : (stand[a.id] || 0);
         return h('div.sa-row', { style: a.you ? { background: 'var(--slime-900)' } : null },
           U.PlayerAvatar({ name: a.name, seat: a.seat, crown: fuehrt && a.id === fuehrt.id }),
-          h('span', { style: { flex: 1, display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 } },
-            h('span.sa-strong.sa-truncate', a.name),
-            strafen[a.id] ? U.Tease({ tone: 'burn', size: 'sm', children: 'Strafe kassiert.' }) : null),
+          h('span.sa-strong.sa-truncate', { style: { flex: 1, minWidth: 0 } }, a.name),
           ansicht === 'runde' ? U.IconButton({
             icon: 'minus', label: a.name + ' minus fünf', variant: 'outline', size: 'sm',
             onClick: function () { bump(live, a.id, -5); }
@@ -137,11 +115,6 @@
             icon: 'plus', label: a.name + ' plus fünf', variant: 'outline', size: 'sm',
             onClick: function () { bump(live, a.id, 5); }
           }) : null,
-          ansicht === 'runde' ? U.Button({
-            children: 'Strafe', size: 'sm', variant: 'ghost', iconLeft: 'skull',
-            disabled: !!strafen[a.id],
-            onClick: function () { strafe(live, a); }
-          }) : null
         );
       }));
     }
@@ -248,7 +221,7 @@
                   }, { summary: 'Rundenzahl geändert' });
                 }
               }),
-              h('span.sa-meta', 'Eine Strafe kostet ' + SA.STRAFE_POINTS + ' Punkte. Steht so in der Engine.')
+              h('span.sa-meta', 'Platz 1 bis 4 bringen 4/3/2/1 Punkte, ab dem fünften nichts.')
             ]
           }),
           hausregel(c)

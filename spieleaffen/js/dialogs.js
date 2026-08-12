@@ -194,8 +194,8 @@
   }
 
   // ── Ergebnis eintragen ───────────────────────────────────────────────────
-  /* Ein Spiel, ein Datum, je Affe Punkte + Tipp + Strafe. Daraus rechnet die
-     Engine Platzierungen, Tipp-Bonus und Abendsieg — hier wird nichts addiert. */
+  /* Ein Spiel, ein Datum, je Affe Punkte + Tipp. Daraus rechnet die Engine
+     Platzierungen, Tipp-Bonus und Abendsieg — hier wird nichts addiert. */
   function ergebnisEintragen(vorgabe) {
     var c = S.computed();
     var affen = c.standings('all', { includeEmpty: true });
@@ -218,9 +218,7 @@
     var zeilen = affen.map(function (a) {
       var punkte = U.Input({ size: 'sm', inputMode: 'numeric', placeholder: '—' });
       var tipp = U.Input({ size: 'sm', inputMode: 'numeric', placeholder: '—' });
-      var strafe = { on: false };
-      var box = U.Checkbox({ label: '', onChange: function (e) { strafe.on = e.target.checked; } });
-      return { affe: a, punkte: punkte, tipp: tipp, strafe: strafe, box: box };
+      return { affe: a, punkte: punkte, tipp: tipp };
     });
 
     SH.overlay(function (close) {
@@ -230,16 +228,16 @@
           h('div.sa-cols.sa-cols--half', null, spielFeld, datumFeld),
           dauerFeld,
           h('div.sa-card.sa-card--flush', null,
-            h('div.sa-thead', { style: { gridTemplateColumns: '1fr 92px 92px 64px' } },
-              h('span', 'Affe'), h('span', 'Punkte'), h('span', 'Tipp'), h('span', 'Strafe')),
+            h('div.sa-thead', { style: { gridTemplateColumns: '1fr 92px 92px' } },
+              h('span', 'Affe'), h('span', 'Punkte'), h('span', 'Tipp')),
             zeilen.map(function (z) {
-              return h('div.sa-trow', { style: { gridTemplateColumns: '1fr 92px 92px 64px' } },
+              return h('div.sa-trow', { style: { gridTemplateColumns: '1fr 92px 92px' } },
                 h('span.sa-inline', null,
                   U.PlayerAvatar({ name: z.affe.name, seat: z.affe.seat, size: 'sm' }),
                   h('span.sa-strong.sa-truncate', z.affe.name)),
-                z.punkte, z.tipp, z.box);
+                z.punkte, z.tipp);
             })),
-          h('span.sa-meta', 'Leer lassen heißt: war nicht dabei. Strafe kostet ' + SA.STRAFE_POINTS + ' Punkte.')
+          h('span.sa-meta', 'Leer lassen heißt: war nicht dabei. Die Plätze rechnet die App daraus.')
         ],
         footer: [
           U.Button({ children: 'Abbrechen', variant: 'ghost', onClick: close }),
@@ -254,7 +252,6 @@
                 .map(function (z) {
                   var r = { playerId: z.affe.id, score: Number(z.punkte.input.value) };
                   if (z.tipp.input.value.trim() !== '') r.tip = Number(z.tipp.input.value);
-                  if (z.strafe.on) r.strafe = true;
                   return r;
                 });
               if (results.length < 2) { S.toast('Zahlen, bitte.', 'Mindestens zwei Affen brauchen ein Ergebnis.', 'punsch'); return; }

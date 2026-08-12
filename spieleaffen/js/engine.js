@@ -3,19 +3,21 @@
  * Läuft im Browser (window.SA) und in Node (module.exports) — keine DOM-Abhängigkeit,
  * damit die Regeln von der Kommandozeile aus prüfbar bleiben.
  *
- * Punkteregeln (unverändert aus der Vorgänger-App übernommen):
- *   – Platzierung je Spiel: 1. = 5, 2. = 3, 3. = 1 (Gleichstand teilt den Platz)
- *   – Antreten: +1 pro Abend
+ * Punkteregeln:
+ *   – Platzierung je Spiel: 1. = 4, 2. = 3, 3. = 2, 4. = 1, ab dem 5. nichts
+ *   – Gleichstand: die Punkte der belegten Plätze kommen in einen Topf und
+ *     werden geteilt. Zwei Erste bekommen (4+3)/2 = 3,5, der Nächste steht
+ *     auf Platz 3 und bekommt 2.
  *   – Bester Tipp je Spiel: +3 (Gleichstand: alle Nächsten)
- *   – Strafe: −20 je Regelbruch
  * Abendsieger = meiste Punkte des Abends.
+ * Es gibt keinen Punkt fürs Antreten — sonst bekäme der Letzte nie null.
  *
  * Datendokument:
  *   { meta, players[], seasons[], games[], nights[], modules{}, houseRules[] }
  *   players: { id, name, short, seat 1..6, admin, archived }
  *   nights:  { id, date, title, hostId, status, dabei[], snacks[], games[] }
  *   games in nights: { id, gameId, title, lowerWins, durationMin, results[] }
- *   results: { playerId, score, tip, strafe }
+ *   results: { playerId, score, tip }
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -23,10 +25,20 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var PLACE_POINTS = [5, 3, 1];  // 1., 2., 3. — danach 0
-  var PART_POINTS = 1;           // pro Abend
-  var TIP_BONUS = 3;             // bester Tipp je Spiel
-  var STRAFE_POINTS = 20;        // Abzug je Strafe
+  var PLACE_POINTS = [4, 3, 2, 1];  // 1. bis 4. — ab dem 5. Platz nichts
+  var TIP_BONUS = 3;                // bester Tipp je Spiel
+
+  /* Punkte für einen Platz. Teilen sich mehrere Affen denselben Platz, kommen
+     die Punkte aller dadurch belegten Plätze in einen Topf und werden gleich
+     aufgeteilt — zwei Erste bekommen je (4+3)/2 = 3,5. Zwei Nachkommastellen
+     reichen; mehr entsteht nur, wenn sich drei eine Eins teilen. */
+  function platzPunkte(platz, geteilt) {
+    var k = Math.max(1, Number(geteilt) || 1);
+    var topf = 0;
+    for (var i = 0; i < k; i++) topf += PLACE_POINTS[platz - 1 + i] || 0;
+    return Math.round((topf / k) * 100) / 100;
+  }
+  function rund(n) { return Math.round(n * 100) / 100; }
 
   /* Sitzfarben. Sechs kommen aus dem Handoff, drei sind nachgereicht — die
      Begründung und die Messung stehen bei den Tokens (css/tokens.css). Namen
@@ -185,11 +197,17 @@
   }
 
   // ── Spiel auswerten ───────────────────────────────────────────────────────
-  // → je playerId: {score, tip, place, placePts, tipPts, tipDiff, exact, strafe, strafePts}
+  // → je playerId: {score, tip, place, geteilt, placePts, tipPts, tipDiff, exact}
   function evalGame(game) {
     var res = (game.results || []).filter(function (r) { return r.score != null && r.score !== ''; });
     if (!res.length) return {};
     var ranks = rankBy(res, function (r) { return game.lowerWins ? -Number(r.score) : Number(r.score); });
+    // Wie viele teilen sich denselben Platz? Davon hängt der Topf ab.
+    var proPlatz = {};
+    res.forEach(function (r) {
+      var p = ranks.get(r).place;
+      proPlatz[p] = (proPlatz[p] || 0) + 1;
+    });
     var out = {};
     res.forEach(function (r) {
       var place = ranks.get(r).place;
@@ -197,10 +215,9 @@
         score: Number(r.score),
         tip: (r.tip === 0 || r.tip) ? Number(r.tip) : null,
         place: place,
-        placePts: PLACE_POINTS[place - 1] || 0,
-        tipPts: 0, tipDiff: null, exact: false,
-        strafe: !!r.strafe,
-        strafePts: r.strafe ? -STRAFE_POINTS : 0
+        geteilt: proPlatz[place],
+        placePts: platzPunkte(place, proPlatz[place]),
+        tipPts: 0, tipDiff: null, exact: false
       };
     });
     // Tipp-Bonus: kleinste Abweichung |score − tip| unter allen Tippern
@@ -224,21 +241,20 @@
     (night.games || []).forEach(function (g) {
       var ev = evalGame(g);
       Object.keys(ev).forEach(function (pid) {
-        if (!per[pid]) per[pid] = { placePts: 0, tipPts: 0, partPts: PART_POINTS, strafePts: 0, strafen: 0, total: 0, games: [] };
-        per[pid].placePts += ev[pid].placePts;
+        if (!per[pid]) per[pid] = { placePts: 0, tipPts: 0, total: 0, games: [] };
+        per[pid].placePts = rund(per[pid].placePts + ev[pid].placePts);
         per[pid].tipPts += ev[pid].tipPts;
-        per[pid].strafePts += ev[pid].strafePts;
-        if (ev[pid].strafe) per[pid].strafen += 1;
         per[pid].games.push({
-          gameId: g.id, title: g.title, place: ev[pid].place, score: ev[pid].score,
+          gameId: g.id, title: g.title, place: ev[pid].place, geteilt: ev[pid].geteilt,
+          placePts: ev[pid].placePts, score: ev[pid].score,
           tip: ev[pid].tip, tipDiff: ev[pid].tipDiff, tipPts: ev[pid].tipPts,
-          exact: ev[pid].exact, strafe: ev[pid].strafe
+          exact: ev[pid].exact
         });
       });
     });
     var pids = Object.keys(per);
     pids.forEach(function (pid) {
-      per[pid].total = per[pid].placePts + per[pid].tipPts + per[pid].partPts + per[pid].strafePts;
+      per[pid].total = rund(per[pid].placePts + per[pid].tipPts);
       var placeSum = 0;
       per[pid].games.forEach(function (g) { placeSum += g.place; });
       per[pid].avgPlace = per[pid].games.length ? placeSum / per[pid].games.length : 0;
@@ -266,7 +282,7 @@
   function newStats() {
     return {
       nights: 0, nightWins: 0, nightLasts: 0, points: 0,
-      placePts: 0, tipPts: 0, partPts: 0, strafePts: 0, strafen: 0,
+      placePts: 0, tipPts: 0,
       gamesPlayed: 0, gameWins: 0, tipBonuses: 0, tipExacts: 0,
       placements: []
     };
@@ -316,12 +332,9 @@
         scopeKeys.forEach(function (key) {
           var s = stat(key, pid);
           s.nights += 1;
-          s.points += e.total;
-          s.placePts += e.placePts;
+          s.points = rund(s.points + e.total);
+          s.placePts = rund(s.placePts + e.placePts);
           s.tipPts += e.tipPts;
-          s.partPts += e.partPts;
-          s.strafePts += e.strafePts;
-          s.strafen += e.strafen;
           s.gamesPlayed += e.games.length;
           s.placements.push(e.place);
           e.games.forEach(function (g) {
@@ -436,7 +449,6 @@
           nights: s.nights, wins: s.nightWins, lasts: s.nightLasts,
           gameWins: s.gameWins, gamesPlayed: s.gamesPlayed,
           tipBonuses: s.tipBonuses, tipExacts: s.tipExacts,
-          strafen: s.strafen,
           streak: streaks[r.player.id] ? streaks[r.player.id].cur : 0,
           bestStreak: streaks[r.player.id] ? streaks[r.player.id].best : 0,
           quote: s.nights ? Math.round((s.nightWins / s.nights) * 100) : 0,
@@ -452,7 +464,7 @@
             out.push({
               id: p.id, name: p.name, short: shortCode(p), seat: p.seat, archiv: !!p.archived, admin: !!p.admin,
               place: out.length + 1, points: 0, delta: 0, nights: 0, wins: 0, lasts: 0,
-              gameWins: 0, gamesPlayed: 0, tipBonuses: 0, tipExacts: 0, strafen: 0,
+              gameWins: 0, gamesPlayed: 0, tipBonuses: 0, tipExacts: 0,
               streak: 0, bestStreak: 0, quote: 0, you: opts.youId === p.id
             });
           });
@@ -512,7 +524,7 @@
       run[p.id] = {
         nights: 0, nightWins: 0, nightLasts: 0, points: 0, tipBonuses: 0, tipExacts: 0,
         winStreak: 0, wonTitles: {}, winsByTitle: {}, wasLastPreviousNight: false,
-        hasBigOvershoot: false, strafen: 0
+        hasBigOvershoot: false
       };
     });
 
@@ -533,8 +545,7 @@
         var r = run[pid], e = ev.per[pid];
         if (!r) return;
         r.nights += 1;
-        r.points += e.total;
-        r.strafen += e.strafen;
+        r.points = rund(r.points + e.total);
         var wonNight = ev.winners.indexOf(pid) >= 0;
         var lastNight = ev.losers.indexOf(pid) >= 0;
         if (wonNight) { r.nightWins += 1; r.winStreak += 1; } else { r.winStreak = 0; }
@@ -691,9 +702,7 @@
       { id: 'rote-laterne',   icon: 'skull',         name: 'Rote Laterne',  desc: 'Dreimal Letzter des Abends', tone: 'punsch',
         check: function (c) { return c.run.nightLasts >= 3; } },
       { id: 'luftschloss',    icon: 'trending-down', name: 'Luftschloss',   desc: 'Eigenen Tipp meilenweit überschätzt', tone: 'punsch',
-        check: function (c) { return c.run.hasBigOvershoot; } },
-      { id: 'strafbank',      icon: 'gavel',         name: 'Strafbank',     desc: 'Dreimal Strafe kassiert', tone: 'punsch',
-        check: function (c) { return c.run.strafen >= 3; } }
+        check: function (c) { return c.run.hasBigOvershoot; } }
     ];
   }
 
@@ -753,9 +762,7 @@
 
   return {
     PLACE_POINTS: PLACE_POINTS,
-    PART_POINTS: PART_POINTS,
     TIP_BONUS: TIP_BONUS,
-    STRAFE_POINTS: STRAFE_POINTS,
     SEATS: SEATS,
     SEAT_NAMEN: SEAT_NAMEN,
     seatName: seatName,

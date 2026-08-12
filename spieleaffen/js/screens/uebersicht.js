@@ -15,7 +15,7 @@
     var abende = c.playedNights.length;
     var imMonat = c.playedNights.filter(function (n) { return SA.monthKey(n.date) === SA.monthKey(S.heute()); }).length;
     var beste = affen.slice().sort(function (a, b) { return b.bestStreak - a.bestStreak; })[0];
-    var strafen = affen.reduce(function (s, a) { return s + a.strafen; }, 0);
+    var spiele = affen.reduce(function (s, a) { return Math.max(s, a.gamesPlayed); }, 0);
 
     return [
       U.StatTile({
@@ -33,9 +33,8 @@
         delta: beste && beste.bestStreak ? beste.name + ', natürlich' : null
       }),
       U.StatTile({
-        label: 'Strafrunden', tone: strafen ? 'punsch' : 'neutral', icon: 'skull',
-        value: strafen, delta: strafen ? 'Selbst schuld' : 'Noch sauber',
-        deltaDirection: strafen ? 'down' : 'up'
+        label: 'Partien gespielt', tone: 'neutral', icon: 'dices',
+        value: spiele, delta: abende ? Math.round((spiele / abende) * 10) / 10 + ' je Abend' : null
       })
     ];
   }

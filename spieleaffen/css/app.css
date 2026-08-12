@@ -207,3 +207,24 @@
   .sa-card--flush > .sa-card__head { padding-left: var(--space-5); padding-right: var(--space-5); }
   .sa-btn--md { padding: 0 var(--space-5); }
 }
+
+/* ── Das Tor ──────────────────────────────────────────────────────────────
+ * Ohne Anmeldung steht die App unscharf hinter der Karte. Sättigung mit
+ * herunter, sonst leuchtet das Slime durch die Unschärfe hindurch weiter.
+ * Ein Tresor ist das nicht — GET /api/data ist öffentlich —, sondern eine Tür:
+ * niemand verstellt aus Versehen Punkte.
+ */
+.sa-shell.is-gesperrt {
+  filter: blur(7px) saturate(.55) brightness(.75);
+  pointer-events: none;
+  user-select: none;
+}
+.sa-sperre {
+  position: fixed; inset: 0; z-index: 90;
+  display: grid; place-items: center;
+  padding: var(--space-6);
+  background: color-mix(in oklab, var(--ink-950) 62%, transparent);
+  overflow-y: auto;
+}
+/* Die Karte darf auf kleinen Geräten mitscrollen, statt oben abgeschnitten zu werden. */
+.sa-sperre > * { width: min(420px, 100%); }
