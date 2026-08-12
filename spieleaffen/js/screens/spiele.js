@@ -53,7 +53,7 @@
             h('span.sa-num', { style: { fontSize: '23px' } }, String(g.plays))),
           g.modul ? U.Button({
             children: 'Modul öffnen', size: 'sm', variant: 'secondary', iconRight: 'chevron-right',
-            onClick: function (e) { e.stopPropagation(); window.SA_SCREENS.module.oeffne(g.modul); }
+            onClick: function (e) { e.stopPropagation(); window.SA_SCREENS.abend.werkzeugOeffnen(g.modul); }
           }) : U.Button({
             children: 'Eintragen', size: 'sm', variant: 'ghost', iconLeft: 'edit_note',
             onClick: function (e) { e.stopPropagation(); window.SA_DIALOGS.ergebnisEintragen({ gameId: g.id }); }
@@ -133,8 +133,9 @@
         sub: shelf.length
           ? SA.plural(shelf.length, 'Spiel', 'Spiele') + ' im Schrank. Manche davon sogar gespielt.'
           : 'Noch nichts im Schrank. Ohne Spiel kein Ergebnis.',
+        /* Auf dem Regal-Screen geht es ums Regal. „Abend planen" steht in der
+           Seitenleiste und auf der Übersicht. */
         actions: [
-          U.Button({ children: 'Abend planen', variant: 'secondary', iconLeft: 'calendar-days', onClick: window.SA_DIALOGS.abendPlanen }),
           U.Button({ children: 'Spiel hinzufügen', iconLeft: 'plus', onClick: window.SA_DIALOGS.spielHinzufuegen })
         ]
       }),

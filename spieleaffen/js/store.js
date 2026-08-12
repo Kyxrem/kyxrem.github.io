@@ -24,7 +24,7 @@
     saveError: null,
     me: null,            // {id, name, admin} sobald eingeloggt
     log: [],
-    view: 'uebersicht',
+    view: 'abend',
     toasts: []
   };
 
@@ -152,6 +152,8 @@
   function logout() {
     state.me = null;
     try { sessionStorage.removeItem('sa_demo_me'); } catch (e) { /* egal */ }
+    // Beim nächsten Öffnen soll wieder das Vier-Ziffern-Feld vorn stehen.
+    if (window.SA_GATE) window.SA_GATE.zuruecksetzen();
     emit();
     return API.logout();
   }

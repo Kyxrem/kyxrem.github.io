@@ -21,10 +21,19 @@
     return 'var(--seat-' + (((Number(seat) || 1) - 1) % n + 1) + ')';
   }
 
-  /* Zahlen tragen den typografischen Minus (−), nicht den Bindestrich.
-     Steht so in readme.md > Content fundamentals > Numbers. */
+  /* Zahlen tragen den typografischen Minus (−), nicht den Bindestrich — und
+     das Dezimalkomma, nicht den Punkt. Halbe Punkte gibt es seit die Plätze
+     geteilt werden; „3,5" liest sich deutsch, „3.5" wie ein Tippfehler.
+     Gerundet wird auf zwei Stellen, nachgestellte Nullen fallen weg. */
   function num(v) {
-    return String(v == null ? '' : v).replace(/-/g, '−');
+    if (v == null || v === '') return '';
+    if (typeof v === 'number' && isFinite(v)) {
+      var gerundet = Math.round(v * 100) / 100;
+      var text = String(gerundet);
+      if (text.indexOf('.') >= 0) text = text.replace('.', ',');
+      return text.replace(/-/g, '−');
+    }
+    return String(v).replace(/-/g, '−');
   }
 
   function initials(name) {
@@ -537,7 +546,9 @@
 
       rounds.map(function (r) {
         var live = r.n === o.activeRound;
-        return h('div', { class: ['sa-pad__row', live && 'is-live'] },
+        // Verdeckt gespielte Runden werden beim Werten aufgedeckt — die Zeile
+        // blitzt einmal auf, sonst wechselt die Tabelle lautlos.
+        return h('div', { class: ['sa-pad__row', live && 'is-live', r.n === o.revealRound && 'is-aufgedeckt'] },
           h('span.sa-pad__n', null,
             h('span.sa-pad__num', String(r.n)),
             h('span.sa-pad__cards', r.cards ? r.cards + ' K' : '')),

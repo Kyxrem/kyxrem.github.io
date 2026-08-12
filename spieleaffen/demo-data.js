@@ -109,7 +109,6 @@
             var r = { playerId: p.id, score: score };
             // Zwei Drittel tippen vorher — mit dem üblichen Optimismus.
             if (rnd() > 0.34) r.tip = Math.max(game.range[0], Math.round(score + (rnd() - 0.35) * (game.range[1] - game.range[0]) * 0.28));
-            if (rnd() > 0.93) r.strafe = true;
             return r;
           })
         });

@@ -2,9 +2,9 @@
  *
  *   node spieleaffen/test-engine.js
  *
- * Prüft die Punkteregeln, über die am Tisch gestritten wird: Platzierung,
- * geteilte Plätze, Antreten, Tipp-Bonus, Strafe, Abendsieger — und dass die
- * Demo-Daten sauber durch die Gesamtauswertung laufen.
+ * Prüft die Punkteregeln, über die am Tisch gestritten wird: Platzierung
+ * 4/3/2/1, geteilte Plätze, Tipp-Bonus, Abendsieger — und dass die Demo-Daten
+ * sauber durch die Gesamtauswertung laufen.
  */
 'use strict';
 
@@ -20,24 +20,53 @@ function eq(actual, expected, label) {
 }
 function section(name) { console.log('\n' + name); }
 
-// ── Platzierungspunkte 5/3/1 ────────────────────────────────────────────────
-section('Platzierung je Spiel: 1./2./3. = 5/3/1');
+// ── Platzierungspunkte 4/3/2/1 ──────────────────────────────────────────────
+section('Platzierung je Spiel: 4/3/2/1, ab dem fünften nichts');
 var g1 = SA.evalGame({ results: [
   { playerId: 'a', score: 100 }, { playerId: 'b', score: 80 },
-  { playerId: 'c', score: 60 },  { playerId: 'd', score: 40 }
+  { playerId: 'c', score: 60 },  { playerId: 'd', score: 40 },
+  { playerId: 'e', score: 20 },  { playerId: 'f', score: 10 }
 ] });
-eq(g1.a.placePts, 5, 'Erster bekommt 5');
+eq(g1.a.placePts, 4, 'Erster bekommt 4');
 eq(g1.b.placePts, 3, 'Zweiter bekommt 3');
-eq(g1.c.placePts, 1, 'Dritter bekommt 1');
-eq(g1.d.placePts, 0, 'Vierter bekommt 0');
+eq(g1.c.placePts, 2, 'Dritter bekommt 2');
+eq(g1.d.placePts, 1, 'Vierter bekommt 1');
+eq(g1.e.placePts, 0, 'Fünfter geht leer aus');
+eq(g1.f.placePts, 0, 'Und der Sechste erst recht');
 
-section('Gleichstand teilt den Platz („1224")');
+// In der Fünferrunde geht die Staffel genau auf: der Letzte bekommt null.
+var g1b = SA.evalGame({ results: [
+  { playerId: 'a', score: 50 }, { playerId: 'b', score: 40 }, { playerId: 'c', score: 30 },
+  { playerId: 'd', score: 20 }, { playerId: 'e', score: 10 }
+] });
+eq([g1b.a, g1b.b, g1b.c, g1b.d, g1b.e].map(function (x) { return x.placePts; }), [4, 3, 2, 1, 0],
+  'Zu fünft: 4/3/2/1/0');
+
+section('Gleichstand: die Punkte der belegten Plätze werden geteilt');
 var g2 = SA.evalGame({ results: [
   { playerId: 'a', score: 100 }, { playerId: 'b', score: 100 },
   { playerId: 'c', score: 60 },  { playerId: 'd', score: 20 }
 ] });
 eq([g2.a.place, g2.b.place, g2.c.place, g2.d.place], [1, 1, 3, 4], 'Plätze 1,1,3,4');
-eq([g2.a.placePts, g2.b.placePts, g2.c.placePts], [5, 5, 1], 'Beide Erste bekommen 5, der Dritte 1');
+eq([g2.a.placePts, g2.b.placePts], [3.5, 3.5], 'Zwei Erste teilen (4+3)/2 = 3,5');
+eq(g2.c.placePts, 2, 'Der Nächste steht auf Platz 3 und bekommt 2');
+eq(g2.d.placePts, 1, 'Der Vierte bekommt 1');
+
+var g2b = SA.evalGame({ results: [
+  { playerId: 'a', score: 10 }, { playerId: 'b', score: 10 }, { playerId: 'c', score: 10 },
+  { playerId: 'd', score: 5 }
+] });
+eq([g2b.a.placePts, g2b.b.placePts, g2b.c.placePts], [3, 3, 3], 'Drei Erste teilen (4+3+2)/3 = 3');
+eq(g2b.d.placePts, 1, 'Der Vierte bleibt der Vierte');
+
+var g2c = SA.evalGame({ results: [
+  { playerId: 'a', score: 9 }, { playerId: 'b', score: 5 }, { playerId: 'c', score: 5 }
+] });
+eq([g2c.b.placePts, g2c.c.placePts], [2.5, 2.5], 'Zwei Zweite teilen (3+2)/2 = 2,5');
+
+// Der Topf bleibt der Topf: geteilt oder nicht, es wird nichts erfunden.
+var summe1 = ['a', 'b', 'c', 'd'].reduce(function (n, k) { return n + g2[k].placePts; }, 0);
+eq(summe1, 4 + 3 + 2 + 1, 'Geteilte Plätze vergeben zusammen genauso viel wie ungeteilte');
 
 section('lowerWins: weniger gewinnt');
 var g3 = SA.evalGame({ lowerWins: true, results: [
@@ -45,50 +74,63 @@ var g3 = SA.evalGame({ lowerWins: true, results: [
 ] });
 eq([g3.b.place, g3.c.place, g3.a.place], [1, 2, 3], 'Niedrigste Punktzahl führt');
 
-// ── Tipp-Bonus ──────────────────────────────────────────────────────────────
-section('Tipp-Bonus: +3 für die kleinste Abweichung');
+// ── Tipps: Statistik, keine Punkte ──────────────────────────────────────────
+section('Tippen wird gezählt, aber nicht bezahlt');
 var g4 = SA.evalGame({ results: [
   { playerId: 'a', score: 100, tip: 90 },   // 10 daneben
-  { playerId: 'b', score: 80, tip: 82 },    // 2 daneben  → Bonus
+  { playerId: 'b', score: 80, tip: 82 },    // 2 daneben  → am nächsten dran
   { playerId: 'c', score: 60 }              // kein Tipp
 ] });
-eq(g4.b.tipPts, 3, 'Bester Tipper bekommt 3');
-eq(g4.a.tipPts, 0, 'Schlechterer Tipper bekommt nichts');
-eq(g4.c.tipPts, 0, 'Wer nicht tippt, bekommt nichts');
+eq(g4.b.tipBest, true, 'Der Nächste am eigenen Tipp ist markiert');
+eq(g4.a.tipBest, false, 'Der Weitere nicht');
+eq(g4.c.tipBest, false, 'Wer nicht tippt, ist nie der Nächste');
 eq(g4.c.tipDiff, null, 'Ohne Tipp keine Abweichung');
+eq(g4.b.tipPts, undefined, 'Es gibt keine Tipp-Punkte mehr');
+eq([g4.a.placePts, g4.b.placePts, g4.c.placePts], [4, 3, 2],
+  'Der Tipp verschiebt keine Platzpunkte');
 
 var g5 = SA.evalGame({ results: [
   { playerId: 'a', score: 100, tip: 95 }, { playerId: 'b', score: 50, tip: 45 }
 ] });
-eq([g5.a.tipPts, g5.b.tipPts], [3, 3], 'Gleiche Abweichung: alle Nächsten bekommen den Bonus');
+eq([g5.a.tipBest, g5.b.tipBest], [true, true], 'Gleiche Abweichung: beide gelten als am nächsten');
 
 var g6 = SA.evalGame({ results: [{ playerId: 'a', score: 42, tip: 42 }] });
-eq([g6.a.exact, g6.a.tipPts], [true, 3], 'Exakter Tipp gilt als getroffen');
+eq(g6.a.exact, true, 'Exakter Tipp gilt als getroffen');
 
-// ── Abend: Antreten, Strafe, Abendsieger ────────────────────────────────────
-section('Abend: Antreten +1, Strafe −20, Abendsieger');
+// ── Abend ───────────────────────────────────────────────────────────────────
+section('Abend: nur Platzpunkte — kein Antreten, kein Tipp');
 var n1 = SA.evalNight({ games: [{
   title: 'Wizard',
   results: [
-    { playerId: 'a', score: 100, tip: 98 },  // 5 Platz + 3 Tipp + 1 Antreten = 9
-    { playerId: 'b', score: 80 },            // 3 Platz + 1 Antreten          = 4
-    { playerId: 'c', score: 60, strafe: true } // 1 Platz + 1 Antreten − 20   = −18
+    { playerId: 'a', score: 100, tip: 98 },  // Platz 1, Tipp getroffen = 4
+    { playerId: 'b', score: 80 },            // Platz 2                 = 3
+    { playerId: 'c', score: 60 },            // Platz 3                 = 2
+    { playerId: 'd', score: 40 },            // Platz 4                 = 1
+    { playerId: 'e', score: 20 }             // Platz 5                 = 0
   ]
 }] });
-eq(n1.per.a.total, 9, 'a: 5 + 3 + 1 = 9');
-eq(n1.per.b.total, 4, 'b: 3 + 1 = 4');
-eq(n1.per.c.total, -18, 'c: 1 + 1 − 20 = −18');
-eq(n1.per.a.partPts, 1, 'Antreten zählt einmal pro Abend, nicht pro Spiel');
+eq(n1.per.a.total, 4, 'a: nur der Platz — der gute Tipp bringt nichts');
+eq(n1.per.b.total, 3, 'b: nur der Platz');
+eq(n1.per.e.total, 0, 'Der Letzte bekommt null — genau darum gibt es keinen Antreten-Punkt');
+eq(n1.per.a.partPts, undefined, 'Antreten-Punkte gibt es nicht mehr');
 eq(n1.winners, ['a'], 'Abendsieger ist, wer die meisten Punkte hat');
-eq(n1.losers, ['c'], 'Letzter des Abends ist eindeutig der Schlechteste');
+eq(n1.losers, ['e'], 'Letzter des Abends ist eindeutig der Schlechteste');
 
-section('Antreten zählt einmal, auch bei mehreren Spielen');
+section('Mehrere Spiele addieren sich');
 var n2 = SA.evalNight({ games: [
   { title: 'A', results: [{ playerId: 'a', score: 10 }, { playerId: 'b', score: 5 }] },
   { title: 'B', results: [{ playerId: 'a', score: 10 }, { playerId: 'b', score: 5 }] }
 ] });
-eq(n2.per.a.partPts, 1, 'Ein Antreten-Punkt trotz zwei Spielen');
-eq(n2.per.a.total, 11, 'a: 5 + 5 + 1 = 11');
+eq(n2.per.a.total, 8, 'a: 4 + 4 = 8');
+eq(n2.per.b.total, 6, 'b: 3 + 3 = 6');
+
+section('Halbe Punkte überleben die Addition');
+var n2b = SA.evalNight({ games: [
+  { title: 'A', results: [{ playerId: 'a', score: 10 }, { playerId: 'b', score: 10 }] },
+  { title: 'B', results: [{ playerId: 'a', score: 10 }, { playerId: 'b', score: 5 }] }
+] });
+eq(n2b.per.a.total, 7.5, 'a: 3,5 aus dem geteilten Sieg plus 4');
+eq(n2b.per.b.total, 6.5, 'b: 3,5 plus 3');
 
 section('Punktgleichheit: geteilter Abendsieg, niemand ist Letzter');
 var n3 = SA.evalNight({ games: [{ title: 'A', results: [
@@ -110,11 +152,34 @@ eq(tabelle.length, 5, 'Fünf aktive Affen in der ewigen Tabelle');
 eq(tabelle[0].place, 1, 'Die Tabelle ist nach Platz sortiert');
 eq(tabelle.every(function (r) { return !r.archiv; }), true, 'Archivierte Affen tauchen nicht auf');
 eq(tabelle.some(function (r) { return r.you; }), true, '„Du" ist markiert');
-eq(tabelle.every(function (r) { return r.points === Math.round(r.points); }), true, 'Punkte sind ganze Zahlen');
+eq(tabelle.every(function (r) { return Math.round(r.points * 100) === r.points * 100; }), true,
+  'Punkte tragen höchstens zwei Nachkommastellen', JSON.stringify(tabelle.map(function (r) { return r.points; })));
 
 var summe = tabelle.reduce(function (s, r) { return s + r.nights; }, 0);
 eq(summe > 0, true, 'Abende sind gezählt (' + summe + ')');
 eq(c.standings('all', { includeArchived: true }).length, 6, 'Mit Archiv sind es sechs');
+
+section('Gesamttabelle: nur Siegpunkte');
+// Zwei Abende, einer davon mit lauter guten Tipps. Die Tabelle darf davon
+// nichts mitbekommen — sonst hinge sie an einem einzigen Spiel.
+var nurPlaetze = SA.compute({
+  players: [{ id: 'a', name: 'A', seat: 1 }, { id: 'b', name: 'B', seat: 2 }],
+  seasons: [], games: [], modules: {}, houseRules: [],
+  nights: [{
+    id: 'n1', date: '2026-01-06', title: 'Test', status: 'fertig', dabei: ['a', 'b'],
+    games: [{ id: 'g1', title: 'Wizard', results: [
+      { playerId: 'a', score: 10, tip: 10 },   // Platz 1, Tipp exakt
+      { playerId: 'b', score: 5 }              // Platz 2, kein Tipp
+    ] }]
+  }]
+});
+var zeilen = nurPlaetze.standings('all');
+var aZeile = zeilen.filter(function (r) { return r.id === 'a'; })[0];
+var bZeile = zeilen.filter(function (r) { return r.id === 'b'; })[0];
+eq(aZeile.points, 4, 'Platz 1 bringt 4 — der exakte Tipp bringt nichts dazu');
+eq(bZeile.points, 3, 'Platz 2 bringt 3');
+eq(aZeile.tipExacts, 1, 'Getroffen wurde er trotzdem gezählt');
+eq(aZeile.tipBonuses, 1, 'Und als Nächster am eigenen Tipp auch');
 
 section('Sitzfarben: jede höchstens einmal vergeben');
 var seats = c.players.filter(function (p) { return !p.archived; }).map(function (p) { return p.seat; });
@@ -144,7 +209,7 @@ var zwei = SA.seatVergabe([
 eq(zwei[2].id, 'a', 'Bei doppelter Belegung gewinnt der erste — die Vergabe rät nicht');
 
 section('Pokale');
-eq(c.achievements.length, 15, 'Fünfzehn Pokale im Katalog');
+eq(c.achievements.length, 14, 'Vierzehn Pokale im Katalog');
 eq(c.achievements.every(function (a) { return !/[\u{1F300}-\u{1FAFF}]/u.test(a.name + a.desc); }), true,
   'Kein Emoji in den Pokalen — das Design-System verbietet es');
 var vergeben = Object.keys(c.achState).reduce(function (s, pid) { return s + Object.keys(c.achState[pid]).length; }, 0);

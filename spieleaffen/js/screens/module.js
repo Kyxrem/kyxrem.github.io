@@ -128,7 +128,15 @@
   }
 
   // ══ Wizard · Block der Wahrheit ══════════════════════════════════════════
-  var entwurf = {};   // {pid: {bid, made}} für die laufende Runde
+  /* Der Entwurf ist die laufende, noch nicht gewertete Runde. Er lebt außerhalb
+     der Zeichenfunktion, damit ein Neuzeichnen die halbe Eingabe nicht wegwirft
+     — und muss genau deshalb zurückgesetzt werden, BEVOR der Speicher die
+     nächste Runde anstößt. Stand er noch, trug die neue Runde die alten
+     Ansagen: in der Tabelle „Steht", obwohl niemand angesagt hatte. */
+  var entwurf = {};   // {pid: {bid, made, angesagt}} für die laufende Runde
+  /* Welche Runde gerade aufgedeckt wurde — die Zeile blitzt einmal auf, damit
+     das Aufdecken ein Moment ist und nicht bloß ein stiller Tabellenwechsel. */
+  var aufgedeckt = null;
 
   function wizard(c, affen) {
     var sitzung = aktuelle(c, 'wizard');
@@ -292,6 +300,8 @@
        andersherum wäre die stille Enthüllung eine Überraschung. */
     function modusWechseln(neuerModus) {
       if (neuerModus === modus) return;
+      entwurf = {};        // aus demselben Grund vor dem Speichern, nicht danach
+      aufgedeckt = null;
       S.update(function (doc) {
         var s = letzteSitzung(doc, 'wizard');
         if (!s) return false;
@@ -301,7 +311,6 @@
         entries: [{ icon: neuerModus === 'verdeckt' ? 'lock' : 'lock-open', tone: 'neutral',
           text: 'Ansagen im Block der Wahrheit jetzt ' + neuerModus + '.', from: modus, to: neuerModus }]
       }).then(function () {
-        entwurf = {};
         S.toast(neuerModus === 'verdeckt' ? 'Verdeckt' : 'Offen',
           neuerModus === 'verdeckt'
             ? 'Jeder sagt für sich an. Gerät weitergeben, nicht schielen.'
@@ -327,6 +336,12 @@
       });
       var luegner = spieler.filter(function (p) { return cells[p.id].bid !== cells[p.id].made; });
 
+      /* Vor dem Speichern leeren, nicht danach: der Speicher zeichnet neu,
+         sobald die Runde steht. Käme das Zurücksetzen erst im .then, liefe die
+         nächste Runde mit den Ansagen der vorigen weiter. */
+      entwurf = {};
+      aufgedeckt = modus === 'verdeckt' ? aktiv : null;
+
       S.update(function (doc) {
         var s = letzteSitzung(doc, 'wizard');
         if (!s) return false;
@@ -334,7 +349,6 @@
         s.runden.sort(function (a, b) { return a.n - b.n; });
         s.aktiveRunde = Math.min(rundenGesamt, aktiv + 1);
       }, { summary: 'Wizard-Runde ' + aktiv + ' gewertet' }).then(function () {
-        entwurf = {};
         S.toast(modus === 'verdeckt' ? 'Aufgedeckt' : 'Runde ' + aktiv + ' steht', luegner.length
           ? luegner.map(function (p) { return p.name; }).join(' & ') + ' lag daneben. Wie angekündigt.'
           : 'Alle richtig. Verdächtig.', luegner.length ? 'punsch' : 'slime');
@@ -367,7 +381,7 @@
               abschliessen)),
           h('div.sa-scrollx', null, U.ScorePad({
             players: spieler, rounds: rows, totals: totals, activeRound: aktiv,
-            renderActiveCell: stepper,
+            revealRound: aufgedeckt, renderActiveCell: stepper,
             // Die Zähler brauchen mehr Platz als die fertigen Zellen.
             style: { '--sa-pad-cols': '64px repeat(' + spieler.length + ', minmax(112px, 1fr))' }
           })),
@@ -429,32 +443,41 @@
     });
   }
 
-  window.SA_SCREENS = window.SA_SCREENS || {};
-  window.SA_SCREENS.module = function (state, c) {
-    var SH = window.SA_SHELL;
-    var affen = S.affen('all', { includeEmpty: true });
+  /* Die Module sind kein eigener Bildschirm mehr: sie sind das Werkzeug für
+     eine laufende Partie und werden vom Abend-Screen eingesetzt. */
+  window.SA_MODULE = {
+    catan: catan,
+    wizard: wizard,
+    /* Aus der Wizard-Sitzung wird eine Partie: die Summen sind die Punktzahl,
+       die Reihenfolge liest die Engine daraus. Bestätigt wird sie von Hand —
+       der Block weiß, wie gespielt wurde, nicht ob ihr das so stehen lassen
+       wollt. Getroffene Ansagen wandern als Statistik mit, nicht als Punkte. */
+    wizardErgebnis: function (c, affen) {
+      var sitzung = aktuelle(c, 'wizard');
+      if (!sitzung || !(sitzung.runden || []).length) return null;
+      var spieler = (sitzung.players || []).map(function (pid) {
+        return affen.filter(function (a) { return a.id === pid; })[0];
+      }).filter(Boolean);
+      if (spieler.length < 2) return null;
 
-    return [
-      SH.ScreenHead({
-        eyebrow: 'Spielmodule',
-        title: modul === 'catan' ? 'Würfelstatistik' : 'Block der Wahrheit',
-        sub: modul === 'catan'
-          ? 'Was gefallen ist, gegen das, was fallen müsste. Ausreden werden geprüft.'
-          : 'Angesagt gegen geholt. ' + SA.plural(SA.wizardRunden(affen.length) || 10, 'Runde', 'Runden') +
-            ' bei ' + SA.plural(affen.length, 'Affe', 'Affen') + ', eine Quote, keine Gnade.',
-        actions: U.Tabs({
-          variant: 'pill', value: modul,
-          items: [{ id: 'catan', label: 'Catan' }, { id: 'wizard', label: 'Wizard' }],
-          onChange: function (id) { modul = id; S.emit(); }
+      var punkte = {}, treffer = {};
+      spieler.forEach(function (p) { punkte[p.id] = 0; treffer[p.id] = 0; });
+      (sitzung.runden || []).forEach(function (r) {
+        spieler.forEach(function (p) {
+          var cell = (r.cells || {})[p.id];
+          if (!cell || cell.bid == null) return;
+          punkte[p.id] += cell.points || 0;
+          if (cell.bid === cell.made) treffer[p.id] += 1;
+        });
+      });
+      return {
+        sitzung: sitzung,
+        runden: (sitzung.runden || []).length,
+        rundenGesamt: sitzung.rundenGesamt || SA.wizardRunden(spieler.length),
+        results: spieler.map(function (p) {
+          return { playerId: p.id, score: punkte[p.id], treffer: treffer[p.id] };
         })
-      }),
-      modul === 'catan' ? catan(c, affen) : wizard(c, affen)
-    ];
-  };
-
-  /* Aus dem Spiele-Regal heraus direkt ins passende Modul springen. */
-  window.SA_SCREENS.module.oeffne = function (art) {
-    modul = art === 'wizard' ? 'wizard' : 'catan';
-    S.navigate('module');
+      };
+    }
   };
 })();

@@ -10,14 +10,15 @@
   'use strict';
   var h = window.h, U = window.SA_UI, SA = window.SA, S = window.SA_STORE;
 
+  /* Fünf Bildschirme. Die alte Übersicht ist im Abend aufgegangen — sie zeigte
+     ohnehin vor allem, was heute läuft —, und die Spielmodule sind kein Ziel
+     mehr, sondern das Werkzeug einer laufenden Partie. */
   var NAV = [
-    { id: 'uebersicht', icon: 'layout-dashboard', label: 'Übersicht' },
-    { id: 'abend', icon: 'flame', label: 'Abend läuft' },
+    { id: 'abend', icon: 'flame', label: 'Abend' },
     { id: 'affen', icon: 'users', label: 'Affen' },
     { id: 'rangliste', icon: 'trophy', label: 'Rangliste' },
     { id: 'spiele', icon: 'dices', label: 'Spiele' },
-    { id: 'module', icon: 'extension', label: 'Spielmodule' },
-    { id: 'admin', icon: 'admin_panel_settings', label: 'Admin' }
+    { id: 'admin', icon: 'admin_panel_settings', label: 'Verwaltung' }
   ];
 
   function Wordmark() {
@@ -81,8 +82,7 @@
       abend: c.liveNight ? 'live' : null,
       affen: affenCount || null,
       spiele: c.shelf.length || null,
-      module: 2,
-      admin: state.me ? (state.me.admin ? 'Admin' : 'Du') : 'Code'
+      admin: state.me && state.me.admin ? 'Admin' : null
     };
 
     var next = c.nextNight;
@@ -98,10 +98,9 @@
         } })
       );
     } else {
-      meRow = h('div.sa-me', null,
-        U.Button({ children: 'Anmelden', size: 'sm', variant: 'secondary', fullWidth: true, iconLeft: 'lock_open',
-          onClick: function () { S.navigate('admin'); } })
-      );
+      // Hinter dem Tor ist die Leiste ohnehin gesperrt — ein Anmelde-Knopf
+      // hier wäre nur eine unscharfe Attrappe.
+      meRow = null;
     }
 
     return h('aside.sa-side', null,
@@ -133,13 +132,23 @@
   function render(root, state, opts) {
     if (opts && opts.nurToasts) { renderToasts(state); return; }
     var c = S.computed();
-    var screen = window.SA_SCREENS[state.view] || window.SA_SCREENS.uebersicht;
-    window.SA_DOM.mount(root,
-      h('div.sa-shell', null,
-        Sidebar(state, c),
-        h('main.sa-main', { id: 'sa-main' }, screen(state, c))
-      )
-    );
+    var screen = window.SA_SCREENS[state.view] || window.SA_SCREENS.abend;
+    /* Ohne Anmeldung bleibt die App stehen, wo sie ist — nur unscharf und
+       nicht anfassbar. `inert` nimmt sie zugleich aus Tastatur und Vorlesen;
+       ohne die pointer-events-Regel käme man sonst per Tab durch die Unschärfe. */
+    var gesperrt = !state.me;
+    var schale = h('div', { class: ['sa-shell', gesperrt && 'is-gesperrt'] },
+      Sidebar(state, c),
+      h('main.sa-main', { id: 'sa-main' }, screen(state, c)));
+    if (gesperrt) {
+      schale.setAttribute('inert', '');
+      schale.setAttribute('aria-hidden', 'true');
+    }
+    window.SA_DOM.mount(root, [
+      schale,
+      gesperrt ? h('div.sa-sperre', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Affenschlüssel' },
+        window.SA_GATE.karte(state, c)) : null
+    ]);
     renderToasts(state);
   }
 

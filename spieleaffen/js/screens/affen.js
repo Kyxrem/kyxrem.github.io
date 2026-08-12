@@ -16,8 +16,9 @@
         h('div.sa-card__head', null,
           h('div.sa-card__heading', null,
             h('h3.sa-h3', 'Alle Affen'),
-            h('span.sa-meta', SA.plural(affen.length, 'Affe', 'Affen') + ' aktiv · Sitzfarbe je einmal, tauschbar im Admin')),
-          U.Button({ children: 'Ergebnis eintragen', size: 'sm', iconLeft: 'edit_note', onClick: function () { window.SA_DIALOGS.ergebnisEintragen(); } })),
+            h('span.sa-meta', SA.plural(affen.length, 'Affe', 'Affen') + ' aktiv · Sitzfarbe je einmal, tauschbar im Admin'))),
+        /* „Ergebnis eintragen" steht im Kopf der Seite — nicht zwei Zeilen
+           darunter noch einmal. */
         h('div.sa-scrollx', null, h('div', null,
           h('div.sa-thead', { style: { gridTemplateColumns: SPALTEN } },
             h('span', 'Affe'), h('span', 'Punkte'), h('span', 'Abende'),
@@ -39,8 +40,8 @@
                 : h('span.sa-meta.sa-meta--mono', '—'));
           }) : h('div.sa-empty', null,
             U.Icon('users', { size: 32, color: 'var(--text-faint)' }),
-            h('span.sa-empty__text', 'Noch niemand. Sehr mutig.'),
-            U.Button({ children: 'Affe hinzufügen', size: 'sm', iconLeft: 'user-plus', onClick: window.SA_DIALOGS.affeHinzufuegen })))
+            // Der Knopf steht eine Handbreit darüber im Kopf der Seite.
+            h('span.sa-empty__text', 'Noch niemand. Sehr mutig.')))
         )
       ]
     });
@@ -52,6 +53,9 @@
     var erster = affen[0], letzter = affen[affen.length - 1];
     var abstand = erster.points - affen[1].points;
     var beste = affen.slice().sort(function (a, b) { return b.quote - a.quote; })[0];
+    /* Richtig getippt bringt keine Punkte mehr — sichtbar bleibt es trotzdem,
+       sonst wäre der Block der Wahrheit nur für den Abend gut. */
+    var hellseher = affen.slice().sort(function (a, b) { return b.tipExacts - a.tipExacts; })[0];
     var spruch = T.teaseRang(affen);
 
     return U.Card({
@@ -62,6 +66,9 @@
           zeile('Führt', erster.name, erster.points + ' Pkt'),
           zeile('Abstand auf Platz 2', abstand > 0 ? abstand + ' Punkte' : 'keiner', abstand > 0 ? '' : 'Gleichstand'),
           zeile('Beste Quote', beste.name, beste.quote + '%'),
+          hellseher && hellseher.tipExacts
+            ? zeile('Am öftesten richtig getippt', hellseher.name, SA.plural(hellseher.tipExacts, 'Treffer', 'Treffer'))
+            : null,
           zeile('Hält die Laterne', letzter.name, letzter.points + ' Pkt'))
       ]
     });

@@ -4,13 +4,12 @@
  *
  * Ein Unterschied zum Entwurf, mit Absicht:
  *
- * 1. Der Affenschlüssel ist kein geteilter Code mehr. Jeder Affe hat seinen
- *    eigenen — dieselbe PinInput, dieselbe Frechheit, aber das Log kann sagen,
- *    WER etwas geändert hat.
+ * 1. Das Code-Tor steht nicht mehr hier, sondern vor der ganzen App (js/gate.js).
+ *    Der Code schaltet die Oberfläche frei, nicht einzelne Knöpfe.
  * 2. Korrigiert werden Ergebnisse, nicht Endstände. Punkte, Siege und Abende
  *    rechnet die Engine aus den Abenden aus; sie direkt zu überschreiben hieße,
  *    neben die Wahrheit eine zweite zu stellen. Genau das soll das Log ja
- *    verhindern. Also wird an der Quelle korrigiert: Punktzahl, Tipp, Strafe.
+ *    verhindern. Also wird an der Quelle korrigiert: die Punktzahl aus dem Spiel.
  */
 (function () {
   'use strict';
@@ -18,122 +17,7 @@
 
   var reiter = 'ergebnisse';
   var abendId = null;
-  var entwurf = {};   // {spielId: {playerId: {score, tip, strafe}}}
-
-  /* Zustand des Tors auf Modulebene: jede Toast-Meldung zeichnet die Schale neu
-     und baut den Screen von vorn auf. Läge das hier drin, fiele man nach einem
-     Fehlversuch zurück auf die vier Ziffern — mit dem langen Schlüssel in der
-     Zwischenablage und keinem Feld dafür. */
-  var langerWeg = false;
-  var versuche = 0;
-  var falschStand = false;   // damit die Fehlermeldung das Neuzeichnen überlebt
-
-  // ══ Code-Tor ═════════════════════════════════════════════════════════════
-  function codeTor(state) {
-    var karte = h('div');
-
-    function zeichne(falsch) {
-      falschStand = !!falsch;
-      window.SA_DOM.mount(karte, falschStand ? (langerWeg ? schluesselKarte(true) : pinKarte(true))
-                                             : (langerWeg ? schluesselKarte(false) : pinKarte(false)));
-    }
-
-    /* Der alltägliche Weg: vier Ziffern, wie im Entwurf. */
-    function pinKarte(falsch) {
-      var pin = U.PinInput({
-        length: 4, invalid: falsch, autoFocus: true,
-        hint: falsch ? 'Falscher Code. Der Block merkt sich das.' : 'Deine vier Ziffern. Nicht die von jemand anderem.',
-        onComplete: pruefen
-      });
-      return U.Card({
-        tone: falsch ? 'live' : 'neon',
-        style: { width: 'min(420px, 100%)', animation: falsch ? 'sa-boing var(--dur-base) var(--ease-boing)' : null },
-        eyebrow: 'Nur für Affen mit Schlüssel',
-        title: 'Affenschlüssel',
-        children: [
-          h('span.sa-body', 'Vier Ziffern. Wer sie nicht hat, hat auch nichts zu ändern.'),
-          pin,
-          h('div.sa-inline', null,
-            U.Button({
-              children: 'Rein', iconLeft: 'lock_open',
-              onClick: function () {
-                var wert = Array.prototype.map.call(pin.querySelectorAll('input'), function (i) { return i.value; }).join('');
-                pruefen(wert);
-              }
-            }),
-            U.Button({ children: 'Löschen', variant: 'ghost', onClick: function () { pin.clear(); } })),
-          versuche >= 2 ? h('span.sa-meta', { style: { color: 'var(--punsch-400)' } }, demoTipp(state)) : null,
-          // Der lange Schlüssel aus den Worker-Secrets passt in kein Vier-Ziffern-
-          // Feld. Er ist auch nicht der Normalfall — nur die erste Einrichtung
-          // und der Weg zurück, wenn sich die Runde ausgesperrt hat.
-          window.SA_API.hasBackend() ? U.Button({
-            children: 'Mit Admin-Schlüssel', variant: 'ghost', size: 'sm', iconLeft: 'key',
-            onClick: function () { langerWeg = true; zeichne(false); }
-          }) : null
-        ]
-      });
-    }
-
-    /* Der seltene Weg: der lange Schlüssel aus `wrangler secret put`. */
-    function schluesselKarte(falsch) {
-      var feld = U.Input({
-        label: 'Admin-Schlüssel', type: 'password', icon: 'key',
-        placeholder: 'der lange aus wrangler secret put',
-        error: falsch ? 'Stimmt nicht. Groß- und Kleinschreibung zählt.' : null,
-        hint: falsch ? null : 'Für die erste Einrichtung und für den Fall, dass niemand mehr reinkommt.',
-        onKeyDown: function (e) { if (e.key === 'Enter') pruefen(feld.input.value.trim()); }
-      });
-      setTimeout(function () { feld.input.focus(); }, 30);
-      return U.Card({
-        tone: falsch ? 'live' : 'neon',
-        style: { width: 'min(420px, 100%)', animation: falsch ? 'sa-boing var(--dur-base) var(--ease-boing)' : null },
-        eyebrow: 'Erste Einrichtung',
-        title: 'Admin-Schlüssel',
-        children: [
-          h('span.sa-body', 'Der Schlüssel, den du beim Deploy gesetzt hast. Danach legst du Affen an und gibst ihnen ihre vier Ziffern.'),
-          feld,
-          h('div.sa-inline', null,
-            U.Button({
-              children: 'Rein', iconLeft: 'lock_open',
-              onClick: function () { pruefen(feld.input.value.trim()); }
-            }),
-            U.Button({
-              children: 'Zurück zu vier Ziffern', variant: 'ghost',
-              onClick: function () { langerWeg = false; zeichne(false); }
-            }))
-        ]
-      });
-    }
-
-    function pruefen(wert) {
-      if (!wert || wert.length < 4) return;
-      S.login(wert).then(function (spieler) {
-        // Nach dem Abmelden soll wieder das Vier-Ziffern-Tor vorn stehen.
-        langerWeg = false;
-        versuche = 0;
-        falschStand = false;
-        S.toast('Drin', 'Hallo ' + spieler.name + '. Bitte keine Dummheiten.', 'slime');
-      }).catch(function (err) {
-        versuche += 1;
-        zeichne(true);
-        S.toast('Falsch', err.status === 429
-          ? 'Zu viele Versuche. Kurz durchatmen.'
-          : versuche >= 2 ? 'Zweiter Versuch, gleiche Frechheit.' : 'Netter Versuch, Affe.', 'punsch');
-      });
-    }
-
-    // Nicht zeichne(false): ein Neuaufbau der Schale (jede Toast-Meldung löst
-    // einen aus) darf die Fehlermeldung nicht wegwischen.
-    zeichne(falschStand);
-    return h('div', { style: { display: 'grid', justifyItems: 'center', alignItems: 'center', minHeight: '60vh', width: '100%' } }, karte);
-  }
-
-  function demoTipp(state) {
-    if (state.source !== 'demo') return 'Code vergessen? Ein Admin setzt ihn neu.';
-    var codes = S.demoCodes();
-    var erster = Object.keys(codes)[0];
-    return 'Demo-Modus. Tipp für Verzweifelte: ' + codes[erster] + ' ist ' + erster + '. Aber das bleibt unter uns.';
-  }
+  var entwurf = {};   // {spielId: {playerId: {score}}}
 
   // ══ Ergebnisse korrigieren ═══════════════════════════════════════════════
   function ergebnisse(c) {
@@ -155,7 +39,7 @@
         h('div.sa-card__head', null,
           h('div.sa-card__heading', null,
             h('h3.sa-h3', 'Ergebnisse ändern'),
-            h('span.sa-meta', 'Punktzahl, Tipp und Strafe — alles andere rechnet die Engine daraus.')),
+            h('span.sa-meta', 'Die Punktzahl aus dem Spiel — Plätze und Siegpunkte rechnet die Engine daraus.')),
           null),
         h('div', { style: { padding: '0 var(--pad-card) var(--space-5)' } },
           U.Tabs({
@@ -170,7 +54,7 @@
     });
   }
 
-  var SPALTEN = '1fr 92px 92px 68px 108px';
+  var SPALTEN = '1fr 92px 108px';
 
   function spielBlock(c, abend, spiel) {
     entwurf[spiel.id] = entwurf[spiel.id] || {};
@@ -184,8 +68,7 @@
       return (spiel.results || []).some(function (r) {
         var d = entwurf[spiel.id][r.playerId] || {};
         return (d.score !== undefined && Number(d.score) !== Number(r.score)) ||
-               (d.tip !== undefined && String(d.tip) !== String(r.tip == null ? '' : r.tip)) ||
-               (d.strafe !== undefined && !!d.strafe !== !!r.strafe);
+               false;
       });
     }
 
@@ -209,14 +92,6 @@
           aenderungen.push({ pid: r.playerId, feld: 'score', von: r.score, zu: Number(d.score),
             text: 'Punktzahl von ' + name + ' bei ' + spiel.title + ' korrigiert.' });
         }
-        if (d.tip !== undefined && String(d.tip) !== String(r.tip == null ? '' : r.tip)) {
-          aenderungen.push({ pid: r.playerId, feld: 'tip', von: r.tip == null ? '—' : r.tip, zu: d.tip === '' ? '—' : Number(d.tip),
-            text: 'Tipp von ' + name + ' bei ' + spiel.title + ' korrigiert.' });
-        }
-        if (d.strafe !== undefined && !!d.strafe !== !!r.strafe) {
-          aenderungen.push({ pid: r.playerId, feld: 'strafe', von: r.strafe ? 'Strafe' : 'keine', zu: d.strafe ? 'Strafe' : 'keine',
-            text: 'Strafe von ' + name + ' bei ' + spiel.title + (d.strafe ? ' gesetzt.' : ' gestrichen.') });
-        }
       });
       if (!aenderungen.length) return;
 
@@ -229,8 +104,6 @@
           var r = g.results.filter(function (x) { return x.playerId === a.pid; })[0];
           if (!r) return;
           if (a.feld === 'score') r.score = a.zu;
-          if (a.feld === 'tip') { if (a.zu === '—') delete r.tip; else r.tip = a.zu; }
-          if (a.feld === 'strafe') { if (a.zu === 'Strafe') r.strafe = true; else delete r.strafe; }
         });
       }, {
         summary: spiel.title + ' am ' + SA.fmtDate(abend.date) + ' korrigiert',
@@ -243,32 +116,27 @@
       }).catch(function () { /* Meldung kam schon vom Store */ });
     }
 
-    return h('div', null,
-      h('div.sa-thead', { style: { gridTemplateColumns: SPALTEN } },
-        h('span', spiel.title), h('span', 'Punkte'), h('span', 'Tipp'), h('span', 'Strafe'), h('span', '')),
-      h('div.sa-scrollx', null, h('div', null, (spiel.results || []).map(function (r, i) {
+    /* Kopfzeile und Zeilen im selben Scroll-Kasten: stand der Kopf daneben,
+       schob er am Telefon die ganze Seite nach rechts. */
+    return h('div.sa-scrollx', null,
+      h('div', null,
+        h('div.sa-thead', { style: { gridTemplateColumns: SPALTEN } },
+          h('span', spiel.title), h('span', 'Punkte'), h('span', '')),
+        (spiel.results || []).map(function (r, i) {
         var affe = c.playerById[r.playerId] || { name: r.playerId, seat: 1 };
         var punkte = U.Input({
           size: 'sm', inputMode: 'numeric', value: String(r.score),
           onInput: function (e) { entwurf[spiel.id][r.playerId] = entwurf[spiel.id][r.playerId] || {}; entwurf[spiel.id][r.playerId].score = e.target.value; pruefeDreckig(); }
         });
-        var tipp = U.Input({
-          size: 'sm', inputMode: 'numeric', value: r.tip == null ? '' : String(r.tip), placeholder: '—',
-          onInput: function (e) { entwurf[spiel.id][r.playerId] = entwurf[spiel.id][r.playerId] || {}; entwurf[spiel.id][r.playerId].tip = e.target.value; pruefeDreckig(); }
-        });
-        var strafe = U.Checkbox({
-          label: '', checked: !!r.strafe,
-          onChange: function (e) { entwurf[spiel.id][r.playerId] = entwurf[spiel.id][r.playerId] || {}; entwurf[spiel.id][r.playerId].strafe = e.target.checked; pruefeDreckig(); }
-        });
         var node = h('div.sa-trow', { style: { gridTemplateColumns: SPALTEN } },
           h('span.sa-inline', { style: { flexWrap: 'nowrap', minWidth: 0 } },
             U.PlayerAvatar({ name: affe.name, seat: affe.seat, size: 'sm' }),
             h('span.sa-strong.sa-truncate', affe.name)),
-          punkte, tipp, strafe,
+          punkte,
           i === 0 ? h('span', { style: { display: 'flex', justifyContent: 'flex-end' } }, speichern) : h('span'));
         zeilenNodes.push(node);
         return node;
-      })))
+      }))
     );
   }
 
@@ -308,9 +176,10 @@
     return U.Card({
       padding: '0',
       children: [
+        /* „Affe hinzufügen" steht im Kopf der Seite — und ist dort für
+           Nicht-Admins gesperrt, was dieser Knopf hier nicht war. */
         h('div.sa-card__head', null,
-          h('div.sa-card__heading', null, h('h3.sa-h3', 'Affen')),
-          U.Button({ children: 'Affe hinzufügen', size: 'sm', iconLeft: 'user-plus', onClick: window.SA_DIALOGS.affeHinzufuegen })),
+          h('div.sa-card__heading', null, h('h3.sa-h3', 'Affen'))),
         aktiv.map(function (p) {
           var stand = S.affen('all', { includeEmpty: true }).filter(function (a) { return a.id === p.id; })[0] || { nights: 0, wins: 0 };
           return h('div.sa-row', null,
@@ -349,9 +218,10 @@
               U.Button({ children: 'Zurückholen', size: 'sm', variant: 'ghost', iconLeft: 'undo', disabled: belegt, onClick: function () { zurueckholen(p); } }));
           })
         ] : null,
-        h('div.sa-row', { style: { justifyContent: 'space-between' } },
-          h('span.sa-body', SA.SEATS.length + ' Sitzfarben, ' + frei.length + ' frei. Archivieren gibt eine zurück, Tauschen kostet keine.'),
-          U.Button({ children: 'Affe hinzufügen', size: 'sm', iconLeft: 'user-plus', onClick: window.SA_DIALOGS.affeHinzufuegen }))
+        /* Der Knopf steht oben im Kartenkopf — hier nur noch die Auskunft,
+           wie viele Farben überhaupt zu haben sind. */
+        h('div.sa-row', null,
+          h('span.sa-body', SA.SEATS.length + ' Sitzfarben, ' + frei.length + ' frei. Archivieren gibt eine zurück, Tauschen kostet keine.'))
       ]
     });
   }
@@ -467,13 +337,7 @@
   window.SA_SCREENS.admin = function (state, c) {
     var SH = window.SA_SHELL;
 
-    if (!state.me) {
-      return [
-        SH.ScreenHead({ eyebrow: 'Admin', title: 'Abgeschlossen', sub: 'Eintragen und ändern darf nur, wer seinen Code kennt.' }),
-        codeTor(state)
-      ];
-    }
-
+    // Ohne Anmeldung kommt hier niemand an: das Tor steht vor der ganzen App.
     var istAdmin = S.istAdmin();
     var reiterItems = [
       { id: 'ergebnisse', label: 'Ergebnisse' },
@@ -484,7 +348,9 @@
 
     return [
       SH.ScreenHead({
-        eyebrow: 'Angemeldet als ' + state.me.name + (istAdmin ? ' · Admin' : ''),
+        /* Hinter dem Tor zeichnet die App weiter — unscharf, aber sie zeichnet.
+           Also darf hier nichts davon ausgehen, dass jemand angemeldet ist. */
+        eyebrow: state.me ? 'Angemeldet als ' + state.me.name + (istAdmin ? ' · Admin' : '') : 'Admin',
         title: 'Admin',
         sub: istAdmin
           ? 'Hier wird die Geschichte umgeschrieben. Alles davon steht im Log.'

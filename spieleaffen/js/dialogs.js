@@ -194,11 +194,20 @@
   }
 
   // ── Ergebnis eintragen ───────────────────────────────────────────────────
-  /* Ein Spiel, ein Datum, je Affe Punkte + Tipp + Strafe. Daraus rechnet die
-     Engine Platzierungen, Tipp-Bonus und Abendsieg — hier wird nichts addiert. */
+  /* Eine Partie: ein Spiel, je Affe die Punktzahl daraus. Plätze, Siegpunkte
+     und Abendsieg rechnet die Engine — hier wird nichts addiert. Getippt wird
+     nur bei Wizard; dafür gibt es den Block der Wahrheit.
+     Mit {abendId} landet die Partie im laufenden Abend, und gefragt wird nur,
+     wer heute am Tisch sitzt. */
   function ergebnisEintragen(vorgabe) {
     var c = S.computed();
+    var laufend = vorgabe && vorgabe.abendId
+      ? (c.data.nights || []).filter(function (n) { return n.id === vorgabe.abendId; })[0]
+      : null;
     var affen = c.standings('all', { includeEmpty: true });
+    if (laufend) {
+      affen = affen.filter(function (a) { return (laufend.dabei || []).indexOf(a.id) >= 0; });
+    }
     if (affen.length < 2) { S.toast('Zu wenig Affen', 'Mindestens zwei, sonst ist es Solitär.', 'punsch'); return; }
     // Ohne Spiel im Regal hat die Auswahl keinen Eintrag — und das Speichern
     // lief vorher in einen Fehler, statt das zu sagen.
@@ -213,33 +222,36 @@
       options: c.shelf.map(function (g) { return { value: g.id, label: g.title + (g.lowerWins ? ' · weniger gewinnt' : '') }; })
     });
     var datumFeld = U.Input({ label: 'Datum', type: 'date', value: (vorgabe && vorgabe.date) || S.heute(), icon: 'calendar-days' });
+    // Im laufenden Abend steht das Datum fest — es ist ja heute Abend.
+    var datumZeile = laufend
+      ? h('span.sa-meta', 'Zählt zum laufenden Abend „' + (laufend.title || 'Spieleabend') + '".')
+      : datumFeld;
     var dauerFeld = U.Input({ label: 'Dauer', value: '', inputMode: 'numeric', suffix: 'min', icon: 'clock' });
 
     var zeilen = affen.map(function (a) {
       var punkte = U.Input({ size: 'sm', inputMode: 'numeric', placeholder: '—' });
-      var tipp = U.Input({ size: 'sm', inputMode: 'numeric', placeholder: '—' });
-      var strafe = { on: false };
-      var box = U.Checkbox({ label: '', onChange: function (e) { strafe.on = e.target.checked; } });
-      return { affe: a, punkte: punkte, tipp: tipp, strafe: strafe, box: box };
+      return { affe: a, punkte: punkte };
     });
 
     SH.overlay(function (close) {
       return U.Dialog({
-        tone: 'neon', width: 620, eyebrow: 'Ergebnis', title: 'Wer hat wie viel?', onClose: close,
+        tone: 'neon', width: 620, eyebrow: laufend ? 'Partie' : 'Nachtrag',
+        title: 'Wer hat wie viel?', onClose: close,
         children: [
-          h('div.sa-cols.sa-cols--half', null, spielFeld, datumFeld),
+          laufend ? spielFeld : h('div.sa-cols.sa-cols--half', null, spielFeld, datumFeld),
+          laufend ? datumZeile : null,
           dauerFeld,
           h('div.sa-card.sa-card--flush', null,
-            h('div.sa-thead', { style: { gridTemplateColumns: '1fr 92px 92px 64px' } },
-              h('span', 'Affe'), h('span', 'Punkte'), h('span', 'Tipp'), h('span', 'Strafe')),
+            h('div.sa-thead', { style: { gridTemplateColumns: '1fr 92px' } },
+              h('span', 'Affe'), h('span', 'Punkte')),
             zeilen.map(function (z) {
-              return h('div.sa-trow', { style: { gridTemplateColumns: '1fr 92px 92px 64px' } },
+              return h('div.sa-trow', { style: { gridTemplateColumns: '1fr 92px' } },
                 h('span.sa-inline', null,
                   U.PlayerAvatar({ name: z.affe.name, seat: z.affe.seat, size: 'sm' }),
                   h('span.sa-strong.sa-truncate', z.affe.name)),
-                z.punkte, z.tipp, z.box);
+                z.punkte);
             })),
-          h('span.sa-meta', 'Leer lassen heißt: war nicht dabei. Strafe kostet ' + SA.STRAFE_POINTS + ' Punkte.')
+          h('span.sa-meta', 'Leer lassen heißt: war nicht dabei. Die Plätze rechnet die App daraus.')
         ],
         footer: [
           U.Button({ children: 'Abbrechen', variant: 'ghost', onClick: close }),
@@ -249,13 +261,10 @@
               var spielId = spielFeld.select.value;
               var spiel = c.shelf.filter(function (g) { return g.id === spielId; })[0] || c.shelf[0];
               if (!spiel) { S.toast('Leeres Regal', 'Erst ein Spiel anlegen — unter Spiele.', 'punsch'); return; }
-              var datum = datumFeld.input.value || S.heute();
+              var datum = laufend ? laufend.date : (datumFeld.input.value || S.heute());
               var results = zeilen.filter(function (z) { return z.punkte.input.value.trim() !== ''; })
                 .map(function (z) {
-                  var r = { playerId: z.affe.id, score: Number(z.punkte.input.value) };
-                  if (z.tipp.input.value.trim() !== '') r.tip = Number(z.tipp.input.value);
-                  if (z.strafe.on) r.strafe = true;
-                  return r;
+                  return { playerId: z.affe.id, score: Number(z.punkte.input.value) };
                 });
               if (results.length < 2) { S.toast('Zahlen, bitte.', 'Mindestens zwei Affen brauchen ein Ergebnis.', 'punsch'); return; }
 
@@ -270,8 +279,10 @@
               var sieger = c.playerById[siegerId];
 
               S.update(function (doc) {
-                var abend = (doc.nights || []).filter(function (n) { return n.date === datum && n.status !== 'geplant'; })[0]
-                  || (doc.nights || []).filter(function (n) { return n.date === datum; })[0];
+                var abend = laufend
+                  ? (doc.nights || []).filter(function (n) { return n.id === laufend.id; })[0]
+                  : (doc.nights || []).filter(function (n) { return n.date === datum && n.status !== 'geplant'; })[0]
+                    || (doc.nights || []).filter(function (n) { return n.date === datum; })[0];
                 if (!abend) {
                   abend = {
                     id: SA.uid('n'), date: datum, title: 'Spieleabend', hostId: results[0].playerId,
@@ -280,6 +291,7 @@
                   };
                   doc.nights.push(abend);
                 }
+                // Ein laufender Abend bleibt laufend; ein nachgetragener ist fertig.
                 abend.status = abend.status === 'laeuft' ? 'laeuft' : 'fertig';
                 abend.games = (abend.games || []).concat([neuesSpiel]);
                 results.forEach(function (r) {
@@ -387,39 +399,145 @@
   }
 
   // ── Abend starten ────────────────────────────────────────────────────────
-  /* Ein laufender Abend braucht ein Spiel, in das die ±-Tasten schreiben
-     können. Wer beim Planen keins gewählt hat, bekommt das erste aus dem
-     Regal — umstellen geht auf dem Abend-Screen. */
-  function abendStarten(abend) {
+  /* Der Abend fängt leer an: Wer ist dabei, wie heißt er. Die Partien kommen
+     einzeln dazu, solange er läuft — kein Spiel wird auf Vorrat angelegt. */
+  function abendStarten(vorlage) {
     var c = S.computed();
-    var spiel = c.shelf.filter(function (g) { return g.id === abend.gameId; })[0] || c.shelf[0];
-    var dabei = (abend.dabei || []).length ? abend.dabei
-      : c.standings('all', { includeEmpty: true }).map(function (a) { return a.id; });
+    var affen = c.standings('all', { includeEmpty: true });
+    if (affen.length < 2) {
+      S.toast('Zu wenig Affen', 'Mindestens zwei, sonst ist es Solitär.', 'punsch');
+      return;
+    }
+    if (c.liveNight) {
+      S.toast('Läuft schon', 'Erst den laufenden Abend beenden.', 'punsch');
+      S.navigate('abend');
+      return;
+    }
 
-    return S.update(function (doc) {
-      var n = doc.nights.filter(function (x) { return x.id === abend.id; })[0];
-      if (!n) return false;
-      n.status = 'laeuft';
-      n.runde = n.runde || 1;
-      n.runden = n.runden || 7;
-      n.startedAt = S.uhr();
-      n.dabei = dabei;
-      if (!(n.games || []).length) {
-        n.games = [{
-          id: SA.uid('g'),
-          gameId: spiel ? spiel.id : null,
-          title: spiel ? spiel.title : 'Spieleabend',
-          lowerWins: !!(spiel && spiel.lowerWins),
-          results: dabei.map(function (pid) { return { playerId: pid, score: 0 }; })
-        }];
+    var dabei = (vorlage && (vorlage.dabei || []).length)
+      ? vorlage.dabei.slice()
+      : affen.map(function (a) { return a.id; });
+    var titelFeld = U.Input({
+      label: 'Wie heißt der Abend?', placeholder: 'z. B. Dienstags-Debakel',
+      value: (vorlage && vorlage.title) || ''
+    });
+
+    SH.overlay(function (close) {
+      var tagRow = h('div.sa-inline');
+      var hinweis = h('span.sa-meta');
+      function zeichneTags() {
+        window.SA_DOM.mount(tagRow, affen.map(function (a) {
+          return U.Tag({
+            children: a.name, color: U.seatVar(a.seat), size: 'sm',
+            selected: dabei.indexOf(a.id) >= 0,
+            onClick: function () {
+              var i = dabei.indexOf(a.id);
+              if (i >= 0) dabei.splice(i, 1); else dabei.push(a.id);
+              zeichneTags();
+            }
+          });
+        }));
+        hinweis.textContent = dabei.length < 2
+          ? 'Mindestens zwei. Alleine spielt sich das schlecht.'
+          : SA.plural(dabei.length, 'Affe', 'Affen') + ' am Tisch. Platz 1 bis 4 bringen 4/3/2/1 Punkte, ab dem fünften nichts.';
       }
-    }, {
-      summary: 'Abend „' + abend.title + '" gestartet',
-      entries: [{ icon: 'play', tone: 'punsch', text: 'Abend „' + abend.title + '" läuft.', to: S.uhr() }]
-    }).then(function (res) {
-      if (res !== null) S.navigate('abend');
-      return res;
-    }).catch(function () { /* Meldung kam schon vom Store */ });
+      zeichneTags();
+
+      return U.Dialog({
+        tone: 'neon', width: 520, eyebrow: 'Es geht los', title: 'Wer sitzt heute am Tisch?', onClose: close,
+        children: [
+          titelFeld,
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' } },
+            h('span.sa-label', 'Wer ist dabei?'), tagRow, hinweis)
+        ],
+        footer: [
+          U.Button({ children: 'Abbrechen', variant: 'ghost', onClick: close }),
+          U.Button({
+            children: 'Abend starten', iconLeft: 'play',
+            onClick: function () {
+              if (dabei.length < 2) { S.toast('Zu wenig', 'Alleine spielt sich das schlecht.', 'punsch'); return; }
+              var titel = titelFeld.input.value.trim() || 'Spieleabend';
+              S.update(function (doc) {
+                doc.nights = doc.nights || [];
+                // Ein geplanter Abend wird gestartet statt verdoppelt.
+                var n = vorlage ? doc.nights.filter(function (x) { return x.id === vorlage.id; })[0] : null;
+                if (!n) {
+                  n = { id: SA.uid('n'), date: S.heute(), snacks: [], games: [] };
+                  doc.nights.push(n);
+                }
+                n.title = titel;
+                n.date = S.heute();
+                n.status = 'laeuft';
+                n.startedAt = S.uhr();
+                n.dabei = dabei.slice();
+                n.hostId = n.hostId || dabei[0];
+                n.games = n.games || [];
+              }, {
+                summary: 'Abend „' + titel + '" gestartet',
+                entries: [{ icon: 'play', tone: 'punsch', text: 'Abend „' + titel + '" läuft.', to: S.uhr() }]
+              }).then(function (res) {
+                close();
+                if (res !== null) {
+                  S.navigate('abend');
+                  S.toast('Läuft', titel + ' hat begonnen. Jetzt zählt es.', 'punsch');
+                }
+              }).catch(function () { /* Meldung kam schon vom Store */ });
+            }
+          })
+        ]
+      });
+    });
+  }
+
+  // ── Abend beenden ────────────────────────────────────────────────────────
+  /* Schluss ist, wenn ihr sagt, dass Schluss ist. Danach steht die Auswertung
+     auf dem Abend-Screen, und die Partien wandern in die Gesamttabelle. */
+  function abendBeenden(abend) {
+    var c = S.computed();
+    var partien = (abend.games || []).length;
+    if (!partien) {
+      S.toast('Nichts gespielt', 'Ohne Partie gibt es nichts auszuwerten.', 'punsch');
+      return;
+    }
+    var ev = SA.evalNight(abend);
+    var sieger = ev.winners.map(function (pid) { return (c.playerById[pid] || {}).name; }).filter(Boolean);
+
+    SH.overlay(function (close) {
+      return U.Dialog({
+        tone: 'neon', width: 460, eyebrow: 'Feierabend', title: 'Abend beenden?', onClose: close,
+        children: [
+          h('span.sa-body', SA.plural(partien, 'Partie', 'Partien') + ' gespielt. ' +
+            (sieger.length ? sieger.join(' und ') + ' ' + (sieger.length > 1 ? 'führen' : 'führt') + '.' : 'Noch niemand vorn.')),
+          h('span.sa-meta', 'Danach kommt die Auswertung, und die Punkte stehen in der Gesamttabelle. Nachträglich ändern geht nur noch im Admin.')
+        ],
+        footer: [
+          U.Button({ children: 'Weiterspielen', variant: 'ghost', onClick: close }),
+          U.Button({
+            children: 'Beenden', iconLeft: 'check',
+            onClick: function () {
+              S.update(function (doc) {
+                var n = doc.nights.filter(function (x) { return x.id === abend.id; })[0];
+                if (!n) return false;
+                n.status = 'fertig';
+                n.endedAt = S.uhr();
+              }, {
+                summary: 'Abend „' + abend.title + '" beendet',
+                entries: [{
+                  icon: 'flag', tone: 'slime',
+                  text: 'Abend „' + abend.title + '" beendet. Sieger: ' + (sieger.join(' & ') || '—') + '.',
+                  to: SA.plural(partien, 'Partie', 'Partien')
+                }]
+              }).then(function () {
+                close();
+                S.toast('Feierabend', sieger.length
+                  ? sieger.join(' und ') + ' hat den Abend geholt. Der Rest weiß, warum.'
+                  : 'Abend beendet. Unentschieden ist auch ein Ergebnis.', 'slime');
+              }).catch(function () { /* Meldung kam schon vom Store */ });
+            }
+          })
+        ]
+      });
+    });
   }
 
   // ── Sitzfarbe ändern ─────────────────────────────────────────────────────
@@ -519,6 +637,7 @@
     startaufstellung: startaufstellung,
     spielHinzufuegen: spielHinzufuegen,
     abendStarten: abendStarten,
+    abendBeenden: abendBeenden,
     ergebnisEintragen: ergebnisEintragen,
     affeHinzufuegen: affeHinzufuegen,
     standardSnacks: standardSnacks

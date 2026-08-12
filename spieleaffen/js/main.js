@@ -27,7 +27,7 @@
 
   S.init().then(function () {
     var state = S.get();
-    if (!gueltig(state.view)) state.view = 'uebersicht';
+    if (!gueltig(state.view)) state.view = 'abend';
     S.on(function (s, opts) { SH.render(root, s, opts); });
     SH.render(root, state);
     if (state.loadError) {
