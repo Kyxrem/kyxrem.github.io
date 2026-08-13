@@ -1,0 +1,10 @@
+node_modules/
+package-lock.json
+
+# throwaway copies used to force a fresh document while testing
+_probe*.html
+_p[0-9]*.html
+
+.DS_Store
+Thumbs.db
+.claude/settings.local.json

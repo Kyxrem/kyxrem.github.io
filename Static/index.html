@@ -494,21 +494,42 @@ footer a{color:var(--accent);text-decoration:none}
 /* ============================================================
    THE TOGGLE  —  looks like an off switch. it is not.
    ============================================================ */
+/* three states: OFF (default, real) -> ON (the normal design) -> MAX (overdrive) */
 .anitog{display:inline-flex;align-items:center;gap:.5rem;font:inherit;font-size:.6rem;letter-spacing:.2em;
   padding:.3rem .6rem .3rem .35rem;border-radius:20px;cursor:none;color:var(--dim);
   background:rgba(255,255,255,.04);border:1px solid rgba(90,106,136,.4);transition:.25s}
 .anitog:hover{color:#fff;border-color:var(--accent);box-shadow:0 0 16px color-mix(in srgb,var(--accent) 40%,transparent)}
-.ani-sw{position:relative;width:30px;height:16px;border-radius:10px;flex:none;
-  background:color-mix(in srgb,var(--accent) 55%,transparent);transition:.3s}
-.ani-sw::after{content:"";position:absolute;top:2px;left:16px;width:12px;height:12px;border-radius:50%;
-  background:var(--accent);box-shadow:0 0 10px var(--accent);transition:.3s cubic-bezier(.2,.8,.2,1)}
-.anitog.off .ani-sw{background:rgba(90,106,136,.35)}
-.anitog.off .ani-sw::after{left:2px;background:var(--dim);box-shadow:none}
-.ani-state{font-weight:700;color:var(--accent)}
-.anitog.off .ani-state{color:var(--dim)}
+.ani-sw{position:relative;width:38px;height:16px;border-radius:10px;flex:none;
+  background:rgba(90,106,136,.3);transition:.3s}
+.ani-sw::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;
+  background:var(--dim);transition:.3s cubic-bezier(.2,.8,.2,1)}
+.anitog.s-on  .ani-sw{background:color-mix(in srgb,var(--accent) 45%,transparent)}
+.anitog.s-on  .ani-sw::after{left:13px;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+.anitog.s-max .ani-sw{background:var(--accent)}
+.anitog.s-max .ani-sw::after{left:24px;background:#fff;box-shadow:0 0 14px #fff}
+.ani-state{font-weight:700;color:var(--dim);min-width:3.2em}
+.anitog.s-on .ani-state{color:var(--accent)}
+.anitog.s-max .ani-state{color:#fff;text-shadow:0 0 10px #fff}
 body.overdrive .anitog{animation:od-togglePanic .35s infinite;border-color:#fff;color:#fff}
-body.overdrive .ani-state{color:#fff;text-shadow:0 0 10px #fff}
 @keyframes od-togglePanic{0%,100%{transform:rotate(-2deg) scale(1)}50%{transform:rotate(2deg) scale(1.08)}}
+
+/* ============================================================
+   ANIMATIONS OFF — the default. A real off, for actually learning.
+   Same shape as the prefers-reduced-motion block below.
+   ============================================================ */
+body.anim-off *,body.anim-off *::before,body.anim-off *::after{
+  animation:none!important;transition:none!important}
+body.anim-off #fx,body.anim-off .grid-floor,body.anim-off .scan,
+body.anim-off #odfx,body.anim-off #shout,body.anim-off #flashwhite,body.anim-off #hud{display:none!important}
+body.anim-off::before{display:none}
+/* The glitch layers are opaque boxes clipped ONLY by their keyframes — with
+   animation off they cover the title in solid --bg. Nothing to show when still. */
+body.anim-off .glitch::before,body.anim-off .glitch::after{display:none}
+body.anim-off .vig{box-shadow:inset 0 0 16vw 4vw rgba(0,0,0,.7)}
+body.anim-off.js .reveal,body.anim-off .reveal{opacity:1!important;transform:none!important;filter:none!important}
+body.anim-off .sol-k,body.anim-off .sol-lit,body.anim-off .sol-hint,
+body.anim-off .tile,body.anim-off .call,body.anim-off .stx-tbl tr{opacity:1!important;transform:none!important}
+body.anim-off .stx-tbl .bar i{width:var(--w)!important}
 
 /* the fake-out: everything goes still for a beat, as if it worked */
 body.od-calm #fx,body.od-calm .grid-floor,body.od-calm .scan,body.od-calm::before{opacity:.06!important;transition:opacity .35s}
@@ -623,7 +644,8 @@ body.overdrive .tierbadge,body.overdrive .mode-chip{animation:od-key .25s infini
 }
 </style>
 </head>
-<body data-mode="normal">
+<!-- anim-off is the default, set here so there is no burst of motion before JS runs -->
+<body data-mode="normal" class="anim-off">
 
 <canvas id="fx"></canvas>
 <div class="grid-floor"></div>
@@ -722,8 +744,8 @@ body.overdrive .tierbadge,body.overdrive .mode-chip{animation:od-key .25s infini
     <button class="mode-btn" data-m="visual">VISUAL</button>
     <button class="mode-btn" data-m="command">COMMAND</button>
     <span class="grow"></span>
-    <button class="anitog" id="btnAnim" title="turn off the animations">
-      <span class="ani-sw"></span><span class="ani-lab">ANIMATIONS</span><span class="ani-state" id="aniState">ON</span>
+    <button class="anitog s-off" id="btnAnim" title="animations are off — click to turn them on">
+      <span class="ani-sw"></span><span class="ani-lab">ANIMATIONS</span><span class="ani-state" id="aniState">OFF</span>
     </button>
     <a href="#dojo">DOJO</a>&nbsp;<a href="#cmds">COMMANDS</a>
   </div>
@@ -839,7 +861,9 @@ const esc  = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt
 const escA = s => esc(s).replace(/"/g,"&quot;");          // safe inside an attribute
 const CARDBY = new Map();                                  // exact cheat-sheet token -> card (filled in §6)
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let overdrive=false;                       // see "THE TOGGLE" near the end
+// declared up here so the canvas loop and burst() can read them without a TDZ
+// risk — see "THE ANIMATION TOGGLE" further down for the state machine.
+let overdrive=false, animMode="off";       // "off" (default) | "on" | "max"
 
 /* ============================================================
    1. CANVAS FX
@@ -863,6 +887,7 @@ new ResizeObserver(resize).observe(document.documentElement);
 resize();
 
 function burst(x,y,n,spread,color){
+  if(animMode==="off") return;
   const a=color||ACC();
   const N=overdrive?n*3:n, S=overdrive?spread*1.8:spread;
   for(let i=0;i<N;i++){
@@ -875,7 +900,8 @@ function burst(x,y,n,spread,color){
 let mx=innerWidth/2,my=innerHeight/2,pmx=mx,pmy=my;
 let last=0, frame=0;
 function loop(t){
-  requestAnimationFrame(loop);
+  requestAnimationFrame(loop);            // keep scheduling so it can resume
+  if(animMode==="off") return;            // real off: no drawing, ~no CPU
   if(t-last<16) return; last=t;
   // Fade by ERASING alpha, not by painting dark paint over the top. Painting
   // rgba(4,5,10,.20) each frame stacked into an opaque sheet that buried the page
@@ -989,7 +1015,7 @@ let lastFlash=0;
 // photosensitive-seizure threshold (WCAG 2.3.1). This cap holds in overdrive too —
 // that mode goes wild with colour and motion, never with strobing the whole screen.
 function flash(){
-  if(REDUCED) return;
+  if(REDUCED||animMode==="off") return;
   const now=Date.now();
   if(now-lastFlash<400) return;
   lastFlash=now;
@@ -999,6 +1025,7 @@ const shoutEl=$("#shout");
 // quick=true for routine per-puzzle messages; everything you actually need to
 // read (verdicts, rule broken, rival left) gets the full, slower hold.
 function shout(txt,sub="",quick=false){
+  if(animMode==="off") return;          // the same info is in #nextBar and the stats bar
   $(".t",shoutEl).textContent=txt; $(".s",shoutEl).textContent=sub;
   shoutEl.classList.remove("go","quick"); void shoutEl.offsetWidth;
   shoutEl.classList.add("go"); if(quick) shoutEl.classList.add("quick");
@@ -1006,15 +1033,24 @@ function shout(txt,sub="",quick=false){
 }
 const hud=$("#hud");
 function cap(k){
+  if(animMode==="off") return;          // #keyfeed still shows the keys, statically
   const d=document.createElement("div");
   d.className="cap"; d.textContent=k;
   hud.appendChild(d); setTimeout(()=>d.remove(),900);
   while(hud.children.length>6) hud.firstChild.remove();
 }
 /* ============================================================
-   THE TOGGLE — presents as an off switch for the animations.
-   It is not an off switch. Second click really does restore calm.
+   THE ANIMATION TOGGLE — three states, cycled by one button.
+     off (default) : a real off. no canvas, no bursts, no shouts, no motion.
+     on            : the normal design.
+     max           : overdrive.
    ============================================================ */
+const ANIM=["off","on","max"];
+const ANIM_UI={
+  off:{label:"OFF", title:"animations are off — click to turn them on"},
+  on :{label:"ON",  title:"click for maximum animations"},
+  max:{label:"MAX", title:"click to turn animations off"},
+};
 const OD_STEP=37;                       // hue jump per tick
 let odHue=0, odTimer=null;
 function odTick(){
@@ -1022,39 +1058,45 @@ function odTick(){
   document.body.style.setProperty("--accent", `hsl(${odHue},100%,60%)`);
   document.body.style.setProperty("--accent2",`hsl(${(odHue+140)%360},100%,60%)`);
 }
-function startOverdrive(){
-  overdrive=true;
-  document.body.classList.add("overdrive");
-  $("#btnAnim").classList.remove("off");
-  $("#aniState").textContent="MAXIMUM";
-  $("#btnAnim").title="that is not what that button did";
-  resize();                             // denser, faster rain
-  // hue cycling rather than luminance strobing: the whole page recolours through
-  // var(--accent) without ever flashing the viewport light/dark.
-  if(!REDUCED){ clearInterval(odTimer); odTimer=setInterval(odTick,160); }
-  shout("MAXIMUM OVERDRIVE","YOU PRESSED THE WRONG BUTTON");
-  for(let i=0;i<16;i++) setTimeout(()=>burst(innerWidth*Math.random(),innerHeight*Math.random(),60,14),i*70);
-}
-function stopOverdrive(){
-  overdrive=false;
+
+function applyAnim(m){
+  animMode=m;
+  overdrive=(m==="max");
+  document.body.classList.toggle("anim-off",m==="off");
+  document.body.classList.toggle("overdrive",m==="max");
+  document.body.classList.remove("od-calm");
+  $("#btnAnim").className="anitog s-"+m;
+  $("#aniState").textContent=ANIM_UI[m].label;
+  $("#btnAnim").title=ANIM_UI[m].title;
+
   clearInterval(odTimer); odTimer=null;
-  document.body.classList.remove("overdrive","od-calm");
-  document.body.style.removeProperty("--accent");
-  document.body.style.removeProperty("--accent2");
-  $("#btnAnim").classList.remove("off");
-  $("#aniState").textContent="ON";
-  $("#btnAnim").title="turn off the animations";
+  if(m==="max"){
+    // hue cycling rather than luminance strobing: the whole page recolours through
+    // var(--accent) without ever flashing the viewport light/dark.
+    if(!REDUCED) odTimer=setInterval(odTick,160);
+  }else{
+    document.body.style.removeProperty("--accent");
+    document.body.style.removeProperty("--accent2");
+  }
   parts.length=0;
-  resize();
-  shout("CALM RESTORED","THE ANIMATIONS ARE STILL ON");
+  resize();                             // column density differs per mode
+  if(m==="off") cx.clearRect(0,0,W,H);  // loop stops drawing; wipe what is there
 }
-function toggleAnim(){
-  if(overdrive) return stopOverdrive();
-  // the joke needs a beat: the switch flips, everything freezes, it looks like it worked
-  $("#btnAnim").classList.add("off");
-  $("#aniState").textContent="OFF";
-  document.body.classList.add("od-calm");
-  setTimeout(()=>{ document.body.classList.remove("od-calm"); startOverdrive(); },700);
+
+function cycleAnim(){
+  const next=ANIM[(ANIM.indexOf(animMode)+1)%ANIM.length];
+  if(next==="max"){
+    // a beat of stillness, then the explosion
+    document.body.classList.add("od-calm");
+    setTimeout(()=>{
+      applyAnim("max");
+      shout("MAXIMUM OVERDRIVE","EVERY DIAL AT ONCE");
+      for(let i=0;i<16;i++) setTimeout(()=>burst(innerWidth*Math.random(),innerHeight*Math.random(),60,14),i*70);
+    },600);
+    return;
+  }
+  applyAnim(next);
+  if(next==="on") shout("ANIMATIONS ON","CLICK AGAIN FOR MAXIMUM");
 }
 
 function label(e){
@@ -2145,7 +2187,7 @@ $$("#lenChips .chip").forEach(b=>b.addEventListener("click",()=>{
   $$("#lenChips .chip").forEach(x=>x.classList.toggle("on",x===b));
   chipBurst(b);
 }));
-$("#btnAnim").addEventListener("click",toggleAnim);
+$("#btnAnim").addEventListener("click",cycleAnim);
 $("#btnRel").addEventListener("click",()=>setRelative(!relNums));
 $("#btnRun").addEventListener("click",startRun);
 $("#btnFinish").addEventListener("click",()=>{ if(mode==="random") finishRun(); });

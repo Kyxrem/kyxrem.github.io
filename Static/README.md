@@ -49,15 +49,15 @@ identifiers differ every draw. Measured at 99.8% distinct documents over 500 dra
 Static files only — no build step, no server to run. Single-player makes no network calls at
 all; versus mode reaches the public PeerJS broker to introduce the two players (see above).
 
+This lives at `Static/` inside the **kyxrem.github.io** user-site repo, which publishes
+from the root of `main`. So there is nothing to configure — commit and push:
+
 ```bash
-git init && git add -A && git commit -m "vim dojo"
-git branch -M main
-git remote add origin https://github.com/<you>/<repo>.git
-git push -u origin main
+git add Static && git commit -m "..." && git push origin main
 ```
 
-Then **Settings → Pages → Source: Deploy from a branch → `main` / `(root)`**.
-It goes live at `https://<you>.github.io/<repo>/`.
+It goes live at `https://kyxrem.github.io/Static/`. All asset paths are relative
+(`vendor/cm-vim.js`), so the subdirectory needs no special handling.
 
 ## Files
 
@@ -91,6 +91,24 @@ npm i codemirror @replit/codemirror-vim @codemirror/lang-javascript peerjs esbui
 npx esbuild vendor/entry.js --bundle --minify --format=iife --target=es2020 --legal-comments=none --outfile=vendor/cm-vim.js
 npx esbuild vendor/peer-entry.js --bundle --minify --format=iife --target=es2020 --legal-comments=none --outfile=vendor/peerjs.js
 ```
+
+## Animations
+
+The **ANIMATIONS** switch in the top bar cycles three states:
+
+| State | What it does |
+|---|---|
+| **OFF** *(default)* | A real off. Canvas stopped, no particles, no full-screen messages, no motion or transitions anywhere. For learning without distraction. |
+| **ON** | The normal neon design. |
+| **MAX** | Overdrive — hue cycling, screen shake, tearing, confetti storm. |
+
+Off is genuinely off, not just paused: the render loop stops drawing, `burst()`,
+`shout()`, `flash()` and the keycap HUD all no-op. Nothing is lost — cleared/par
+info still appears in the status bar and the banner under the buffer, and the
+key feed still lists your keystrokes as text.
+
+Full-viewport luminance flashes are capped below three per second in every mode
+(WCAG 2.3.1), and `prefers-reduced-motion` neuters MAX independently.
 
 ## Keys outside vim
 
