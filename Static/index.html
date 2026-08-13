@@ -1,0 +1,2333 @@
+<!DOCTYPE html>
+<html lang="en" class="js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VIM DOJO // NEON GRID</title>
+<meta name="description" content="Practice real vim in the browser. Neon vim-golf challenges powered by CodeMirror 6.">
+<style>
+/* ============================================================
+   VIM DOJO — neon grid. No network at runtime; vendor/ is local.
+   ============================================================ */
+:root{
+  --bg:#04050a; --ink:#c8d4e8; --dim:#5a6a88;
+  --n-cyan:#00f0ff; --n-mag:#ff00c8; --n-grn:#39ff14; --n-yel:#ffd60a; --n-pur:#b026ff;
+  --accent:var(--n-cyan); --accent2:var(--n-mag);
+  --mono:ui-monospace,"SFMono-Regular",Consolas,"Cascadia Mono","Liberation Mono",Menlo,monospace;
+}
+/* the REAL vim mode drives this attribute — the whole page repaints with you */
+body[data-mode="normal"] { --accent:var(--n-cyan); --accent2:var(--n-pur); }
+body[data-mode="insert"] { --accent:var(--n-grn);  --accent2:var(--n-cyan); }
+body[data-mode="visual"] { --accent:var(--n-mag);  --accent2:var(--n-pur); }
+body[data-mode="command"]{ --accent:var(--n-yel);  --accent2:var(--n-mag); }
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--mono);overflow-x:hidden;cursor:none;transition:background .6s}
+body::before{
+  content:"";position:fixed;inset:-20%;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(40% 40% at 20% 15%, color-mix(in srgb,var(--accent) 18%,transparent), transparent 70%),
+    radial-gradient(45% 45% at 80% 75%, color-mix(in srgb,var(--accent2) 16%,transparent), transparent 70%);
+  animation:aura 14s ease-in-out infinite alternate;transition:background .6s;
+}
+@keyframes aura{from{transform:translate3d(-2%,-1%,0) scale(1)}to{transform:translate3d(3%,2%,0) scale(1.12)}}
+
+#fx{position:fixed;inset:0;z-index:1;pointer-events:none}
+.scan{position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.55;mix-blend-mode:overlay;
+  background:repeating-linear-gradient(to bottom,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)}
+.scan::after{content:"";position:absolute;left:0;right:0;height:22vh;
+  background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--accent) 9%,transparent),transparent);
+  animation:sweep 7s linear infinite}
+@keyframes sweep{from{top:-25vh}to{top:105vh}}
+.vig{position:fixed;inset:0;z-index:59;pointer-events:none;box-shadow:inset 0 0 22vw 6vw rgba(0,0,0,.85)}
+.grid-floor{position:fixed;left:-50%;right:-50%;bottom:-10vh;height:55vh;z-index:1;pointer-events:none;opacity:.5;
+  background-image:
+    linear-gradient(color-mix(in srgb,var(--accent) 35%,transparent) 1px,transparent 1px),
+    linear-gradient(90deg,color-mix(in srgb,var(--accent) 35%,transparent) 1px,transparent 1px);
+  background-size:60px 60px;transform:perspective(340px) rotateX(74deg);
+  mask-image:linear-gradient(to top,#000 0%,transparent 78%);animation:floor 3.2s linear infinite}
+@keyframes floor{from{background-position:0 0}to{background-position:0 60px}}
+
+/* 200/199: the custom cursor stands in for the OS pointer, so it must sit above
+   every overlay — lobby and stats are 98, countdown 99. */
+#cursor{position:fixed;z-index:200;width:14px;height:22px;margin:-3px 0 0 -3px;background:var(--accent);
+  pointer-events:none;mix-blend-mode:difference;box-shadow:0 0 14px var(--accent),0 0 40px var(--accent);
+  transition:transform .12s,opacity .2s,background .5s}
+#cursor.down{transform:scale(.6)}
+#cursor.gone,#ring.gone{opacity:0}
+#ring{position:fixed;z-index:199;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;opacity:.7;
+  border:1px solid color-mix(in srgb,var(--accent) 70%,transparent);pointer-events:none;
+  transition:width .2s,height .2s,margin .2s,opacity .3s}
+#ring.hot{width:82px;height:82px;margin:-41px 0 0 -41px;opacity:1;
+  box-shadow:0 0 24px color-mix(in srgb,var(--accent) 55%,transparent) inset,0 0 24px color-mix(in srgb,var(--accent) 45%,transparent)}
+
+#prog{position:fixed;top:0;left:0;height:3px;width:0;z-index:95;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));box-shadow:0 0 16px var(--accent)}
+
+.wrap{position:relative;z-index:10;max-width:1180px;margin:0 auto;padding:0 22px}
+
+/* ---------- hero ---------- */
+header.hero{position:relative;z-index:10;min-height:100svh;display:grid;place-items:center;text-align:center;padding:4rem 1rem}
+.tagline{letter-spacing:.7em;font-size:.72rem;color:var(--accent);text-transform:uppercase;margin-bottom:1.4rem;
+  text-shadow:0 0 12px var(--accent);animation:flick 4.5s infinite}
+@keyframes flick{0%,97%,100%{opacity:1}98%{opacity:.25}99%{opacity:.8}}
+.glitch{position:relative;font-size:clamp(4rem,17vw,13rem);line-height:.85;font-weight:800;letter-spacing:.04em;color:#fff;
+  text-shadow:0 0 8px var(--accent),0 0 28px var(--accent),0 0 70px var(--accent),0 0 130px var(--accent2);
+  animation:pulseGlow 3.4s ease-in-out infinite}
+@keyframes pulseGlow{50%{text-shadow:0 0 4px var(--accent),0 0 14px var(--accent),0 0 40px var(--accent),0 0 90px var(--accent2)}}
+.glitch::before,.glitch::after{content:attr(data-text);position:absolute;inset:0;background:var(--bg)}
+.glitch::before{color:var(--n-mag);animation:gl1 3.1s infinite linear alternate-reverse;text-shadow:2px 0 var(--n-mag)}
+.glitch::after{color:var(--n-cyan);animation:gl2 2.3s infinite linear alternate-reverse;text-shadow:-2px 0 var(--n-cyan)}
+@keyframes gl1{0%,100%{clip-path:inset(90% 0 2% 0);transform:translate(0)}20%{clip-path:inset(14% 0 74% 0);transform:translate(-4px,1px)}
+  40%{clip-path:inset(54% 0 30% 0);transform:translate(4px,-1px)}60%{clip-path:inset(30% 0 60% 0);transform:translate(-2px,0)}
+  80%{clip-path:inset(70% 0 12% 0);transform:translate(3px,1px)}}
+@keyframes gl2{0%,100%{clip-path:inset(6% 0 88% 0);transform:translate(0)}25%{clip-path:inset(66% 0 20% 0);transform:translate(5px,-2px)}
+  50%{clip-path:inset(38% 0 48% 0);transform:translate(-5px,2px)}75%{clip-path:inset(82% 0 8% 0);transform:translate(2px,0)}}
+.sub{margin-top:1.4rem;color:var(--dim);font-size:clamp(.8rem,1.6vw,1.05rem);letter-spacing:.22em}
+.sub b{color:var(--accent);font-weight:600}
+.cta{margin-top:2.4rem;display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap}
+.btn{font:inherit;font-size:.72rem;letter-spacing:.24em;padding:.8rem 1.5rem;cursor:none;border-radius:2px;
+  background:transparent;color:var(--accent);border:1px solid var(--accent);transition:.25s;position:relative;overflow:hidden}
+.btn:hover{background:var(--accent);color:#04050a;box-shadow:0 0 34px var(--accent),0 0 90px color-mix(in srgb,var(--accent) 45%,transparent)}
+.btn::after{content:"";position:absolute;inset:0;transform:translateX(-130%);
+  background:linear-gradient(120deg,transparent 40%,rgba(255,255,255,.55),transparent 60%)}
+.btn:hover::after{animation:shine .7s ease}
+@keyframes shine{to{transform:translateX(130%)}}
+.scrolldown{margin-top:2.2rem;font-size:1.6rem;color:var(--accent);animation:bob 1.8s ease-in-out infinite;text-shadow:0 0 18px var(--accent)}
+@keyframes bob{50%{transform:translateY(14px);opacity:.45}}
+
+/* ---------- mode rail ---------- */
+.rail{position:sticky;top:0;z-index:50;backdrop-filter:blur(9px);
+  background:linear-gradient(to bottom,rgba(4,5,10,.94),rgba(4,5,10,.6));
+  border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
+.rail-in{max-width:1180px;margin:0 auto;padding:.7rem 22px;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.rail .lbl{font-size:.62rem;letter-spacing:.35em;color:var(--dim);margin-right:.5rem}
+.mode-btn{font:inherit;font-size:.68rem;letter-spacing:.22em;padding:.45rem .95rem;cursor:none;position:relative;overflow:hidden;
+  background:transparent;color:var(--dim);border:1px solid rgba(90,106,136,.35);border-radius:2px;transition:.25s}
+.mode-btn:hover{color:#fff;border-color:var(--accent);box-shadow:0 0 18px color-mix(in srgb,var(--accent) 40%,transparent)}
+.mode-btn.on{color:#04050a;background:var(--accent);border-color:var(--accent);font-weight:700;
+  box-shadow:0 0 26px var(--accent),0 0 60px color-mix(in srgb,var(--accent) 45%,transparent)}
+.rail .grow{flex:1}
+.rail a{color:var(--dim);font-size:.66rem;letter-spacing:.2em;text-decoration:none;transition:.2s}
+.rail a:hover{color:var(--accent);text-shadow:0 0 14px var(--accent)}
+
+/* ---------- sections ---------- */
+section{position:relative;z-index:10;padding:5rem 0}
+h2.sec{font-size:clamp(1.4rem,4.2vw,2.5rem);letter-spacing:.16em;margin:0 0 .5rem;color:#fff;cursor:none;
+  text-shadow:0 0 12px var(--accent),0 0 44px color-mix(in srgb,var(--accent) 55%,transparent)}
+h2.sec::before{content:":: ";color:var(--accent)}
+.sec-note{color:var(--dim);font-size:.76rem;letter-spacing:.16em;margin:0 0 2.2rem;line-height:1.7}
+
+/* ---------- DOJO ---------- */
+.dojo{display:grid;grid-template-columns:250px 1fr;gap:18px;align-items:start}
+@media(max-width:900px){.dojo{grid-template-columns:1fr}}
+
+.levels{border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);border-radius:4px;background:rgba(8,11,22,.7);
+  overflow:hidden;position:sticky;top:52px}
+@media(max-width:900px){.levels{position:static}}
+.lv-h{font-size:.6rem;letter-spacing:.32em;color:var(--dim);padding:.7rem .9rem .4rem}
+.levels ol{list-style:none;margin:0;padding:0 0 .6rem}
+.lv{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;font:inherit;font-size:.72rem;letter-spacing:.06em;
+  padding:.5rem .9rem;background:transparent;border:0;border-left:2px solid transparent;color:var(--dim);cursor:none;transition:.2s}
+.lv:hover{color:#fff;background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.lv.on{color:var(--accent);border-left-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);
+  text-shadow:0 0 12px var(--accent)}
+.lv .num{width:1.6em;flex:none;opacity:.5;font-variant-numeric:tabular-nums}
+.lv .tick{margin-left:auto;color:var(--n-grn);text-shadow:0 0 10px var(--n-grn);opacity:0;transition:.3s;transform:scale(.4)}
+.lv.done .tick{opacity:1;transform:none}
+
+/* random-run controls */
+.rnd{padding:0 .8rem .9rem}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.chip{font:inherit;font-size:.58rem;letter-spacing:.16em;padding:.34rem .5rem;cursor:none;border-radius:2px;
+  background:transparent;color:var(--dim);border:1px solid rgba(90,106,136,.35);transition:.22s;position:relative;overflow:hidden}
+.chip:hover{color:#fff;border-color:var(--t);box-shadow:0 0 14px color-mix(in srgb,var(--t) 45%,transparent)}
+.chip.on{color:#04050a;background:var(--t);border-color:var(--t);font-weight:700;
+  box-shadow:0 0 20px var(--t),0 0 48px color-mix(in srgb,var(--t) 40%,transparent)}
+.chip[data-tier="NOVICE"]{--t:var(--n-grn)}
+.chip[data-tier="ADEPT"] {--t:var(--n-cyan)}
+.chip[data-tier="MASTER"]{--t:var(--n-mag)}
+.chip[data-tier="CHAOS"] {--t:var(--n-yel)}
+.chip[data-len]{--t:var(--accent)}
+.startbtn{width:100%;font:inherit;font-size:.64rem;letter-spacing:.24em;padding:.6rem;margin-top:4px;cursor:none;
+  border-radius:2px;background:transparent;color:var(--accent);border:1px solid var(--accent);
+  position:relative;overflow:hidden;transition:.25s;animation:runPulse 2.4s ease-in-out infinite}
+.startbtn:hover{background:var(--accent);color:#04050a;font-weight:700;
+  box-shadow:0 0 32px var(--accent),0 0 80px color-mix(in srgb,var(--accent) 45%,transparent)}
+.startbtn::after{content:"";position:absolute;inset:0;transform:translateX(-130%);
+  background:linear-gradient(120deg,transparent 40%,rgba(255,255,255,.6),transparent 60%);animation:shine 3.4s ease-in-out infinite}
+@keyframes runPulse{50%{box-shadow:0 0 24px color-mix(in srgb,var(--accent) 40%,transparent)}}
+.runbest{margin-top:.5rem;font-size:.56rem;letter-spacing:.16em;color:var(--dim);line-height:1.7}
+.runbest b{color:var(--accent)}
+
+/* run counter in the stats bar */
+.runstat{display:none;align-items:center;gap:.45rem}
+body.inrun .runstat{display:inline-flex}
+body.inrun .lvstat{display:none}
+.runonly{display:none}
+body.inrun .runonly{display:inline-block}
+.stats #btnFinish:hover{color:var(--n-yel);border-color:var(--n-yel);box-shadow:0 0 20px rgba(255,214,10,.4)}
+.runstat .pips{display:inline-flex;gap:3px}
+.pip{width:7px;height:7px;border-radius:50%;background:rgba(90,106,136,.4);transition:.3s}
+.pip.hit{background:var(--n-grn);box-shadow:0 0 10px var(--n-grn);animation:pipIn .45s cubic-bezier(.2,.8,.2,1)}
+.pip.now{background:var(--accent);box-shadow:0 0 12px var(--accent);animation:blip 1.2s infinite}
+@keyframes pipIn{from{transform:scale(2.4);opacity:0}}
+.tierbadge{color:#04050a;padding:.12rem .5rem;border-radius:2px;font-weight:700;letter-spacing:.18em;font-size:.6rem}
+
+.stage{min-width:0}
+.brief{border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);border-left:3px solid var(--accent);
+  border-radius:3px;padding:.85rem 1rem;margin-bottom:14px;background:rgba(8,11,22,.7)}
+.brief-t{color:#fff;font-size:.95rem;letter-spacing:.1em;margin-bottom:.35rem;text-shadow:0 0 14px var(--accent)}
+.brief-d{color:var(--dim);font-size:.78rem;line-height:1.7}
+.brief-d b{color:var(--accent)}
+
+.panes{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.panes{grid-template-columns:1fr}}
+.panes.solo{grid-template-columns:1fr}
+.pane{border:1px solid color-mix(in srgb,var(--accent) 24%,transparent);border-radius:4px;overflow:hidden;
+  background:#06080f;transition:box-shadow .35s,border-color .35s;min-width:0}
+.pane.ed:focus-within{border-color:var(--accent);box-shadow:0 0 70px color-mix(in srgb,var(--accent) 24%,transparent)}
+.pane-h{display:flex;align-items:center;gap:.55rem;padding:.5rem .85rem;font-size:.63rem;letter-spacing:.22em;color:var(--dim);
+  background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 15%,transparent),transparent);
+  border-bottom:1px solid rgba(255,255,255,.06)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:blip 1.6s infinite;flex:none}
+@keyframes blip{50%{opacity:.25}}
+.mode-chip{margin-left:auto;color:#04050a;background:var(--accent);padding:.15rem .55rem;border-radius:2px;
+  font-weight:700;letter-spacing:.18em;box-shadow:0 0 16px var(--accent);transition:.3s}
+#editor{height:340px}
+#editor .cm-editor{height:100%}
+#editor .cm-scroller{overflow:auto}
+/* Target gutter — mirrors CodeMirror's own metrics exactly:
+   .cm-gutterElement is padding:0 3px 0 5px / min-width:20px / text-align:right,
+   and .cm-gutters carries the 1px right border. Same 14px/1.7 type as .cm-content. */
+#tgtText{padding:10px 0;height:340px;overflow:auto;font-size:14px;line-height:1.7;color:var(--dim)}
+.tline{display:flex;align-items:stretch;white-space:pre}
+/* 21px = CM's 20px gutter element + the 1px border it puts on the container */
+.tln{flex:none;box-sizing:border-box;min-width:21px;padding:0 3px 0 5px;text-align:right;white-space:nowrap;
+  color:#2f3a52;user-select:none;border-right:1px solid color-mix(in srgb,var(--accent) 14%,transparent)}
+/* .cm-line's own padding — this is the small gap between gutter border and text */
+.tsrc{white-space:pre;padding:0 2px 0 6px}
+.pane.tgt{transition:border-color .3s,box-shadow .3s}
+.pane.tgt.match{border-color:var(--n-grn);box-shadow:0 0 60px rgba(57,255,20,.28)}
+.pane.tgt.match #tgtText{color:var(--n-grn)}
+.pane.tgt.match .tln{color:rgba(57,255,20,.45)}
+/* text matches but a puzzle rule was broken — right answer, wrong way */
+.pane.tgt.broke{border-color:var(--n-mag);box-shadow:0 0 60px rgba(255,0,200,.3);animation:brokeShake .4s ease}
+.pane.tgt.broke #tgtText{color:var(--n-mag)}
+.pane.tgt.broke .tln{color:rgba(255,0,200,.45)}
+@keyframes brokeShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.nextbar.warn{color:var(--n-mag);border-color:rgba(255,0,200,.5);background:rgba(255,0,200,.08);animation:none}
+.nextbar.warn kbd{background:var(--n-mag);box-shadow:0 0 16px var(--n-mag)}
+
+/* relative-number toggle in the buffer header */
+.numtog{font:inherit;font-size:.58rem;letter-spacing:.16em;padding:.16rem .45rem;margin-left:.5rem;cursor:none;
+  border-radius:2px;background:transparent;color:var(--dim);border:1px solid rgba(90,106,136,.4);transition:.2s}
+.numtog:hover{color:#fff;border-color:var(--accent);box-shadow:0 0 14px color-mix(in srgb,var(--accent) 40%,transparent)}
+.numtog.on{color:#04050a;background:var(--accent);border-color:var(--accent);font-weight:700;
+  box-shadow:0 0 18px var(--accent),0 0 44px color-mix(in srgb,var(--accent) 40%,transparent)}
+.numtog.pop{animation:numPop .5s cubic-bezier(.2,.8,.2,1)}
+@keyframes numPop{0%{transform:scale(1)}35%{transform:scale(1.35)}100%{transform:scale(1)}}
+#editor .cm-gutterElement{transition:color .2s}
+.relflash .cm-gutterElement{animation:gutFlash .55s ease}
+@keyframes gutFlash{0%{color:var(--accent);text-shadow:0 0 14px var(--accent)}100%{}}
+
+.stats{display:flex;align-items:center;gap:1.3rem;flex-wrap:wrap;margin-top:14px;font-size:.66rem;letter-spacing:.18em;color:var(--dim)}
+.stats b{color:var(--accent);font-size:.85rem}
+.stats .grow{flex:1}
+.stats button{font:inherit;font-size:.62rem;letter-spacing:.2em;padding:.45rem .9rem;cursor:none;border-radius:2px;
+  background:transparent;color:var(--dim);border:1px solid rgba(90,106,136,.4);transition:.2s}
+.stats button:hover{color:var(--accent);border-color:var(--accent);box-shadow:0 0 18px color-mix(in srgb,var(--accent) 35%,transparent)}
+.stats button kbd{font:inherit;font-size:.92em;margin-left:.45rem;padding:.04rem .3rem;border-radius:2px;
+  color:#04050a;background:rgba(90,106,136,.85);transition:.2s}
+.stats button:hover kbd{background:var(--accent);box-shadow:0 0 12px var(--accent)}
+/* solution strip — each keystroke is a button into the cheat sheet */
+.solution{margin-top:12px;display:none}
+.solution.show{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.sol-lbl{font-size:.6rem;letter-spacing:.3em;color:var(--dim);margin-right:.3rem}
+.sol-k,.sol-lit{font:inherit;font-size:.82rem;padding:.3rem .55rem;border-radius:3px;opacity:0;
+  animation:solIn .5s cubic-bezier(.2,.8,.2,1) var(--d) forwards}
+.sol-k{cursor:none;color:var(--n-yel);background:rgba(255,214,10,.1);border:1px solid rgba(255,214,10,.45);
+  text-shadow:0 0 10px var(--n-yel);transition:transform .18s,box-shadow .18s,background .18s,color .18s}
+.sol-k:hover{transform:translateY(-3px) scale(1.09);background:var(--n-yel);color:#04050a;text-shadow:none;
+  box-shadow:0 0 28px var(--n-yel),0 8px 22px rgba(0,0,0,.5)}
+.sol-k:active{transform:scale(.93)}
+.sol-lit{color:var(--dim);background:rgba(255,255,255,.04);border:1px dashed rgba(90,106,136,.4)}
+.sol-hint{flex-basis:100%;font-size:.6rem;letter-spacing:.22em;color:var(--dim);margin-top:.15rem;
+  opacity:0;animation:solIn .5s ease .55s forwards}
+@keyframes solIn{from{opacity:0;transform:translateY(14px) scale(.55) rotateX(60deg)}to{opacity:1;transform:none}}
+
+/* "press enter for next" banner */
+.nextbar{margin-top:12px;display:none;align-items:center;gap:.7rem;font-size:.66rem;letter-spacing:.22em;
+  color:var(--n-grn);padding:.6rem .95rem;border:1px solid rgba(57,255,20,.45);border-radius:3px;
+  background:rgba(57,255,20,.07);animation:nextPulse 1.5s ease-in-out infinite}
+.nextbar.show{display:flex;animation:nextIn .5s cubic-bezier(.2,.8,.2,1),nextPulse 1.5s ease-in-out .5s infinite}
+.nextbar kbd{color:#04050a;background:var(--n-grn);padding:.12rem .5rem;border-radius:2px;font-weight:700;
+  box-shadow:0 0 16px var(--n-grn)}
+@keyframes nextPulse{50%{box-shadow:0 0 36px rgba(57,255,20,.4);border-color:var(--n-grn)}}
+@keyframes nextIn{from{opacity:0;transform:translateY(-12px) scaleY(.4)}}
+
+/* cheat-sheet spotlight — everything else dims, the target detonates */
+body.hunting .card:not(.spotlight){opacity:.16;filter:saturate(.2) blur(1px)}
+.card.spotlight{animation:spot 2.6s cubic-bezier(.2,.8,.2,1);z-index:20}
+.card.spotlight::before{opacity:1}
+@keyframes spot{
+  0%{transform:scale(1);box-shadow:0 0 0 0 var(--c),0 0 0 0 var(--c)}
+  12%{transform:scale(1.14);box-shadow:0 0 0 4px var(--c),0 0 0 16px transparent,0 0 110px var(--c)}
+  46%{transform:scale(1.05);box-shadow:0 0 0 2px var(--c),0 0 0 46px transparent,0 0 70px var(--c)}
+  100%{transform:scale(1);box-shadow:0 0 0 0 transparent,0 0 0 0 transparent}
+}
+.k.hot{animation:kHot 2.6s cubic-bezier(.2,.8,.2,1)}
+@keyframes kHot{0%,100%{transform:scale(1)}18%{transform:scale(1.55) translateY(-4px);box-shadow:0 0 34px var(--c)}}
+.keyfeed{margin-top:10px;font-size:.7rem;letter-spacing:.24em;color:var(--accent);min-height:1.2em;
+  text-shadow:0 0 12px var(--accent);word-break:break-all}
+
+/* ---------- command cards ---------- */
+.cat{margin-bottom:3.2rem}
+.cat-h{display:flex;align-items:center;gap:.9rem;margin-bottom:1.05rem}
+.cat-h .bar{height:1px;flex:1;background:linear-gradient(90deg,var(--c),transparent)}
+.cat-h span{font-size:.76rem;letter-spacing:.34em;color:var(--c);text-shadow:0 0 14px var(--c)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:14px}
+.card{position:relative;padding:1rem 1.05rem;border-radius:4px;overflow:hidden;transform-style:preserve-3d;will-change:transform;
+  background:linear-gradient(160deg,rgba(255,255,255,.045),rgba(255,255,255,.012));
+  border:1px solid color-mix(in srgb,var(--c) 26%,transparent);
+  transition:box-shadow .3s,border-color .3s,opacity .45s,filter .45s}
+.card::before{content:"";position:absolute;inset:-140%;opacity:0;transition:opacity .3s;animation:spin 2.6s linear infinite;
+  background:conic-gradient(from 0deg,transparent 0 72%,var(--c) 82%,transparent 92%)}
+.card::after{content:"";position:absolute;inset:1px;border-radius:3px;background:linear-gradient(160deg,#0a0d18,#06080f)}
+.card:hover::before{opacity:1}
+.card:hover{border-color:var(--c);box-shadow:0 0 34px color-mix(in srgb,var(--c) 32%,transparent),0 18px 50px rgba(0,0,0,.6)}
+@keyframes spin{to{transform:rotate(1turn)}}
+.card>*{position:relative;z-index:2}
+.keys{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.6rem}
+.k{display:inline-block;padding:.28rem .5rem;border-radius:3px;font-size:.9rem;font-weight:700;color:var(--c);transition:.2s;
+  background:color-mix(in srgb,var(--c) 12%,transparent);border:1px solid color-mix(in srgb,var(--c) 45%,transparent);
+  text-shadow:0 0 10px var(--c)}
+.card:hover .k{background:var(--c);color:#04050a;text-shadow:none;box-shadow:0 0 20px var(--c)}
+.desc{font-size:.79rem;color:var(--dim);line-height:1.6}
+.card:hover .desc{color:var(--ink)}
+.card.flare{animation:flare .75s ease}
+@keyframes flare{0%{transform:scale(1)}14%{transform:scale(1.09) translateZ(30px);box-shadow:0 0 0 3px var(--c),0 0 70px var(--c)}
+  100%{transform:scale(1);box-shadow:0 0 0 0 transparent}}
+
+.js .reveal{opacity:0;transform:translateY(38px) rotateX(-12deg);filter:blur(6px);
+  transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1),filter .7s}
+.js .reveal.in{opacity:1;transform:none;filter:none}
+
+/* ---------- key HUD / shout ---------- */
+#hud{position:fixed;right:20px;bottom:20px;z-index:80;display:flex;gap:8px;pointer-events:none}
+.cap{min-width:44px;height:44px;display:grid;place-items:center;padding:0 10px;border-radius:5px;font-size:1.05rem;font-weight:700;
+  color:#04050a;background:var(--accent);box-shadow:0 0 26px var(--accent),0 6px 26px rgba(0,0,0,.6);
+  animation:cap .9s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes cap{0%{transform:translateY(24px) scale(.5) rotateX(70deg);opacity:0}22%{transform:translateY(0) scale(1.18);opacity:1}
+  40%{transform:scale(1)}100%{transform:scale(.9) translateY(-6px);opacity:0}}
+#shout{position:fixed;inset:0;z-index:97;display:grid;place-items:center;pointer-events:none;opacity:0}
+/* 3.2s with a long plateau — the old 1.6s held full opacity for only ~0.77s,
+   which is not long enough to read two lines. .quick is for the per-puzzle
+   "CLEARED" that fires constantly and doesn't need re-reading. */
+#shout.go{animation:shout 3.2s cubic-bezier(.2,.8,.2,1)}
+#shout.go.quick{animation-duration:1.9s}
+#shout .t{font-size:clamp(2.6rem,13vw,9rem);font-weight:800;letter-spacing:.06em;color:#fff;text-align:center;
+  text-shadow:0 0 20px var(--accent),0 0 70px var(--accent),0 0 160px var(--accent2)}
+#shout .s{text-align:center;color:var(--accent);letter-spacing:.3em;font-size:clamp(.7rem,2vw,1rem);margin-top:.6rem}
+/* blur MUST be pinned at 0 across the whole hold — without a mid keyframe CSS
+   interpolates blur(0)->blur(N) over the entire animation and the text is a smear
+   the whole time it is nominally "visible". */
+@keyframes shout{0%{opacity:0;transform:scale(.4) rotate(-6deg);filter:blur(30px)}
+  9%{opacity:1;transform:scale(1.05) rotate(0);filter:blur(0)}
+  15%{transform:scale(1);filter:blur(0)}
+  84%{opacity:1;transform:scale(1);filter:blur(0)}
+  100%{opacity:0;transform:scale(1.22);filter:blur(10px)}}
+#flashwhite{position:fixed;inset:0;z-index:96;background:#fff;opacity:0;pointer-events:none}
+#flashwhite.go{animation:fw .45s ease}
+@keyframes fw{from{opacity:.8}to{opacity:0}}
+
+/* ---------- versus ---------- */
+.startbtn.vs{--accent:var(--n-mag);color:var(--n-mag);border-color:var(--n-mag)}
+.startbtn.vs:hover{background:var(--n-mag);color:#04050a;box-shadow:0 0 32px var(--n-mag),0 0 80px rgba(255,0,200,.45)}
+.joinrow{display:flex;gap:5px;margin-top:6px}
+.joinrow input{flex:1;min-width:0;font:inherit;font-size:.7rem;letter-spacing:.3em;text-transform:uppercase;
+  padding:.34rem .5rem;border-radius:2px;background:rgba(255,255,255,.04);color:var(--n-mag);
+  border:1px solid rgba(255,0,200,.4);outline:none;transition:.2s}
+.joinrow input:focus{border-color:var(--n-mag);box-shadow:0 0 16px rgba(255,0,200,.35)}
+.joinrow input::placeholder{color:var(--dim);letter-spacing:.2em}
+.chip.join{--t:var(--n-mag);flex:none}
+
+.vsstat{display:none;align-items:center;gap:.45rem}
+body.invs .vsstat{display:inline-flex}
+body.invs .runstat{display:none}
+body.invs .lvstat{display:none}
+.vsstat.rival b{color:var(--n-mag)}
+.vsstat.rival .pip.hit{background:var(--n-mag);box-shadow:0 0 10px var(--n-mag)}
+.vsstat.rival .pip.now{background:var(--n-mag);opacity:.5;box-shadow:none;animation:none}
+.lead{font-weight:700;letter-spacing:.2em}
+.lead.up{color:var(--n-grn);text-shadow:0 0 12px var(--n-grn)}
+.lead.down{color:var(--n-mag);text-shadow:0 0 12px var(--n-mag)}
+
+/* lobby overlay */
+.stats-card.lobby{max-width:620px;text-align:center}
+.lb-lab{font-size:.55rem;letter-spacing:.28em;color:var(--dim);margin-bottom:.4rem}
+.lb-code-wrap{margin-bottom:1.1rem}
+.lb-code{font-size:clamp(2rem,9vw,3.4rem);font-weight:800;letter-spacing:.4em;color:var(--n-mag);
+  text-shadow:0 0 22px var(--n-mag),0 0 70px rgba(255,0,200,.6);animation:codePulse 2.4s ease-in-out infinite;
+  padding:.3rem 0 .6rem;text-indent:.4em}
+@keyframes codePulse{50%{text-shadow:0 0 12px var(--n-mag),0 0 34px rgba(255,0,200,.4)}}
+.lb-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.lb-tiers{margin-bottom:1rem}
+.lb-tiers .chips{justify-content:center}
+.lb-players{display:flex;align-items:center;justify-content:center;gap:1.2rem;margin-bottom:.9rem}
+.lb-p{flex:1;padding:.7rem;border-radius:3px;background:rgba(255,255,255,.035);
+  border:1px solid rgba(90,106,136,.3);transition:.3s}
+.lb-p.ready{border-color:var(--n-grn);box-shadow:0 0 26px rgba(57,255,20,.25)}
+.lb-p .lb-st{font-size:.7rem;letter-spacing:.14em;color:var(--ink)}
+.lb-p.ready .lb-st{color:var(--n-grn);text-shadow:0 0 12px var(--n-grn)}
+.lb-vs{font-size:.8rem;letter-spacing:.2em;color:var(--n-mag);text-shadow:0 0 16px var(--n-mag)}
+.lb-msg{min-height:1.3em;font-size:.66rem;letter-spacing:.16em;color:var(--dim);margin-bottom:.9rem}
+.lb-msg.err{color:var(--n-mag);text-shadow:0 0 12px var(--n-mag)}
+.lb-msg.ok{color:var(--n-grn)}
+.stats-card.lobby .stx-actions{justify-content:center}
+.stx-go[disabled]{opacity:.35;box-shadow:none}
+
+/* countdown */
+#countdown{position:fixed;inset:0;z-index:99;display:none;place-items:center;pointer-events:none;
+  background:rgba(2,3,7,.6);backdrop-filter:blur(4px)}
+#countdown.on{display:grid}
+.cd-n{font-size:clamp(6rem,26vw,20rem);font-weight:800;color:#fff;
+  text-shadow:0 0 30px var(--accent),0 0 90px var(--accent),0 0 200px var(--accent2)}
+.cd-n.tick{animation:cdTick .85s cubic-bezier(.2,.8,.2,1)}
+@keyframes cdTick{0%{opacity:0;transform:scale(2.6) rotate(-10deg);filter:blur(24px)}
+  30%{opacity:1;transform:scale(1);filter:blur(0)}
+  72%{opacity:1;transform:scale(1);filter:blur(0)}
+  100%{opacity:0;transform:scale(.6);filter:blur(10px)}}
+
+/* head-to-head result */
+.h2h{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-bottom:14px}
+.h2h .side{padding:.8rem;border-radius:3px;background:rgba(255,255,255,.035);border:1px solid rgba(90,106,136,.3)}
+.h2h .side.win{border-color:var(--n-grn);box-shadow:0 0 40px rgba(57,255,20,.28)}
+.h2h .side.lose{opacity:.6}
+.h2h .who{font-size:.58rem;letter-spacing:.26em;color:var(--dim);margin-bottom:.35rem}
+.h2h .big{font-size:1.5rem;font-weight:800;color:var(--tc,var(--accent));text-shadow:0 0 18px var(--tc,var(--accent))}
+.h2h .sub{font-size:.6rem;letter-spacing:.14em;color:var(--dim);margin-top:.25rem}
+.h2h .mid{font-size:.7rem;letter-spacing:.2em;color:var(--n-mag);text-shadow:0 0 14px var(--n-mag)}
+.verdict{text-align:center;font-size:clamp(1.1rem,4vw,1.8rem);font-weight:800;letter-spacing:.2em;margin-bottom:12px;
+  color:#fff;text-shadow:0 0 20px var(--accent),0 0 70px var(--accent2)}
+.stx-tbl td.t2{text-align:right;font-variant-numeric:tabular-nums}
+.stx-tbl td.fast{color:var(--n-grn);font-weight:700}
+.stx-tbl td.slow{color:var(--dim)}
+
+/* ---------- run stats overlay ---------- */
+.stats-ov{position:fixed;inset:0;z-index:98;display:none;place-items:center;padding:4vh 3vw;
+  background:rgba(2,3,7,.82);backdrop-filter:blur(9px)}
+.stats-ov.show{display:grid;animation:ovIn .35s ease}
+@keyframes ovIn{from{opacity:0;backdrop-filter:blur(0)}}
+.stats-card{width:min(900px,100%);max-height:92vh;overflow:auto;border-radius:5px;padding:1.3rem 1.5rem 1.1rem;
+  background:linear-gradient(160deg,#0a0d18,#06080f);border:1px solid var(--accent);
+  box-shadow:0 0 90px color-mix(in srgb,var(--accent) 30%,transparent),0 30px 90px rgba(0,0,0,.8);
+  animation:cardIn .55s cubic-bezier(.2,.8,.2,1)}
+@keyframes cardIn{from{opacity:0;transform:translateY(40px) scale(.94) rotateX(10deg)}}
+.stats-head{display:flex;align-items:center;gap:.7rem;font-size:.85rem;letter-spacing:.2em;color:#fff;
+  padding-bottom:.9rem;margin-bottom:1.1rem;border-bottom:1px solid color-mix(in srgb,var(--accent) 25%,transparent);
+  text-shadow:0 0 16px var(--accent)}
+.stx-new{font-size:.58rem;letter-spacing:.24em;color:#04050a;background:var(--n-yel);padding:.2rem .55rem;border-radius:2px;
+  font-weight:700;box-shadow:0 0 22px var(--n-yel);animation:blip 1s infinite;display:none}
+.stx-new.show{display:inline-block}
+.stats-x{margin-left:auto;font:inherit;font-size:1.1rem;line-height:1;cursor:none;background:transparent;
+  color:var(--dim);border:1px solid rgba(90,106,136,.4);border-radius:2px;padding:.15rem .5rem;transition:.2s}
+.stats-x:hover{color:var(--accent);border-color:var(--accent);box-shadow:0 0 18px color-mix(in srgb,var(--accent) 40%,transparent)}
+
+.stx-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px;margin-bottom:12px}
+.tile{padding:.75rem .85rem;border-radius:3px;background:rgba(255,255,255,.035);
+  border:1px solid color-mix(in srgb,var(--tc,var(--accent)) 30%,transparent);
+  opacity:0;animation:tileIn .5s cubic-bezier(.2,.8,.2,1) var(--d) forwards}
+@keyframes tileIn{from{opacity:0;transform:translateY(18px) scale(.85)}to{opacity:1;transform:none}}
+.tile .lab{font-size:.55rem;letter-spacing:.24em;color:var(--dim);margin-bottom:.3rem}
+.tile .val{font-size:1.55rem;font-weight:800;color:var(--tc,var(--accent));text-shadow:0 0 18px var(--tc,var(--accent));line-height:1.1}
+.tile .sub{font-size:.55rem;letter-spacing:.14em;color:var(--dim);margin-top:.2rem}
+
+.stx-calls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+@media(max-width:620px){.stx-calls{grid-template-columns:1fr}}
+.call{padding:.6rem .8rem;border-radius:3px;font-size:.66rem;letter-spacing:.1em;line-height:1.6;
+  background:rgba(255,255,255,.03);border-left:2px solid var(--cc);opacity:0;
+  animation:tileIn .5s ease var(--d) forwards}
+.call .lab{font-size:.53rem;letter-spacing:.24em;color:var(--dim)}
+.call b{color:var(--cc)}
+
+.stx-tblwrap{overflow-x:auto;margin-bottom:14px}
+.stx-tbl{width:100%;border-collapse:collapse;font-size:.68rem;letter-spacing:.06em}
+.stx-tbl td{padding:.42rem .5rem;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
+.stx-tbl tr{opacity:0;animation:rowIn .4s ease var(--d) forwards}
+@keyframes rowIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+.stx-tbl tr.hd td{color:var(--dim);font-size:.55rem;letter-spacing:.2em;border-bottom-color:rgba(255,255,255,.12)}
+.stx-tbl .n{color:#2f3a52;width:2em}
+.stx-tbl .nm{color:var(--ink);width:99%}
+.stx-tbl .num{text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
+.stx-tbl .dl{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.stx-tbl .bar{width:90px}
+.stx-tbl .bar i{display:block;height:5px;border-radius:3px;background:var(--rc);box-shadow:0 0 10px var(--rc);
+  width:0;animation:barIn .7s cubic-bezier(.2,.8,.2,1) var(--d) forwards}
+@keyframes barIn{to{width:var(--w)}}
+tr.good{--rc:var(--n-grn)} tr.good .dl{color:var(--n-grn)}
+tr.okish{--rc:var(--n-yel)} tr.okish .dl{color:var(--n-yel)}
+tr.bad{--rc:var(--n-mag)} tr.bad .dl{color:var(--n-mag)}
+tr.skip{--rc:#39435c} tr.skip .nm,tr.skip .num{color:#3f4a63}
+tr.skip .dl{color:#3f4a63}
+
+.stx-actions{display:flex;gap:9px;flex-wrap:wrap}
+.stx-go,.stx-alt{font:inherit;font-size:.64rem;letter-spacing:.22em;padding:.65rem 1.2rem;cursor:none;border-radius:2px;transition:.22s}
+.stx-go{background:var(--accent);color:#04050a;border:1px solid var(--accent);font-weight:700;
+  box-shadow:0 0 28px color-mix(in srgb,var(--accent) 50%,transparent)}
+.stx-go:hover{box-shadow:0 0 48px var(--accent);transform:translateY(-2px)}
+.stx-alt{background:transparent;color:var(--dim);border:1px solid rgba(90,106,136,.4)}
+.stx-alt:hover{color:var(--accent);border-color:var(--accent)}
+
+footer{position:relative;z-index:10;text-align:center;padding:4rem 1rem 6rem;color:var(--dim);font-size:.7rem;letter-spacing:.2em;line-height:2}
+footer .big{font-size:clamp(1.3rem,5vw,2.6rem);color:#fff;letter-spacing:.3em;margin-bottom:1rem;
+  text-shadow:0 0 16px var(--accent),0 0 60px var(--accent2)}
+footer a{color:var(--accent);text-decoration:none}
+
+::selection{background:var(--accent);color:#04050a}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:#06080f}
+::-webkit-scrollbar-thumb{background:var(--accent);box-shadow:0 0 12px var(--accent)}
+
+/* ============================================================
+   THE TOGGLE  —  looks like an off switch. it is not.
+   ============================================================ */
+.anitog{display:inline-flex;align-items:center;gap:.5rem;font:inherit;font-size:.6rem;letter-spacing:.2em;
+  padding:.3rem .6rem .3rem .35rem;border-radius:20px;cursor:none;color:var(--dim);
+  background:rgba(255,255,255,.04);border:1px solid rgba(90,106,136,.4);transition:.25s}
+.anitog:hover{color:#fff;border-color:var(--accent);box-shadow:0 0 16px color-mix(in srgb,var(--accent) 40%,transparent)}
+.ani-sw{position:relative;width:30px;height:16px;border-radius:10px;flex:none;
+  background:color-mix(in srgb,var(--accent) 55%,transparent);transition:.3s}
+.ani-sw::after{content:"";position:absolute;top:2px;left:16px;width:12px;height:12px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 10px var(--accent);transition:.3s cubic-bezier(.2,.8,.2,1)}
+.anitog.off .ani-sw{background:rgba(90,106,136,.35)}
+.anitog.off .ani-sw::after{left:2px;background:var(--dim);box-shadow:none}
+.ani-state{font-weight:700;color:var(--accent)}
+.anitog.off .ani-state{color:var(--dim)}
+body.overdrive .anitog{animation:od-togglePanic .35s infinite;border-color:#fff;color:#fff}
+body.overdrive .ani-state{color:#fff;text-shadow:0 0 10px #fff}
+@keyframes od-togglePanic{0%,100%{transform:rotate(-2deg) scale(1)}50%{transform:rotate(2deg) scale(1.08)}}
+
+/* the fake-out: everything goes still for a beat, as if it worked */
+body.od-calm #fx,body.od-calm .grid-floor,body.od-calm .scan,body.od-calm::before{opacity:.06!important;transition:opacity .35s}
+body.od-calm *,body.od-calm *::before,body.od-calm *::after{animation-play-state:paused!important}
+
+/* ============================================================
+   OVERDRIVE  —  the current design times one thousand
+   ============================================================ */
+#odfx{position:fixed;inset:0;z-index:58;pointer-events:none;display:none;overflow:hidden}
+body.overdrive #odfx{display:block}
+/* moving colour bars */
+.od-bars{position:absolute;inset:-50%;opacity:.30;mix-blend-mode:screen;
+  background:repeating-linear-gradient(115deg,#00f0ff 0 12px,transparent 12px 46px,#ff00c8 46px 58px,transparent 58px 96px,#39ff14 96px 108px,transparent 108px 150px);
+  animation:od-bars 1.4s linear infinite}
+@keyframes od-bars{to{transform:translate(150px,-150px)}}
+/* chromatic split slabs that tear across */
+.od-tear{position:absolute;left:-10%;width:120%;height:9vh;mix-blend-mode:screen;opacity:.5;
+  background:linear-gradient(90deg,rgba(255,0,200,.85),rgba(0,240,255,.85),rgba(57,255,20,.85));
+  filter:blur(1px);animation:od-tear 2.1s cubic-bezier(.9,0,.1,1) infinite}
+.od-tear:nth-child(2){top:18%;animation-duration:1.7s;animation-delay:-.4s}
+.od-tear:nth-child(3){top:47%;animation-duration:2.6s;animation-delay:-1.1s}
+.od-tear:nth-child(4){top:74%;animation-duration:1.3s;animation-delay:-.7s}
+@keyframes od-tear{0%,70%,100%{transform:translateX(-120%) scaleY(.25);opacity:0}
+  74%{transform:translateX(0) scaleY(1);opacity:.65}
+  80%{transform:translateX(6%) scaleY(.6);opacity:.4}
+  86%{transform:translateX(120%) scaleY(.2);opacity:0}}
+/* pulsing rings from the centre */
+.od-ring{position:absolute;left:50%;top:50%;width:40vmax;height:40vmax;margin:-20vmax 0 0 -20vmax;border-radius:50%;
+  border:3px solid var(--accent);opacity:0;animation:od-ring 1.6s ease-out infinite}
+.od-ring:nth-child(6){animation-delay:.53s;border-color:var(--accent2)}
+.od-ring:nth-child(7){animation-delay:1.06s;border-color:#fff}
+@keyframes od-ring{0%{transform:scale(.05);opacity:.9}100%{transform:scale(1.6);opacity:0}}
+/* corner spotlights sweeping */
+.od-sweep{position:absolute;inset:-30%;mix-blend-mode:screen;opacity:.5;
+  background:conic-gradient(from 0deg,transparent 0 70%,color-mix(in srgb,var(--accent) 70%,transparent) 78%,transparent 86%);
+  animation:od-spin 3.1s linear infinite}
+.od-sweep.b{animation-duration:4.7s;animation-direction:reverse;
+  background:conic-gradient(from 180deg,transparent 0 72%,color-mix(in srgb,var(--accent2) 70%,transparent) 80%,transparent 88%)}
+@keyframes od-spin{to{transform:rotate(1turn)}}
+
+/* shake the content, never <body> — a transform there would break every fixed layer */
+body.overdrive header.hero{animation:od-quakeA .21s infinite}
+body.overdrive main.wrap{animation:od-quakeB .27s infinite}
+body.overdrive footer{animation:od-quakeA .19s infinite reverse}
+body.overdrive #fx{animation:od-quakeB .33s infinite}
+@keyframes od-quakeA{0%,100%{transform:translate3d(0,0,0) rotate(0)}
+  25%{transform:translate3d(-5px,3px,0) rotate(-.45deg)}50%{transform:translate3d(4px,-4px,0) rotate(.4deg)}
+  75%{transform:translate3d(-3px,-2px,0) rotate(-.25deg)}}
+@keyframes od-quakeB{0%,100%{transform:translate3d(0,0,0) scale(1)}
+  33%{transform:translate3d(4px,-3px,0) scale(1.006)}66%{transform:translate3d(-4px,3px,0) scale(.995)}}
+
+body.overdrive .scan{opacity:1;mix-blend-mode:normal}
+body.overdrive .scan::after{animation-duration:1.1s;height:40vh}
+body.overdrive .grid-floor{opacity:1;height:70vh;animation-duration:.5s;filter:saturate(3)}
+body.overdrive .vig{box-shadow:inset 0 0 18vw 3vw rgba(0,0,0,.7);animation:od-vig .9s ease-in-out infinite}
+@keyframes od-vig{50%{box-shadow:inset 0 0 26vw 8vw color-mix(in srgb,var(--accent2) 30%,rgba(0,0,0,.8))}}
+body.overdrive::before{animation-duration:2.2s;opacity:1.6}
+
+/* every last piece of type screams */
+body.overdrive .glitch{animation:od-title .5s infinite alternate;
+  text-shadow:0 0 10px var(--accent),0 0 40px var(--accent),0 0 90px var(--accent2),0 0 180px #fff}
+@keyframes od-title{from{transform:scale(1) skewX(-3deg);letter-spacing:.04em}
+  to{transform:scale(1.06) skewX(3deg);letter-spacing:.12em}}
+body.overdrive .glitch::before{animation-duration:.35s}
+body.overdrive .glitch::after{animation-duration:.28s}
+body.overdrive h2.sec{animation:od-h2 .42s infinite alternate}
+@keyframes od-h2{from{transform:translateX(-6px) skewX(-6deg);color:#fff}
+  to{transform:translateX(6px) skewX(6deg);color:var(--accent)}}
+body.overdrive .tagline,body.overdrive .sec-note,body.overdrive .brief-t{animation:od-jitter .13s infinite}
+@keyframes od-jitter{0%,100%{transform:translate(0,0)}25%{transform:translate(-2px,1px)}
+  50%{transform:translate(2px,-1px)}75%{transform:translate(1px,2px)}}
+
+body.overdrive .card{animation:od-card .8s infinite alternate;border-color:var(--c)!important;
+  box-shadow:0 0 30px var(--c),0 0 80px color-mix(in srgb,var(--c) 45%,transparent)!important}
+body.overdrive .card::before{opacity:1;animation-duration:.7s}
+@keyframes od-card{from{transform:rotate(-1.4deg) scale(.985)}to{transform:rotate(1.4deg) scale(1.03)}}
+body.overdrive .k{animation:od-key .3s infinite alternate;background:var(--c)!important;color:#04050a!important;
+  text-shadow:none!important;box-shadow:0 0 22px var(--c)!important}
+@keyframes od-key{from{transform:scale(.9) rotate(-4deg)}to{transform:scale(1.14) rotate(4deg)}}
+
+body.overdrive .mode-btn,body.overdrive .chip,body.overdrive .stats button,
+body.overdrive .btn,body.overdrive .startbtn,body.overdrive .lv{
+  animation:od-btn .36s infinite alternate;border-color:var(--accent)!important}
+@keyframes od-btn{from{box-shadow:0 0 6px var(--accent);transform:translateY(0) scale(1)}
+  to{box-shadow:0 0 26px var(--accent),0 0 60px var(--accent2);transform:translateY(-2px) scale(1.04)}}
+body.overdrive .rail{border-bottom-width:3px;animation:od-jitter .17s infinite}
+body.overdrive .pane,body.overdrive .brief,body.overdrive .levels{
+  border-color:var(--accent)!important;box-shadow:0 0 44px color-mix(in srgb,var(--accent) 40%,transparent)!important;
+  animation:od-pane .6s infinite alternate}
+@keyframes od-pane{from{transform:perspective(900px) rotateY(-1.1deg) rotateX(.5deg)}
+  to{transform:perspective(900px) rotateY(1.1deg) rotateX(-.5deg)}}
+body.overdrive #editor .cm-content{animation:od-jitter .21s infinite}
+body.overdrive .cm-fat-cursor{animation:od-key .18s infinite alternate!important}
+
+body.overdrive #cursor{width:22px;height:34px;box-shadow:0 0 24px var(--accent),0 0 70px var(--accent),0 0 140px #fff;
+  animation:od-key .22s infinite alternate}
+body.overdrive #ring{width:96px;height:96px;margin:-48px 0 0 -48px;border-width:3px;opacity:1;
+  animation:od-spin 1.1s linear infinite}
+body.overdrive .cap{animation:cap .9s cubic-bezier(.2,.8,.2,1) forwards,od-key .16s infinite alternate;
+  min-width:64px;height:64px;font-size:1.5rem}
+body.overdrive #shout .t{animation:od-title .3s infinite alternate;
+  text-shadow:0 0 14px #fff,0 0 50px var(--accent),0 0 120px var(--accent2)}
+body.overdrive #prog{height:8px;box-shadow:0 0 26px var(--accent),0 0 60px var(--accent2)}
+body.overdrive .dot{animation:blip .3s infinite}
+body.overdrive .tierbadge,body.overdrive .mode-chip{animation:od-key .25s infinite alternate}
+
+@media (hover:none),(max-width:760px){body{cursor:auto}#cursor,#ring{display:none}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.08s!important}
+  .js .reveal{opacity:1;transform:none;filter:none}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body data-mode="normal">
+
+<canvas id="fx"></canvas>
+<div class="grid-floor"></div>
+<div class="vig"></div>
+<div class="scan"></div>
+<div id="odfx">
+  <div class="od-bars"></div>
+  <div class="od-tear"></div><div class="od-tear"></div><div class="od-tear"></div>
+  <div class="od-ring"></div><div class="od-ring"></div><div class="od-ring"></div>
+  <div class="od-sweep"></div><div class="od-sweep b"></div>
+</div>
+<div id="prog"></div>
+<div id="cursor"></div>
+<div id="ring"></div>
+<div id="hud"></div>
+<div id="flashwhite"></div>
+<div id="shout"><div><div class="t"></div><div class="s"></div></div></div>
+
+<div class="stats-ov" id="lobbyOv">
+  <div class="stats-card lobby">
+    <div class="stats-head">
+      <span class="tierbadge" id="lbTier">VERSUS</span>
+      <span id="lbTitle">LOBBY</span>
+      <button class="stats-x" id="lbClose" aria-label="close">&times;</button>
+    </div>
+    <div class="lb-code-wrap" id="lbCodeWrap">
+      <div class="lb-lab">LOBBY CODE — SEND THIS TO YOUR RIVAL</div>
+      <div class="lb-code" id="lbCode">······</div>
+      <div class="lb-actions">
+        <button class="stx-alt" id="lbCopyCode">COPY CODE</button>
+        <button class="stx-alt" id="lbCopyLink">COPY INVITE LINK</button>
+      </div>
+    </div>
+    <div class="lb-tiers" id="lbTierWrap">
+      <div class="lb-lab">DIFFICULTY</div>
+      <div class="chips" id="lbTierChips">
+        <button class="chip" data-tier="NOVICE">NOVICE</button>
+        <button class="chip on" data-tier="ADEPT">ADEPT</button>
+        <button class="chip" data-tier="MASTER">MASTER</button>
+        <button class="chip" data-tier="CHAOS">CHAOS</button>
+      </div>
+    </div>
+    <div class="lb-players">
+      <div class="lb-p" id="lbYou"><div class="lb-lab">YOU</div><div class="lb-st">—</div></div>
+      <div class="lb-vs">VS</div>
+      <div class="lb-p" id="lbThem"><div class="lb-lab">RIVAL</div><div class="lb-st">WAITING…</div></div>
+    </div>
+    <div class="lb-msg" id="lbMsg"></div>
+    <div class="stx-actions">
+      <button class="stx-go" id="lbStart" disabled>START MATCH</button>
+      <button class="stx-alt" id="lbLeave">LEAVE</button>
+    </div>
+  </div>
+</div>
+
+<div id="countdown"><div class="cd-n"></div></div>
+
+<div class="stats-ov" id="statsOv">
+  <div class="stats-card">
+    <div class="stats-head">
+      <span id="stxTier" class="tierbadge">RUN</span>
+      <span id="stxTitle">RUN COMPLETE</span>
+      <span id="stxNew" class="stx-new">NEW BEST</span>
+      <button class="stats-x" id="stxClose" aria-label="close">&times;</button>
+    </div>
+    <div class="verdict" id="stxVerdict"></div>
+    <div class="h2h" id="stxH2H"></div>
+    <div class="stx-tiles" id="stxTiles"></div>
+    <div class="stx-calls" id="stxCalls"></div>
+    <div class="stx-tblwrap"><table class="stx-tbl"><tbody id="stxRows"></tbody></table></div>
+    <div class="stx-actions">
+      <button class="stx-go" id="stxAgain">RUN AGAIN &crarr;</button>
+      <button class="stx-alt" id="stxBack">BACK TO CHALLENGES</button>
+    </div>
+  </div>
+</div>
+
+<header class="hero">
+  <div>
+    <div class="tagline">modal editing &middot; since 1991</div>
+    <h1 class="glitch" data-text="VIM DOJO">VIM DOJO</h1>
+    <p class="sub">real vim. <b>real</b> keybindings. in your browser.</p>
+    <div class="cta">
+      <button class="btn" data-go="#dojo">ENTER THE DOJO</button>
+      <button class="btn" data-go="#cmds">CHEAT SHEET</button>
+    </div>
+    <div class="scrolldown">&#9660;</div>
+  </div>
+</header>
+
+<nav class="rail">
+  <div class="rail-in">
+    <span class="lbl">MODE</span>
+    <button class="mode-btn on" data-m="normal">NORMAL</button>
+    <button class="mode-btn" data-m="insert">INSERT</button>
+    <button class="mode-btn" data-m="visual">VISUAL</button>
+    <button class="mode-btn" data-m="command">COMMAND</button>
+    <span class="grow"></span>
+    <button class="anitog" id="btnAnim" title="turn off the animations">
+      <span class="ani-sw"></span><span class="ani-lab">ANIMATIONS</span><span class="ani-state" id="aniState">ON</span>
+    </button>
+    <a href="#dojo">DOJO</a>&nbsp;<a href="#cmds">COMMANDS</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <section id="dojo">
+    <h2 class="sec scramble">THE DOJO</h2>
+    <p class="sec-note">
+      A REAL VIM ENGINE — OPERATORS, TEXT OBJECTS, REGISTERS, MACROS, MARKS, COUNTS, <b>:</b> COMMANDS, <b>/</b> SEARCH.<br>
+      CLICK THE BUFFER AND MAKE IT MATCH THE TARGET. FEWER KEYSTROKES IS BETTER. BESTS ARE SAVED LOCALLY.
+    </p>
+
+    <div class="dojo reveal">
+      <aside class="levels">
+        <div class="lv-h">CHALLENGES</div>
+        <ol id="lvList"></ol>
+        <div class="lv-h">RANDOM RUN</div>
+        <div class="rnd">
+          <div class="chips" id="tierChips">
+            <button class="chip on" data-tier="NOVICE">NOVICE</button>
+            <button class="chip" data-tier="ADEPT">ADEPT</button>
+            <button class="chip" data-tier="MASTER">MASTER</button>
+            <button class="chip" data-tier="CHAOS">CHAOS</button>
+          </div>
+          <div class="chips" id="lenChips">
+            <button class="chip on" data-len="10">10 PUZZLES</button>
+            <button class="chip" data-len="0">ENDLESS</button>
+          </div>
+          <button class="startbtn" id="btnRun">START RUN &#9654;</button>
+          <div class="runbest" id="runBest"></div>
+        </div>
+
+        <div class="lv-h">VERSUS</div>
+        <div class="rnd">
+          <button class="startbtn vs" id="btnHost">CREATE LOBBY &#9876;</button>
+          <div class="joinrow">
+            <input id="joinCode" maxlength="6" placeholder="CODE" autocomplete="off" spellcheck="false">
+            <button class="chip join" id="btnJoin">JOIN</button>
+          </div>
+          <div class="runbest" id="vsNote">SAME 10 PUZZLES · FASTEST WINS</div>
+        </div>
+
+        <div class="lv-h">SANDBOX</div>
+        <ol><li><button class="lv" data-free="1"><span class="num">~</span>FREE PLAY</button></li></ol>
+      </aside>
+
+      <div class="stage">
+        <div class="brief">
+          <div class="brief-t" id="lvTitle">&nbsp;</div>
+          <div class="brief-d" id="lvDesc">&nbsp;</div>
+        </div>
+
+        <div class="panes" id="panes">
+          <div class="pane ed">
+            <div class="pane-h"><span class="dot"></span>BUFFER
+              <button class="numtog" id="btnRel" title="toggle relative line numbers">ABS #</button>
+              <span class="mode-chip" id="vimMode">NORMAL</span></div>
+            <div id="editor"></div>
+          </div>
+          <div class="pane tgt" id="tgtPane">
+            <div class="pane-h">TARGET</div>
+            <div id="tgtText"></div>
+          </div>
+        </div>
+
+        <div class="stats">
+          <span>KEYS <b id="stKeys">0</b></span>
+          <span>PAR <b id="stPar">&ndash;</b></span>
+          <span class="lvstat">BEST <b id="stBest">&ndash;</b></span>
+          <span class="runstat">RUN <b id="stRun">1</b><span class="pips" id="stPips"></span></span>
+          <span class="runstat">TOTAL <b id="stTotal">0</b> / PAR <b id="stTotalPar">0</b></span>
+          <span class="vsstat">TIME <b id="stClock">0:00</b></span>
+          <span class="vsstat rival">RIVAL <b id="stRival">1</b><span class="pips" id="stRivalPips"></span>
+            <b id="stRivalTime">0:00</b><span id="stLead" class="lead"></span></span>
+          <span class="grow"></span>
+          <button id="btnReset">RESET <kbd>F6</kbd></button>
+          <button id="btnSolve">SOLUTION</button>
+          <button id="btnNext">NEXT &rarr;</button>
+          <button id="btnFinish" class="runonly">FINISH RUN</button>
+        </div>
+        <div class="nextbar" id="nextBar">CLEARED &mdash; PRESS <kbd>&crarr;</kbd> FOR THE NEXT CHALLENGE</div>
+        <div class="solution" id="solution"></div>
+        <div class="keyfeed" id="keyfeed"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="cmds">
+    <h2 class="sec scramble">THE COMMANDS</h2>
+    <p class="sec-note">HOVER TO TILT &middot; PRESS A KEY ANYWHERE OUTSIDE THE BUFFER TO DETONATE ITS CARD</p>
+    <div id="cats"></div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="big">:wq</div>
+  <div>REAL VIM VIA <a href="https://github.com/replit/codemirror-vim">@replit/codemirror-vim</a> ON CODEMIRROR 6 &mdash; BUNDLED LOCALLY, NO CDN, NO TRACKING</div>
+  <div>VERSUS USES <a href="https://peerjs.com">PEERJS</a> &mdash; ITS PUBLIC BROKER ONLY INTRODUCES THE TWO BROWSERS, THEN THE MATCH IS PEER-TO-PEER</div>
+  <div>STATIC FILES ONLY &middot; DROP THIS FOLDER ON GITHUB PAGES AND IT RUNS</div>
+</footer>
+
+<script src="vendor/cm-vim.js"></script>
+<script src="vendor/peerjs.js"></script>
+<script>
+(() => {
+"use strict";
+const $  = (s,c=document)=>c.querySelector(s);
+const $$ = (s,c=document)=>[...c.querySelectorAll(s)];
+const esc  = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const escA = s => esc(s).replace(/"/g,"&quot;");          // safe inside an attribute
+const CARDBY = new Map();                                  // exact cheat-sheet token -> card (filled in §6)
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let overdrive=false;                       // see "THE TOGGLE" near the end
+
+/* ============================================================
+   1. CANVAS FX
+   ============================================================ */
+const cv=$("#fx"), cx=cv.getContext("2d");
+let W=0,H=0,DPR=1,cols=[],parts=[];
+const GLYPHS="hjklwbeggGdwyypxuiaovVZZ:wq%$0^{}nN*#@qmf.<>".split("");
+const ACC=()=>getComputedStyle(document.body).getPropertyValue("--accent").trim()||"#00f0ff";
+function resize(){
+  DPR=Math.min(devicePixelRatio||1,2);
+  W=cv.width=Math.max(1,innerWidth*DPR); H=cv.height=Math.max(1,innerHeight*DPR);
+  cv.style.width=innerWidth+"px"; cv.style.height=innerHeight+"px";
+  const size=(overdrive?10:18)*DPR, n=Math.ceil(W/size);
+  const spd=overdrive?3.2:1;
+  cols=Array.from({length:n},(_,i)=>({x:i*size,y:Math.random()*H,sp:(1.2+Math.random()*3.6)*DPR*spd,size,
+    g:GLYPHS[(Math.random()*GLYPHS.length)|0]}));
+}
+addEventListener("resize",resize,{passive:true});
+// ponytail: RO too — the page can start at 0x0 in a hidden pane and never fire resize
+new ResizeObserver(resize).observe(document.documentElement);
+resize();
+
+function burst(x,y,n,spread,color){
+  const a=color||ACC();
+  const N=overdrive?n*3:n, S=overdrive?spread*1.8:spread;
+  for(let i=0;i<N;i++){
+    const ang=Math.random()*Math.PI*2, sp=(Math.random()*S+1)*DPR;
+    parts.push({x:x*DPR,y:y*DPR,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:1,
+      dec:.012+Math.random()*.02,r:(1+Math.random()*(overdrive?4.5:2.4))*DPR,
+      col:overdrive?`hsl(${(Math.random()*360)|0},100%,62%)`:a});
+  }
+}
+let mx=innerWidth/2,my=innerHeight/2,pmx=mx,pmy=my;
+let last=0, frame=0;
+function loop(t){
+  requestAnimationFrame(loop);
+  if(t-last<16) return; last=t;
+  // Fade by ERASING alpha, not by painting dark paint over the top. Painting
+  // rgba(4,5,10,.20) each frame stacked into an opaque sheet that buried the page
+  // aura, and 'lighter' added colour faster than that rect could take it away —
+  // hence smeared drops and a background that drifted colour. destination-out
+  // pulls the trails toward fully transparent instead.
+  cx.globalCompositeOperation="destination-out";
+  cx.fillStyle=overdrive?"rgba(0,0,0,.16)":"rgba(0,0,0,.30)"; cx.fillRect(0,0,W,H);
+  // 8-bit rounding means alpha 1 * 0.70 rounds back to 1 and sticks forever, so
+  // faint residue would creep across the screen. A harder sweep every ~5s pushes
+  // those stragglers to zero; one shorter-trail frame at 60fps is invisible.
+  if((++frame%300)===0){ cx.fillStyle="rgba(0,0,0,.62)"; cx.fillRect(0,0,W,H); }
+  cx.globalCompositeOperation="lighter";
+  const a=ACC();
+  cx.font=`${(overdrive?17:14)*DPR}px ui-monospace, monospace`;
+  for(const c of cols){
+    c.y+=c.sp;
+    if(c.y>H+40*DPR){ c.y=-Math.random()*H*.5; c.g=GLYPHS[(Math.random()*GLYPHS.length)|0]; }
+    if(Math.random()<(overdrive?.35:.03)) c.g=GLYPHS[(Math.random()*GLYPHS.length)|0];
+    const col=overdrive?`hsl(${((t*.25+c.x*.6)|0)%360},100%,62%)`:a;
+    cx.fillStyle=col; cx.globalAlpha=overdrive?1:.85; cx.shadowColor=col; cx.shadowBlur=(overdrive?22:10)*DPR;
+    cx.fillText(c.g,c.x,c.y);
+    cx.globalAlpha=overdrive?.4:.16; cx.shadowBlur=0;
+    cx.fillText(c.g,c.x,c.y-c.size); cx.fillText(c.g,c.x,c.y-c.size*2);
+    if(overdrive){ cx.fillText(c.g,c.x,c.y-c.size*3); cx.fillText(c.g,c.x,c.y-c.size*4); }
+  }
+  cx.globalAlpha=1; cx.shadowBlur=0;
+  // ambient confetti storm, overdrive only
+  if(overdrive && !REDUCED && parts.length<1400){
+    for(let i=0;i<5;i++) parts.push({x:Math.random()*W,y:Math.random()*H,
+      vx:(Math.random()-.5)*7*DPR,vy:(Math.random()-.5)*7*DPR,life:1,dec:.014+Math.random()*.02,
+      r:(1+Math.random()*4)*DPR,col:`hsl(${(Math.random()*360)|0},100%,64%)`});
+  }
+  if(!REDUCED && Math.hypot(mx-pmx,my-pmy)>3){
+    parts.push({x:mx*DPR,y:my*DPR,vx:(Math.random()-.5)*.6,vy:(Math.random()-.5)*.6,life:.85,dec:.045,
+      r:(1+Math.random()*1.8)*DPR,col:a});
+    pmx=mx; pmy=my;
+  }
+  for(let i=parts.length-1;i>=0;i--){
+    const p=parts[i];
+    p.x+=p.vx; p.y+=p.vy; p.vy+=.035*DPR; p.vx*=.985; p.vy*=.985; p.life-=p.dec;
+    if(p.life<=0){ parts.splice(i,1); continue; }
+    cx.globalAlpha=Math.max(p.life,0); cx.fillStyle=p.col; cx.shadowColor=p.col;
+    // shadowBlur is the expensive part; 'lighter' already stacks glow in overdrive
+    cx.shadowBlur=(overdrive?7:14)*DPR;
+    cx.beginPath(); cx.arc(p.x,p.y,p.r*p.life,0,7); cx.fill();
+  }
+  cx.globalAlpha=1; cx.shadowBlur=0;
+  const cap=overdrive?1800:1400;
+  if(parts.length>cap) parts.splice(0,parts.length-cap);
+}
+requestAnimationFrame(loop);
+
+/* ============================================================
+   2. CURSOR / SCROLL / REVEAL
+   ============================================================ */
+const cur=$("#cursor"), ring=$("#ring");
+let rx=mx,ry=my;
+addEventListener("pointermove",e=>{ mx=e.clientX; my=e.clientY; cur.style.transform=`translate(${mx}px,${my}px)`; },{passive:true});
+(function ringLoop(){ rx+=(mx-rx)*.18; ry+=(my-ry)*.18; ring.style.transform=`translate(${rx}px,${ry}px)`; requestAnimationFrame(ringLoop); })();
+addEventListener("pointerdown",e=>{ cur.classList.add("down"); burst(e.clientX,e.clientY,30,7); },{passive:true});
+addEventListener("pointerup",()=>cur.classList.remove("down"),{passive:true});
+document.addEventListener("pointerover",e=>{
+  ring.classList.toggle("hot", !!e.target.closest(".card,.mode-btn,h2.sec,.btn,.lv,.stats button"));
+  // hand the native text caret back over the editor — this is a tool, not just a toy
+  const overEd=!!e.target.closest("#editor");
+  cur.classList.toggle("gone",overEd); ring.classList.toggle("gone",overEd);
+});
+
+const prog=$("#prog");
+addEventListener("scroll",()=>{
+  const h=document.documentElement.scrollHeight-innerHeight;
+  prog.style.width=(h>0?scrollY/h*100:0)+"%";
+},{passive:true});
+
+const io=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } }),
+  {rootMargin:"0px 0px -10% 0px"});
+const observeReveals=()=>$$(".reveal:not(.in)").forEach(el=>io.observe(el));
+
+$$("[data-go]").forEach(b=>b.addEventListener("click",()=>$(b.dataset.go).scrollIntoView({behavior:REDUCED?"auto":"smooth"})));
+
+const CH="!<>-_\\/[]{}—=+*^?#";
+$$(".scramble").forEach(el=>{
+  const real=el.textContent; let t=null;
+  el.addEventListener("pointerenter",()=>{
+    if(REDUCED) return;
+    clearInterval(t); let f=0;
+    t=setInterval(()=>{
+      f++;
+      el.textContent=[...real].map((c,i)=> i<f/2 ? c : (c===" "?" ":CH[(Math.random()*CH.length)|0])).join("");
+      if(f/2>=real.length){ clearInterval(t); el.textContent=real; }
+    },28);
+  });
+});
+
+/* ============================================================
+   3. MODE PAINT + HUD + SHOUT
+   ============================================================ */
+const MODES=["normal","insert","visual","command"];
+function paintMode(m){
+  if(!MODES.includes(m)||document.body.dataset.mode===m) return;
+  document.body.dataset.mode=m;
+  $$(".mode-btn").forEach(b=>b.classList.toggle("on",b.dataset.m===m));
+  $("#vimMode").textContent=m.toUpperCase();
+  burst(innerWidth/2,innerHeight*.4,44,8);
+  flash();
+}
+const fw=$("#flashwhite");
+let lastFlash=0;
+// Full-viewport luminance flashes are capped at 2.5/sec, under the three-per-second
+// photosensitive-seizure threshold (WCAG 2.3.1). This cap holds in overdrive too —
+// that mode goes wild with colour and motion, never with strobing the whole screen.
+function flash(){
+  if(REDUCED) return;
+  const now=Date.now();
+  if(now-lastFlash<400) return;
+  lastFlash=now;
+  fw.classList.remove("go"); void fw.offsetWidth; fw.classList.add("go");
+}
+const shoutEl=$("#shout");
+// quick=true for routine per-puzzle messages; everything you actually need to
+// read (verdicts, rule broken, rival left) gets the full, slower hold.
+function shout(txt,sub="",quick=false){
+  $(".t",shoutEl).textContent=txt; $(".s",shoutEl).textContent=sub;
+  shoutEl.classList.remove("go","quick"); void shoutEl.offsetWidth;
+  shoutEl.classList.add("go"); if(quick) shoutEl.classList.add("quick");
+  for(let i=0;i<6;i++) setTimeout(()=>burst(innerWidth*Math.random(),innerHeight*Math.random(),46,11),i*90);
+}
+const hud=$("#hud");
+function cap(k){
+  const d=document.createElement("div");
+  d.className="cap"; d.textContent=k;
+  hud.appendChild(d); setTimeout(()=>d.remove(),900);
+  while(hud.children.length>6) hud.firstChild.remove();
+}
+/* ============================================================
+   THE TOGGLE — presents as an off switch for the animations.
+   It is not an off switch. Second click really does restore calm.
+   ============================================================ */
+const OD_STEP=37;                       // hue jump per tick
+let odHue=0, odTimer=null;
+function odTick(){
+  odHue=(odHue+OD_STEP)%360;
+  document.body.style.setProperty("--accent", `hsl(${odHue},100%,60%)`);
+  document.body.style.setProperty("--accent2",`hsl(${(odHue+140)%360},100%,60%)`);
+}
+function startOverdrive(){
+  overdrive=true;
+  document.body.classList.add("overdrive");
+  $("#btnAnim").classList.remove("off");
+  $("#aniState").textContent="MAXIMUM";
+  $("#btnAnim").title="that is not what that button did";
+  resize();                             // denser, faster rain
+  // hue cycling rather than luminance strobing: the whole page recolours through
+  // var(--accent) without ever flashing the viewport light/dark.
+  if(!REDUCED){ clearInterval(odTimer); odTimer=setInterval(odTick,160); }
+  shout("MAXIMUM OVERDRIVE","YOU PRESSED THE WRONG BUTTON");
+  for(let i=0;i<16;i++) setTimeout(()=>burst(innerWidth*Math.random(),innerHeight*Math.random(),60,14),i*70);
+}
+function stopOverdrive(){
+  overdrive=false;
+  clearInterval(odTimer); odTimer=null;
+  document.body.classList.remove("overdrive","od-calm");
+  document.body.style.removeProperty("--accent");
+  document.body.style.removeProperty("--accent2");
+  $("#btnAnim").classList.remove("off");
+  $("#aniState").textContent="ON";
+  $("#btnAnim").title="turn off the animations";
+  parts.length=0;
+  resize();
+  shout("CALM RESTORED","THE ANIMATIONS ARE STILL ON");
+}
+function toggleAnim(){
+  if(overdrive) return stopOverdrive();
+  // the joke needs a beat: the switch flips, everything freezes, it looks like it worked
+  $("#btnAnim").classList.add("off");
+  $("#aniState").textContent="OFF";
+  document.body.classList.add("od-calm");
+  setTimeout(()=>{ document.body.classList.remove("od-calm"); startOverdrive(); },700);
+}
+
+function label(e){
+  const k=e.key;
+  if(k===" ") return "␣";
+  if(k==="Escape") return "ESC";
+  if(k==="Enter") return "⏎";
+  if(k==="Backspace") return "⌫";
+  if(k==="Tab") return "⇥";
+  if(k.length>1) return k.toUpperCase().slice(0,5);
+  return (e.ctrlKey?"^":"")+k;
+}
+
+/* ============================================================
+   4. CHALLENGES
+   ============================================================ */
+// sol is a list of [display, cheatSheetToken?] — token omitted means "same as display",
+// token null means it is literal typed text, not a command, so not clickable.
+const LEVELS=[
+{ name:"Line kill", sol:[["j"],["dd"]],
+  desc:'Drop down a line and delete the one marked <b>DELETE ME</b>.',
+  start:`const keep = 1;\nDELETE ME\nconst alsoKeep = 2;`,
+  target:`const keep = 1;\nconst alsoKeep = 2;` },
+
+{ name:"Join", sol:[["J"]],
+  desc:'Pull the next line up onto this one. One keystroke.',
+  start:`const total = a\n+ b;`,
+  target:`const total = a + b;` },
+
+{ name:"Word surgery", sol:[["2w","w"],["daw","aw"]],
+  desc:'Jump to <b>useless</b> and remove it — and the space it drags with it.',
+  start:`const totally useless value = 42;`,
+  target:`const totally value = 42;` },
+
+{ name:"Kill the tail", sol:[["f/","f"],["D"]],
+  desc:'Find the comment and delete from there to the end of the line.',
+  start:`const x = 5; // and this whole trailing comment must go`,
+  target:`const x = 5;` },
+
+{ name:"Duplicate", sol:[["yy"],["p"]],
+  desc:'Yank this line and paste a copy right below it.',
+  start:`console.log("neon");`,
+  target:`console.log("neon");\nconsole.log("neon");` },
+
+{ name:"Inside the quotes", sol:[['ci"'],["neon",null],["<Esc>","Esc"]],
+  desc:'Change what is <b>inside</b> the quotes to <b>neon</b> without touching the quotes themselves.',
+  start:`const msg = "placeholder";`,
+  target:`const msg = "neon";` },
+
+{ name:"Count them out", sol:[["j"],["3dd"]],
+  desc:'Step onto the first <b>drop</b> line, then delete three lines with one command. Counts go in front of the operator.',
+  start:`keep = 0;\ndrop = 1;\ndrop = 2;\ndrop = 3;\nkeep = 4;`,
+  target:`keep = 0;\nkeep = 4;` },
+
+{ name:"Shout it", sol:[["w"],["gU"],["iw"]],
+  desc:'Jump to <b>maxvalue</b> and uppercase the whole word. An operator, then a text object.',
+  start:`const maxvalue = 100;`,
+  target:`const MAXVALUE = 100;` },
+
+{ name:"Gut the block", sol:[["f{","f"],["di{","di("]],
+  desc:'Find the brace, then delete everything <b>inside</b> it, leaving the braces standing.',
+  start:`const opts = { debug: true, verbose: true };`,
+  target:`const opts = {};` },
+
+{ name:"The dot", sol:[["A"],[";",null],["<Esc>","Esc"],["j"],["."],["j"],["."]],
+  desc:'Add a semicolon to the end of all three lines. Do it once, then let <b>.</b> repeat it.',
+  start:`let a = 1\nlet b = 2\nlet c = 3`,
+  target:`let a = 1;\nlet b = 2;\nlet c = 3;` },
+
+{ name:"Substitute", sol:[[":%s/foo/bar/g",":%s/a/b/g"],["↵",null]],
+  desc:'Rename every <b>foo</b> to <b>bar</b> in the whole file with one ex command.',
+  start:`foo(1);\nconst x = foo + foo;\nreturn foo;`,
+  target:`bar(1);\nconst x = bar + bar;\nreturn bar;` },
+
+{ name:"Block strike", sol:[["Ctrl-v"],["j"],["j"],["I"],["// ",null],["<Esc>","Esc"]],
+  desc:'Comment out all three lines at once with a visual <b>block</b> insert. (Ctrl-v, or Ctrl-q if your browser steals it.)',
+  start:`alpha();\nbeta();\ngamma();`,
+  target:`// alpha();\n// beta();\n// gamma();` },
+
+{ name:"Search and destroy", sol:[["/"],["cruft",null],["↵",null],["dw"]],
+  desc:'Search for the word <b>cruft</b>, jump to it, and delete it (leave the trailing space).',
+  start:`const a = 1;\nconst b = 2;\nreturn cruft value;`,
+  target:`const a = 1;\nconst b = 2;\nreturn value;` },
+
+{ name:"Macro", sol:[["qq","qa"],["A"],[";",null],["<Esc>","Esc"],["j"],["q"],["2@q"]],
+  desc:'Record a macro that appends <b>;</b> and steps down a line, then replay it. Same result as the dot level — different tool.',
+  start:`one()\ntwo()\nthree()`,
+  target:`one();\ntwo();\nthree();` },
+];
+
+// par is just the keystroke cost of `sol` — derived, never hand-maintained.
+const KEYCOST = d => (d==="<Esc>"||d==="↵"||/^Ctrl-/.test(d)) ? 1 : [...d].length;
+const parOf   = sol => sol.reduce((n,[d])=>n+KEYCOST(d),0);
+LEVELS.forEach(L=>L.par=parOf(L.sol));
+
+/* ============================================================
+   4b. PUZZLE GENERATORS — random mode draws from these
+   ============================================================ */
+const ri  = n => (Math.random()*n)|0;
+const rnd = a => a[ri(a.length)];
+const NAMES=["value","count","total","result","buffer","config","payload","index","token",
+             "offset","cursor","target","limit","status","handle","record","cache","frame"];
+const OBJS =["store","queue","router","logger","client","parser","socket","session","engine"];
+const JUNK =["useless","stale","legacy","broken","cruft","junk","dead","bogus","spurious"];
+const FNS  =["boot","init","render","parse","flush","sync","load","emit","mount","drain","tick"];
+const TAGS =["foo","bar","baz","qux","zap","wib"];
+const WORDS=["ok","ready","idle","done","warn","fresh","armed","cold"];
+const rows  = (n,f) => Array.from({length:n},(_,i)=>f(i));
+const other = (pool,not) => { let x; do{ x=rnd(pool); }while(x===not); return x; };
+const nm=()=>rnd(NAMES), fnm=()=>rnd(FNS), ob=()=>rnd(OBJS);
+
+// Random but plausible surrounding code, so no two tasks look alike. Deliberately
+// avoids TAGS / DROP / KEEP so it can never collide with a puzzle's own markers.
+const FILLERS=[
+  ()=>`const ${nm()} = ${ri(200)};`,
+  ()=>`let ${nm()} = "${rnd(WORDS)}";`,
+  ()=>`${fnm()}(${nm()});`,
+  ()=>`${ob()}.${fnm()}();`,
+  ()=>`if (${nm()}) ${fnm()}();`,
+  ()=>`const ${nm()} = ${ob()}.${fnm()}(${ri(50)});`,
+  ()=>`${nm()} += ${ri(20)};`,
+  ()=>`${ob()}.${nm()} = ${rnd(WORDS)};`,
+];
+const fill = () => rnd(FILLERS)();
+const pad  = n => rows(n,fill);
+
+// the motion that gets from line 1 to 0-based row r
+const jmp = r => r===0 ? [] : [[r>1?`${r}j`:"j", r>1?"5j":"j"]];
+
+// drop a payload into a random depth of random filler
+function embed(before,after){                       // one line edited in place
+  const pre=pad(ri(4)), post=pad(ri(3));
+  return {start:[...pre,before,...post].join("\n"), target:[...pre,after,...post].join("\n"), row:pre.length};
+}
+function embedN(before,after){                      // many lines -> many lines
+  const pre=pad(ri(4)), post=pad(ri(3));
+  return {start:[...pre,...before,...post].join("\n"), target:[...pre,...after,...post].join("\n"), row:pre.length};
+}
+
+const GEN={
+NOVICE:[
+  ()=>{ const e=embedN(["// DELETE THIS LINE"],[]);
+        return {name:"Line kill", desc:"Get down to the marked line and delete it.",
+          start:e.start, target:e.target, sol:[...jmp(e.row),["dd"]]}; },
+
+  ()=>{ const a=nm(), b=other(NAMES,a);
+        const e=embedN([`const total = ${a}`,`+ ${b};`],[`const total = ${a} + ${b};`]);
+        return {name:"Join", desc:"Pull the next line up onto this one.",
+          start:e.start, target:e.target, sol:[...jmp(e.row),["J"]]}; },
+
+  ()=>{ const l=`${fnm()}("${rnd(WORDS)}");`;
+        const e=embedN([l],[l,l]);
+        return {name:"Duplicate", desc:"Yank that line and paste a copy right below it.",
+          start:e.start, target:e.target, sol:[...jmp(e.row),["yy"],["p"]]}; },
+
+  ()=>{ const head=`const ${nm()} = ${ri(50)+1};`;
+        const e=embed(`${head} // ${rnd(JUNK)} trailing note`,head);
+        return {name:"Kill the tail", desc:"Find the comment and delete from there to the end of the line.",
+          start:e.start, target:e.target, sol:[...jmp(e.row),["f/","f"],["D"]]}; },
+
+  ()=>{ const w=nm(), pos=1+ri(w.length-1);
+        const e=embed(`const ${w.slice(0,pos)+w[pos-1]+w.slice(pos)} = true;`,`const ${w} = true;`);
+        return {name:"Typo", desc:"One character in that name got typed twice. Get to it and kill it.",
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["w"],[pos>1?`${pos}l`:"l", pos>1?"5j":"l"],["x"]]}; },
+
+  ()=>{ const w=nm();
+        const e=embed(`const ${w} = 1;`,`const ${w[0].toUpperCase()+w.slice(1)} = 1;`);
+        return {name:"Case flip", desc:"Jump to the name and flip the case of its first character.",
+          start:e.start, target:e.target, sol:[...jmp(e.row),["w"],["~"]]}; },
+
+  ()=>{ const d=ri(10), d2=(d+1+ri(8))%10, w=nm();
+        const e=embed(`const ${w} = ${d};`,`const ${w} = ${d2};`);
+        return {name:"One character", desc:`Find the <b>${d}</b> and replace it with <b>${d2}</b> — without entering insert mode.`,
+          rule:{noInsert:true},
+          start:e.start, target:e.target, sol:[...jmp(e.row),[`f${d}`,"f"],[`r${d2}`,"r"]]}; },
+
+  ()=>{ const l=`${fnm()}(${nm()});`, add=`${fnm()}();`;
+        const e=embedN([l],[l,add]);
+        return {name:"Open below", desc:`Open a new line under it and type <b>${add}</b>`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["o"],[add,null],["<Esc>","Esc"]]}; },
+],
+
+ADEPT:[
+  ()=>{ const j=rnd(JUNK), w=nm();
+        const e=embed(`const totally ${j} ${w} = 42;`,`const totally ${w} = 42;`);
+        return {name:"Word surgery", desc:`Jump to <b>${j}</b> and remove it — and the space it drags with it.`,
+          start:e.start, target:e.target, sol:[...jmp(e.row),["2w","w"],["daw","aw"]]}; },
+
+  ()=>{ const from=rnd(JUNK), to=nm();
+        const e=embed(`const ${from} = 1;`,`const ${to} = 1;`);
+        return {name:"Change the word", desc:`Jump to <b>${from}</b> and change that word to <b>${to}</b>.`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["w"],["ciw","iw"],[to,null],["<Esc>","Esc"]]}; },
+
+  ()=>{ const w=nm(), n=ri(200);
+        const e=embed(`const ${w} = ${n};`,`const ${w.toUpperCase()} = ${n};`);
+        return {name:"Shout it", desc:"Jump to the name and uppercase the whole word.",
+          start:e.start, target:e.target, sol:[...jmp(e.row),["w"],["gU"],["iw"]]}; },
+
+  ()=>{ const n=2+ri(4);
+        const e=embedN(rows(n,i=>`drop${i} = ${i};`),[]);
+        return {name:"Count them out", desc:`Delete all ${n} <b>drop</b> lines with a single command. Counts go in front of the operator.`,
+          start:e.start, target:e.target, sol:[...jmp(e.row),[`${n}dd`,"3dd"]]}; },
+
+  ()=>{ const n=3+ri(3), L=rows(n,()=>`let ${nm()} = ${ri(9)}`);
+        const e=embedN(L,L.map(l=>l+";"));
+        const dots=[]; for(let i=1;i<n;i++) dots.push(["j"],["."]);
+        return {name:"The dot", desc:`Put a semicolon on the end of all ${n} lines. Do it once, then let <b>.</b> repeat it.`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["A"],[";",null],["<Esc>","Esc"],...dots]}; },
+
+  ()=>{ const fn=fnm(), args=rows(1+ri(2),()=>nm()).join(", ");
+        const e=embed(`${fn}(${args});`,`${fn}();`);
+        return {name:"Gut the call", desc:"Find the paren, then delete everything <b>inside</b> it.",
+          start:e.start, target:e.target, sol:[...jmp(e.row),["f(","f"],["di("]]}; },
+
+  ()=>{ const to=nm();
+        const e=embed(`const msg = "${rnd(JUNK)}";`,`const msg = "${to}";`);
+        return {name:"Inside the quotes", desc:`Change what is inside the quotes to <b>${to}</b>, leaving the quotes alone.`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),['ci"'],[to,null],["<Esc>","Esc"]]}; },
+
+  ()=>{ const j=rnd(JUNK), w=nm();
+        const e=embed(`return ${j} ${w};`,`return ${w};`);
+        return {name:"One word out", desc:`Jump to <b>${j}</b> and delete it plus the space after it.`,
+          start:e.start, target:e.target, sol:[...jmp(e.row),["w"],["dw"]]}; },
+
+  ()=>{ const fn=fnm(), a=nm(), b=other(NAMES,a), c=nm();
+        const e=embed(`${fn}(${a}, ${b});`,`${fn}(${c}, ${b});`);
+        return {name:"Change till", desc:`Replace only the first argument with <b>${c}</b> — change up to the comma.`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["f(","f"],["l"],["ct,"],[c,null],["<Esc>","Esc"]]}; },
+
+  ()=>{ const n=3+ri(2), L=rows(n,()=>nm());
+        const e=embedN(L.map((w,i)=>i?w+(i<n-1?",":""):`const parts = ${w},`),
+                       [`const parts = ${L[0]}, `+L.slice(1).map((w,i)=>w+(i<n-2?",":"")).join(" ")]);
+        return {name:"Fold them up", desc:`Join all ${n} lines into one with a single counted command.`,
+          start:e.start, target:e.target, sol:[...jmp(e.row),[`${n}J`,"J"]]}; },
+
+  ()=>{ const n=2+ri(3), L=rows(n,()=>`${fnm()}(${nm()});`);
+        const e=embedN(L,L.map(l=>"  "+l));
+        return {name:"Push it in", desc:`Indent all ${n} lines one level with a single counted command.`,
+          start:e.start, target:e.target, sol:[...jmp(e.row),[`${n}>>`,">>"]]}; },
+
+  ()=>{ const w=nm(), items=rows(2+ri(2),()=>String(ri(90))).join(", ");
+        const e=embed(`const ${w} = [${items}];`,`const ${w} = [];`);
+        return {name:"Empty the list", desc:"Find the bracket, then delete everything <b>inside</b> it.",
+          start:e.start, target:e.target, sol:[...jmp(e.row),["f[","f"],["di[","di("]]}; },
+],
+
+MASTER:[
+  ()=>{ const from=rnd(TAGS), to=other(TAGS,from), n=3+ri(3);
+        const L=rows(n,i=>i%2 ? `const ${nm()} = ${from} + ${from};` : `${from}(${ri(20)});`);
+        return {name:"Substitute", desc:`Rename every <b>${from}</b> to <b>${to}</b> across the whole file in one ex command.`,
+          start:L.join("\n"), target:L.map(l=>l.split(from).join(to)).join("\n"),
+          sol:[[`:%s/${from}/${to}/g`,":%s/a/b/g"],["↵",null]]}; },
+
+  ()=>{ const n=3+ri(3), L=rows(n,()=>`${fnm()}(${nm()});`);
+        const e=embedN(L,L.map(l=>"// "+l));
+        const js=rows(n-1,()=>["j"]);
+        return {name:"Block strike", desc:`Comment out all ${n} lines at once with a visual <b>block</b> insert. (Ctrl-v, or Ctrl-q if the browser steals it.)`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["Ctrl-v"],...js,["I"],["// ",null],["<Esc>","Esc"]]}; },
+
+  ()=>{ const n=4+ri(3), L=rows(n,()=>`// ${fnm()}(${nm()});`);
+        const e=embedN(L,L.map(l=>l.slice(3)));
+        return {name:"Uncomment the block", desc:`Strip the leading <b>// </b> off all ${n} lines with one visual block delete.`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["Ctrl-v"],[`${n-1}j`,"5j"],["2l","5j"],["d","dd"]]}; },
+
+  ()=>{ const n=4+ri(3), L=rows(n,()=>`${fnm()}()`);
+        const e=embedN(L,L.map(l=>l+";"));
+        return {name:"Macro", desc:`Record a macro that appends <b>;</b> and steps down, then replay it over the remaining ${n-1} lines.`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["qq","qa"],["A"],[";",null],["<Esc>","Esc"],["j"],["q"],[`${n-1}@q`,"2@q"]]}; },
+
+  ()=>{ const j=rnd(JUNK), w=nm();
+        const e=embed(`return ${j} ${w};`,`return ${w};`);
+        return {name:"Search and destroy", desc:`Search for <b>${j}</b> from the top, jump to it, and delete it.`,
+          start:e.start, target:e.target, sol:[["/"],[j,null],["↵",null],["dw"]]}; },
+
+  ()=>{ const n=4+ri(4), k=1+ri(n-2), L=pad(n);
+        return {name:"Wipe to the end", desc:`Keep the first ${k} line${k>1?"s":""}, then delete everything from there down to the end of the file.`,
+          start:L.join("\n"), target:L.slice(0,k).join("\n"),
+          sol:[...jmp(k),["dG","G"]]}; },
+
+  ()=>{ const n=3+ri(3), L=rows(n,()=>`${fnm()}(${nm()});`);
+        const e=embedN(L,L.map(l=>"  "+l));
+        return {name:"Indent the block", desc:`Select all ${n} lines and indent them one level.`,
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["V"],...rows(n-1,()=>["j"]),[">",">>"]]}; },
+
+  ()=>{ const keep=2+ri(3), drop=2+ri(3);
+        const L=[]; for(let i=0;i<keep;i++) L.push(fill());
+        for(let i=0;i<drop;i++) L.splice(ri(L.length+1),0,`${fnm()}(${nm()}, ${ri(90)}); // DROP`);
+        return {name:"Global strike", desc:`Delete <b>every</b> line marked DROP in one ex command — wherever they are.`,
+          start:L.join("\n"), target:L.filter(l=>!l.includes("DROP")).join("\n"),
+          sol:[[":g/DROP/d",":g/pat/d"],["↵",null]]}; },
+
+  ()=>{ const keep=2+ri(3), noise=2+ri(3);
+        const L=[]; for(let i=0;i<keep;i++) L.push(`${fnm()}(${nm()}, ${ri(90)}); // KEEP`);
+        for(let i=0;i<noise;i++) L.splice(ri(L.length+1),0,fill());
+        return {name:"Keep only these", desc:`Delete every line that is <b>not</b> marked KEEP — the inverse global command.`,
+          start:L.join("\n"), target:L.filter(l=>l.includes("KEEP")).join("\n"),
+          sol:[[":v/KEEP/d",":v/pat/d"],["↵",null]]}; },
+
+  ()=>{ const from=rnd(TAGS), to=other(TAGS,from), n=5+ri(3);
+        const a=2+ri(2), b=a+1+ri(2);
+        const L=rows(n,()=>`const ${nm()} = ${from};`);
+        const T=L.map((l,i)=>(i+1>=a&&i+1<=b)?l.split(from).join(to):l);
+        return {name:"Only these lines", desc:`Rename <b>${from}</b> to <b>${to}</b> on lines <b>${a}</b> through <b>${b}</b> only — every other line keeps ${from}.`,
+          start:L.join("\n"), target:T.join("\n"),
+          sol:[[`:${a},${b}s/${from}/${to}/g`,":2,4s/a/b/g"],["↵",null]]}; },
+
+  ()=>{ const n=6+ri(3), a=2+ri(2), b=a+1+ri(2);
+        const L=rows(n,i=>`const line${i} = ${ri(90)};`);
+        return {name:"Excise a range", desc:`Delete lines <b>${a}</b> through <b>${b}</b> — an ex command takes a range, so you need never travel there.`,
+          start:L.join("\n"), target:L.filter((_,i)=>i+1<a||i+1>b).join("\n"),
+          sol:[[`:${a},${b}d`,":2,4d"],["↵",null]]}; },
+
+  ()=>{ const n=4+ri(3), L=rows(n,()=>`${fnm()}(${nm()})`);
+        return {name:"Normal on every line", desc:"Append a semicolon to every line in the file — one ex command can do it, no macro needed.",
+          start:L.join("\n"), target:L.map(l=>l+";").join("\n"),
+          sol:[[":%norm A;",":%norm"],["↵",null]]}; },
+
+  ()=>{ const n=4+ri(3), L=rows(n,()=>`${nm()}_${rnd(WORDS)}`);
+        return {name:"Strip the prefix", desc:"Every line carries a <b>old_</b> prefix. Remove it everywhere with one anchored substitution.",
+          start:L.map(l=>"old_"+l).join("\n"), target:L.join("\n"),
+          sol:[[":%s/^old_//",":%s/a/b/g"],["↵",null]]}; },
+
+  ()=>{ const n=4+ri(3), L=rows(n,()=>`${nm()}${ri(90)}`);
+        const T=[...L].sort();
+        return {name:"Sort it", desc:"Put every line of the file into alphabetical order with one ex command.",
+          start:L.join("\n"), target:T.join("\n"),
+          sol:[[":sort"],["↵",null]]}; },
+
+  ()=>{ const w=nm(), n=ri(90);
+        const e=embed(`${w} = ${n}`,`${w.toUpperCase()} = ${n};`);
+        return {name:"Two at once", desc:"That line needs <b>two</b> separate edits: the name uppercased, and a semicolon on the end.",
+          start:e.start, target:e.target,
+          sol:[...jmp(e.row),["gU"],["iw"],["A"],[";",null],["<Esc>","Esc"]]}; },
+],
+};
+const TIERS=["NOVICE","ADEPT","MASTER","CHAOS"];
+function genPuzzle(tier){
+  const pool = tier==="CHAOS" ? [...GEN.NOVICE,...GEN.ADEPT,...GEN.MASTER] : GEN[tier];
+  const p = rnd(pool)();
+  p.par = parOf(p.sol);
+  p.tier = tier;
+  return p;
+}
+
+const FREE=`// FREE PLAY — no target, no score. Just vim.
+//
+// Everything works: d/c/y operators, text objects (iw aw i" i( ip),
+// registers ("ayy), marks (ma \`a), macros (qa ... q, @a), counts,
+// / and ? search, :s substitution, :sort, ., u, Ctrl-r, gU, >>, %
+
+function fib(n) {
+  return n < 2 ? n : fib(n - 1) + fib(n - 2);
+}
+
+const squares = [1, 2, 3, 4, 5].map(n => n * n);
+`;
+
+/* ============================================================
+   5. THE EDITOR (real vim)
+   ============================================================ */
+const {EditorView,EditorState,vim,Vim,getCM,CodeMirror,javascript,neonTheme,setup,
+       Compartment,lineNumbers}=globalThis.CMV;
+
+/* absolute vs vim-style hybrid relative numbering, swapped in a compartment */
+const lnComp=new Compartment();
+let relNums=false, lastLine=1;
+const mkNums = rel => lineNumbers(rel ? {
+  formatNumber:(n,state)=>{
+    const cur=state.doc.lineAt(state.selection.main.head).number;
+    return n===cur ? String(n) : String(Math.abs(n-cur));
+  }
+} : {});
+
+const BEST_KEY="vimdojo.best.v1";
+let best={}; try{ best=JSON.parse(localStorage.getItem(BEST_KEY)||"{}"); }catch{}
+const saveBest=()=>{ try{ localStorage.setItem(BEST_KEY,JSON.stringify(best)); }catch{} };
+
+const RUN_KEY="vimdojo.run.v1";
+let runBest={}; try{ runBest=JSON.parse(localStorage.getItem(RUN_KEY)||"{}"); }catch{}
+const saveRunBest=()=>{ try{ localStorage.setItem(RUN_KEY,JSON.stringify(runBest)); }catch{} };
+
+let mode="level";            // "level" | "free" | "random"
+let idx=0, puz=null, keys=0, won=false, feed=[];
+let usedInsert=false, violated=false;   // for puzzles that forbid insert mode
+let run=null;                // {tier,len,i,cleared,keysTotal,parTotal,done,log,t0}
+let tier="NOVICE", runLen=10;   // runLen 0 = endless
+let puzT0=0, statsOpen=false;
+const norm = s => s.replace(/[ \t]+$/gm,"").replace(/\n+$/,"");
+
+const view=new EditorView({
+  doc:LEVELS[0].start,
+  extensions:[
+    vim(),                       // must come first
+    lnComp.of(mkNums(false)),
+    setup, javascript(), neonTheme,
+    EditorView.updateListener.of(u=>{
+      if(u.docChanged) check();
+      // relative numbers are cursor-relative, so the gutter has to be rebuilt when
+      // the cursor changes line. Deferred — you cannot dispatch mid-update.
+      if(relNums){
+        const l=u.state.doc.lineAt(u.state.selection.main.head).number;
+        if(l!==lastLine){ lastLine=l; queueMicrotask(()=>{ if(relNums) view.dispatch({effects:lnComp.reconfigure(mkNums(true))}); }); }
+      }
+    }),
+  ],
+  parent:$("#editor"),
+});
+const cm=getCM(view);
+
+CodeMirror.on(cm,"vim-mode-change",e=>{
+  if(e.mode==="insert") usedInsert=true;      // R (replace) is deliberately not counted
+  const m=e.mode==="replace"?"insert":e.mode;
+  paintMode(MODES.includes(m)?m:"normal");
+});
+
+// count real keystrokes, mirror them into the feed, and catch ':' for the command colour
+view.dom.addEventListener("keydown",e=>{
+  // stats overlay is modal: Enter runs again, Esc dismisses. vim sees neither.
+  if(statsOpen){
+    if(e.key==="Enter"||e.key==="Escape"){
+      e.preventDefault(); e.stopPropagation();
+      e.key==="Enter" ? statsAgain() : closeStats();
+    }
+    return;
+  }
+  // F6 resets the puzzle — a meta key, so vim never sees it and it is not scored
+  if(e.key==="F6"){ e.preventDefault(); e.stopPropagation(); doReset(); return; }
+  // level already beaten -> Enter is "next challenge", vim never sees it
+  if(won && e.key==="Enter" && document.activeElement===view.contentDOM){
+    e.preventDefault(); e.stopPropagation();
+    nextLevel();
+    return;
+  }
+  if(/^(Shift|Control|Alt|Meta|CapsLock|Dead)$/.test(e.key)) return;
+  keys++; $("#stKeys").textContent=keys;
+  const l=label(e);
+  cap(l);
+  feed.push(l); if(feed.length>34) feed.shift();
+  $("#keyfeed").textContent=feed.join(" ");
+  const r=view.dom.getBoundingClientRect();
+  burst(r.right-30,r.top+24,10,4);
+  if(e.key===":"&&document.body.dataset.mode==="normal") paintMode("command");
+},true);
+
+// every task starts in normal mode at the top-left of the buffer
+function setDoc(text){
+  Vim.handleKey(cm,"<Esc>");
+  view.dispatch({ changes:{from:0,to:view.state.doc.length,insert:text} });
+  view.dispatch({ selection:{anchor:0}, scrollIntoView:true });
+  lastLine=1;
+  if(relNums) view.dispatch({effects:lnComp.reconfigure(mkNums(true))});
+}
+
+function renderTarget(text){
+  const el=$("#tgtText");
+  el.dataset.raw=text;
+  el.innerHTML=text.split("\n").map((l,i)=>
+    `<div class="tline"><span class="tln">${i+1}</span><span class="tsrc">${l?esc(l):"&nbsp;"}</span></div>`).join("");
+}
+
+function setRelative(on){
+  relNums=on;
+  view.dispatch({effects:lnComp.reconfigure(mkNums(on))});
+  const b=$("#btnRel");
+  b.classList.toggle("on",on);
+  b.textContent = on ? "REL #" : "ABS #";
+  b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop");
+  const ed=$("#editor");
+  ed.classList.remove("relflash"); void ed.offsetWidth; ed.classList.add("relflash");
+  const r=ed.getBoundingClientRect();
+  burst(r.left+22,r.top+40,24,6);
+}
+
+function renderSolution(L){
+  $("#solution").innerHTML =
+    `<span class="sol-lbl">SOLUTION</span>` +
+    L.sol.map(([disp,ref],i)=>{
+      const d=`style="--d:${i*60}ms"`;
+      return ref===null
+        ? `<span class="sol-lit" ${d}>${esc(disp)}</span>`
+        : `<button class="sol-k" data-tok="${escA(ref===undefined?disp:ref)}" ${d}>${esc(disp)}</button>`;
+    }).join("") +
+    `<span class="sol-hint">CLICK ANY KEY TO JUMP TO IT IN THE CHEAT SHEET</span>`;
+}
+
+/* one loader for both hand-authored levels and generated puzzles */
+function loadPuzzle(p,title){
+  puz=p; keys=0; won=false; feed=[]; puzT0=Date.now();
+  usedInsert=false; violated=false;
+  $("#tgtPane").classList.remove("broke");
+  $("#nextBar").classList.remove("warn");
+  $("#stKeys").textContent="0"; $("#keyfeed").textContent="";
+  $("#solution").classList.remove("show");
+  $("#nextBar").classList.remove("show");
+  $("#btnSolve").style.display="";
+  $("#lvTitle").innerHTML=title;
+  $("#lvDesc").innerHTML=p.desc;
+  $("#panes").classList.remove("solo"); $("#tgtPane").style.display="";
+  renderTarget(p.target);
+  $("#stPar").textContent=p.par;
+  renderSolution(p);
+  setDoc(p.start);
+  $("#tgtPane").classList.remove("match");
+  view.focus();
+}
+
+function load(i){
+  if(vs) vsTeardown();                       // leaving a match abandons it
+  mode="level"; idx=i; run=null;
+  document.body.classList.remove("inrun");
+  $$(".lv").forEach(b=>b.classList.toggle("on", !b.dataset.free && +b.dataset.i===i));
+  const L=LEVELS[i];
+  loadPuzzle(L,`${i+1}. ${esc(L.name)}`);
+  $("#stBest").textContent=best[L.name]??"–";
+}
+
+function loadFree(){
+  if(vs) vsTeardown();
+  mode="free"; run=null; puz=null; keys=0; won=false; feed=[];
+  document.body.classList.remove("inrun");
+  $$(".lv").forEach(b=>b.classList.toggle("on", b.dataset.free==="1"));
+  $("#stKeys").textContent="0"; $("#keyfeed").textContent="";
+  $("#solution").classList.remove("show"); $("#solution").innerHTML="";
+  $("#nextBar").classList.remove("show");
+  $("#btnSolve").style.display="none";
+  $("#lvTitle").textContent="FREE PLAY";
+  $("#lvDesc").innerHTML="No target, no score. A real vim buffer to mess about in. <b>:w</b> does nothing — nothing to save.";
+  $("#panes").classList.add("solo"); $("#tgtPane").style.display="none";
+  $("#stPar").textContent="–"; $("#stBest").textContent="–";
+  setDoc(FREE);
+  $("#tgtPane").classList.remove("match");
+  view.focus();
+}
+
+/* ---------- random run ---------- */
+const TIERCOL={NOVICE:"#39ff14",ADEPT:"#00f0ff",MASTER:"#ff00c8",CHAOS:"#ffd60a"};
+function renderPips(){
+  $("#stPips").innerHTML = run.len===Infinity ? "" :
+    rows(run.len,i=>`<span class="pip${i<run.cleared?" hit":(i===run.cleared?" now":"")}"></span>`).join("");
+}
+function renderRunBest(){
+  const r=TIERS.map(t=>{ const v=runBest[t]; return v===undefined?null:`${t} <b>${v}</b>`; }).filter(Boolean);
+  $("#runBest").innerHTML = r.length ? "BEST 10-RUN<br>"+r.join("<br>") : "";
+}
+function startRun(){
+  closeStats();
+  if(vs) vsTeardown();
+  mode="random";
+  run={tier,len:runLen||Infinity,i:0,cleared:0,keysTotal:0,parTotal:0,done:false,log:[],t0:Date.now()};
+  document.body.classList.add("inrun");
+  $$(".lv").forEach(b=>b.classList.remove("on"));
+  $("#stTotal").textContent="0"; $("#stTotalPar").textContent="0";
+  shout(tier, runLen ? `RANDOM RUN · ${runLen} PUZZLES` : "ENDLESS RUN · NO FINISH LINE");
+  nextRandom();
+}
+function nextRandom(){
+  run.i++;
+  const p=genPuzzle(run.tier);
+  run.parTotal+=p.par; $("#stTotalPar").textContent=run.parTotal;
+  $("#stRun").textContent = run.len===Infinity ? run.i : `${run.i}/${run.len}`;
+  renderPips();
+  loadPuzzle(p,`<span class="tierbadge" style="background:${TIERCOL[run.tier]}">${run.tier}</span> ${esc(p.name)}`);
+}
+const mmss = ms => { const s=Math.round(ms/1000); return `${(s/60)|0}:${String(s%60).padStart(2,"0")}`; };
+const logPuzzle = cleared => run.log.push({name:puz.name,keys,par:puz.par,ms:Date.now()-puzT0,cleared});
+
+function countUp(el,to,dur=850){
+  if(REDUCED){ el.textContent=to; return; }
+  const t0=performance.now();
+  (function step(t){
+    const k=Math.min(1,(t-t0)/dur);
+    el.textContent=Math.round(to*(1-Math.pow(1-k,3)));
+    if(k<1) requestAnimationFrame(step);
+  })(t0);
+}
+
+function finishRun(){
+  if(!run||run.done) return;
+  if(!won && puz) logPuzzle(false);          // ended mid-puzzle -> that one counts as skipped
+  run.done=true;
+  $("#nextBar").classList.remove("show");
+
+  const L=run.log, done=L.filter(r=>r.cleared);
+  const keysT=done.reduce((n,r)=>n+r.keys,0);
+  const parT =done.reduce((n,r)=>n+r.par ,0);
+  if(mode==="versus"){ clearInterval(clockT); clockT=null; finishVersus(L,done,keysT); return; }
+  const ms   =Date.now()-run.t0;
+  // a personal best only counts for a finite run cleared in full
+  const pb = run.len!==Infinity && done.length===run.len &&
+             (runBest[run.tier]===undefined || keysT<runBest[run.tier]);
+  if(pb){ runBest[run.tier]=keysT; saveRunBest(); renderRunBest(); }
+
+  renderStats(L,done,keysT,parT,ms,pb);
+  shout("RUN COMPLETE",`${done.length} CLEARED · ${keysT} KEYS · PAR ${parT}`);
+}
+
+function renderStats(L,done,keysT,parT,ms,pb){
+  $("#stxVerdict").textContent=""; $("#stxH2H").innerHTML="";     // solo: no head-to-head
+  $("#stxAgain").textContent="RUN AGAIN ⏎"; $("#stxAgain").style.display="";
+  const eff=keysT?Math.round(parT/keysT*100):0;
+  const wasted=keysT-parT;
+  // below a few seconds the rate is meaningless, not impressive
+  const kpm=ms>=3000?Math.round(keysT/(ms/60000)):"—";
+  const under=done.filter(r=>r.keys<r.par).length;
+  const atpar=done.filter(r=>r.keys===r.par).length;
+  const over =done.filter(r=>r.keys>r.par).length;
+  const skipped=L.length-done.length;
+
+  $("#stxTier").textContent=run.tier;
+  $("#stxTier").style.background=TIERCOL[run.tier];
+  $("#stxTitle").textContent = run.len===Infinity
+    ? `ENDLESS RUN · ${L.length} SERVED` : `RUN COMPLETE · ${run.len} PUZZLES`;
+  $("#stxNew").classList.toggle("show",!!pb);
+
+  const tiles=[
+    ["CLEARED",     `${done.length}/${L.length}`, skipped?`${skipped} skipped`:"clean sweep", "var(--n-grn)"],
+    ["KEYSTROKES",  keysT,  `par ${parT}`, "var(--n-cyan)"],
+    ["EFFICIENCY %",eff,    wasted>0?`${wasted} wasted`:wasted===0?"exactly par":`${-wasted} under par`,
+                            eff>=100?"var(--n-grn)":eff>=75?"var(--n-yel)":"var(--n-mag)"],
+    ["TIME",        mmss(ms), L.length?`${mmss(ms/L.length)} per puzzle`:"", "var(--n-pur)"],
+    ["KEYS / MIN",  kpm,    "typing pace", "var(--n-cyan)"],
+    ["UNDER·PAR·OVER", `${under}·${atpar}·${over}`, "per-puzzle verdicts", "var(--n-yel)"],
+  ];
+  $("#stxTiles").innerHTML=tiles.map(([lab,val,sub,c],i)=>{
+    const isNum=typeof val==="number";
+    return `<div class="tile" style="--tc:${c};--d:${i*70}ms">
+      <div class="lab">${lab}</div>
+      <div class="val"${isNum?` data-to="${val}"`:""}>${isNum?0:esc(String(val))}</div>
+      <div class="sub">${esc(sub)}</div></div>`;
+  }).join("");
+  $$("#stxTiles .val[data-to]").forEach(el=>countUp(el,+el.dataset.to));
+
+  const scored=done.map(r=>({...r,d:r.keys-r.par}));
+  const sharp=scored.length?scored.reduce((a,b)=>b.d<a.d?b:a):null;
+  const rough=scored.length?scored.reduce((a,b)=>b.d>a.d?b:a):null;
+  const callOf=(lab,r,c,d)=> r
+    ? `<div class="call" style="--cc:${c};--d:${d}ms"><div class="lab">${lab}</div>
+       <b>${esc(r.name)}</b> — ${r.keys} keys vs par ${r.par} (${r.d>0?"+"+r.d:r.d===0?"par":r.d})</div>`
+    : `<div class="call" style="--cc:var(--dim);--d:${d}ms"><div class="lab">${lab}</div>nothing cleared</div>`;
+  $("#stxCalls").innerHTML=callOf("SHARPEST",sharp,"var(--n-grn)",430)+callOf("ROUGHEST",rough,"var(--n-mag)",500);
+
+  const hd=`<tr class="hd" style="--d:380ms"><td></td><td class="nm">PUZZLE</td><td></td>
+    <td class="num">KEYS</td><td class="num">PAR</td><td class="dl">&plusmn;</td><td class="num">TIME</td></tr>`;
+  $("#stxRows").innerHTML=hd+L.map((r,i)=>{
+    const d=r.keys-r.par;
+    const cls=!r.cleared?"skip":d<=0?"good":d<=Math.ceil(r.par*.5)?"okish":"bad";
+    const w=r.cleared?Math.round(Math.min(r.keys/Math.max(1,r.par),2)/2*100):0;
+    const delay=560+i*45;
+    return `<tr class="${cls}" style="--d:${delay}ms">
+      <td class="n">${String(i+1).padStart(2,"0")}</td>
+      <td class="nm">${esc(r.name)}</td>
+      <td class="bar"><i style="--w:${w}%;--d:${delay+60}ms"></i></td>
+      <td class="num">${r.cleared?r.keys:"—"}</td>
+      <td class="num">${r.par}</td>
+      <td class="dl">${r.cleared?(d>0?"+"+d:d===0?"par":d):"skip"}</td>
+      <td class="num">${r.cleared?mmss(r.ms):"—"}</td></tr>`;
+  }).join("");
+
+  openStats();
+}
+
+function openStats(){
+  statsOpen=true;
+  $("#statsOv").classList.add("show");
+  $("#statsOv").scrollTop=0;
+  for(let i=0;i<5;i++) setTimeout(()=>burst(innerWidth*Math.random(),innerHeight*Math.random(),40,10),i*110);
+}
+function closeStats(){ statsOpen=false; $("#statsOv").classList.remove("show"); }
+
+/* ============================================================
+   5b. VERSUS — live 1v1 over a WebRTC data channel
+   You host nothing: PeerJS's free public broker only introduces the two
+   browsers, then all match traffic goes directly peer-to-peer.
+   ============================================================ */
+const PEER_CONFIG={};                 // public broker; swap only if it ever dies
+const PEER_PREFIX="vimdojo-v1-";
+const CODE_ABC="ABCDEFGHJKMNPQRSTUVWXYZ23456789";   // no I L O 0 1 — codes get read aloud
+const VS_LEN=10;
+let vs=null, clockT=null, lobbyOpen=false;
+
+const makeCode = () => rows(6,()=>CODE_ABC[(Math.random()*CODE_ABC.length)|0]).join("");
+const send = m => { try{ if(vs&&vs.conn&&vs.conn.open) vs.conn.send(m); }catch{} };
+const activeMs = () => run ? run.log.reduce((n,r)=>n+r.ms,0)+(run.done?0:Date.now()-puzT0) : 0;
+const totKeys  = () => run ? run.log.reduce((n,r)=>n+r.keys,0) : 0;
+
+/* cleared desc -> time asc -> keys asc. The cleared gate stops "skip all ten
+   in two seconds" from winning a race decided on time. */
+function winner(a,b){
+  if(a.cleared!==b.cleared) return a.cleared>b.cleared?"a":"b";
+  if(a.time   !==b.time   ) return a.time   <b.time   ?"a":"b";
+  if(a.keys   !==b.keys   ) return a.keys   <b.keys   ?"a":"b";
+  return "draw";
+}
+
+const lbMsg=(t,cls="")=>{ const e=$("#lbMsg"); e.textContent=t; e.className="lb-msg "+cls; };
+function openLobby(){ lobbyOpen=true; $("#lobbyOv").classList.add("show"); }
+function closeLobby(){ lobbyOpen=false; $("#lobbyOv").classList.remove("show"); }
+
+function vsTeardown(){
+  if(clockT){ clearInterval(clockT); clockT=null; }
+  if(vs){ clearInterval(vs.hb); clearInterval(vs.wd); clearTimeout(vs.timer);
+    try{ vs.conn&&vs.conn.close(); }catch{} try{ vs.peer&&vs.peer.destroy(); }catch{} }
+  vs=null;
+  document.body.classList.remove("invs");
+}
+function vsLeave(){
+  vsTeardown(); closeLobby();
+  if(mode==="versus"){ document.body.classList.remove("inrun"); load(0); }
+}
+
+function lobbyUI(){
+  if(!vs) return;
+  $("#lbCode").textContent=vs.code;
+  $("#lbTitle").textContent=vs.host?"YOUR LOBBY":`LOBBY ${vs.code}`;
+  $("#lbTierWrap").style.display=vs.host?"":"none";
+  $("#lbTier").textContent=vs.tier;
+  $("#lbTier").style.background=TIERCOL[vs.tier];
+  $("#lbYou").classList.toggle("ready",true);
+  $(".lb-st",$("#lbYou")).textContent=vs.host?"HOST · READY":"JOINED · READY";
+  $("#lbThem").classList.toggle("ready",!!vs.connected);
+  $(".lb-st",$("#lbThem")).textContent=vs.connected?"CONNECTED · READY":"WAITING…";
+  const s=$("#lbStart");
+  s.style.display=vs.host?"":"none";
+  s.disabled=!vs.connected;
+  if(!vs.host) lbMsg(vs.connected?"CONNECTED — WAITING FOR THE HOST TO START":"CONNECTING…",vs.connected?"ok":"");
+}
+
+function bindConn(c){
+  vs.conn=c;
+  c.on("open",()=>{
+    vs.connected=true; vs.lastSeen=Date.now(); clearTimeout(vs.timer);
+    send({t:"hello"}); lobbyUI();
+    // PeerJS does NOT reliably fire 'close' when a peer simply vanishes (tab reload,
+    // lid shut, network drop) — verified. A heartbeat is the only dependable signal.
+    clearInterval(vs.hb); clearInterval(vs.wd);
+    vs.hb=setInterval(()=>send({t:"ping"}),4000);
+    vs.wd=setInterval(()=>{ if(vs&&vs.connected&&Date.now()-vs.lastSeen>13000) onRivalGone(); },2000);
+    if(vs.host) lbMsg("RIVAL CONNECTED — START WHEN READY","ok");
+  });
+  c.on("data",onMsg);
+  c.on("close",()=>onRivalGone());
+  c.on("error",()=>onRivalGone());
+}
+function onRivalGone(){
+  if(!vs||vs.gone) return;
+  vs.connected=false; vs.gone=true;
+  clearInterval(vs.hb); clearInterval(vs.wd);
+  renderRival();
+  if(lobbyOpen){ lobbyUI(); lbMsg("RIVAL DISCONNECTED","err"); }
+  else if(mode==="versus"){
+    if(run&&run.done) showVersusResult();               // they left mid-wait: you take it
+    else shout("RIVAL LEFT","FINISH THE RUN — THEY FORFEIT");
+  }
+}
+
+function peerErr(e){
+  const t=(e&&e.type)||"";
+  if(t==="unavailable-id"){ vs.code=makeCode(); lobbyUI(); lbMsg("CODE TAKEN — TRY THIS ONE"); return startHostPeer(); }
+  lbMsg(t==="peer-unavailable" ? "NO LOBBY WITH THAT CODE"
+      : t==="network"||t==="server-error" ? "CAN'T REACH THE MATCHMAKING BROKER — TRY AGAIN"
+      : "CONNECTION FAILED — SOME NETWORKS BLOCK PEER-TO-PEER","err");
+}
+
+function startHostPeer(){
+  try{ vs.peer&&vs.peer.destroy(); }catch{}
+  const p=new Peer(PEER_PREFIX+vs.code,PEER_CONFIG);
+  vs.peer=p;
+  p.on("open",()=>lbMsg("LOBBY OPEN — SEND THE CODE TO YOUR RIVAL"));
+  p.on("connection",bindConn);
+  p.on("error",peerErr);
+}
+function hostLobby(){
+  vsTeardown();
+  vs={host:true,code:makeCode(),tier:$("#lbTierChips .chip.on").dataset.tier,connected:false};
+  openLobby(); lobbyUI(); lbMsg("OPENING LOBBY…");
+  startHostPeer();
+}
+function joinLobby(code){
+  code=(code||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6);
+  if(code.length<6){ openLobby(); lbMsg("A LOBBY CODE IS 6 CHARACTERS","err"); return; }
+  vsTeardown();
+  vs={host:false,code,tier:"—",connected:false};
+  openLobby(); lobbyUI(); lbMsg("CONNECTING…");
+  const p=new Peer(undefined,PEER_CONFIG);
+  vs.peer=p;
+  p.on("open",()=>bindConn(p.connect(PEER_PREFIX+code,{reliable:true})));
+  p.on("error",peerErr);
+  vs.timer=setTimeout(()=>{ if(vs&&!vs.connected) lbMsg("NO ANSWER — CHECK THE CODE, OR THEY CLOSED THE LOBBY","err"); },15000);
+}
+
+function onMsg(m){
+  if(!m||!vs) return;
+  vs.lastSeen=Date.now();                    // any traffic proves they are alive
+  if(m.t==="ping") return;
+  if(m.t==="hello"){ vs.connected=true; lobbyUI(); }
+  else if(m.t==="start"){ vs.tier=m.tier; vs.puzzles=m.list; beginMatch(); }
+  else if(m.t==="progress"){ vs.theirI=m.i; vs.theirCleared=m.cleared; vs.theirKeys=m.keys; vs.theirMs=m.ms; renderRival(); }
+  else if(m.t==="done"){ vs.theirs={log:m.log,cleared:m.cleared,time:m.time,keys:m.keys}; renderRival();
+    if(run&&run.done) showVersusResult(); else shout("RIVAL FINISHED","THEY ARE WAITING ON YOU"); }
+  else if(m.t==="rematch"&&!vs.host){ lbMsg(""); }
+}
+
+function hostStart(){
+  if(!vs||!vs.connected) return;
+  vs.tier=$("#lbTierChips .chip.on").dataset.tier;
+  vs.puzzles=rows(VS_LEN,()=>genPuzzle(vs.tier));
+  send({t:"start",tier:vs.tier,list:vs.puzzles});
+  beginMatch();
+}
+
+function beginMatch(){
+  closeLobby(); closeStats();
+  countdown(()=>{
+    mode="versus";
+    run={tier:vs.tier,len:VS_LEN,i:0,cleared:0,keysTotal:0,parTotal:0,done:false,log:[],t0:Date.now()};
+    vs.theirI=0; vs.theirCleared=0; vs.theirKeys=0; vs.theirMs=0; vs.theirs=null; vs.gone=false;
+    document.body.classList.add("inrun","invs");
+    $$(".lv").forEach(b=>b.classList.remove("on"));
+    renderRival();
+    nextVersus();
+    clearInterval(clockT);
+    clockT=setInterval(()=>{ if(run&&!run.done) $("#stClock").textContent=mmss(activeMs()); },200);
+  });
+}
+function countdown(then){
+  const el=$("#countdown"), n=$(".cd-n",el);
+  el.classList.add("on");
+  let k=3;
+  const step=()=>{
+    n.textContent=k>0?k:"GO";
+    n.classList.remove("tick"); void n.offsetWidth; n.classList.add("tick");
+    burst(innerWidth/2,innerHeight/2,50,10);
+    if(k--<0){ el.classList.remove("on"); then(); return; }
+    setTimeout(step,REDUCED?120:800);
+  };
+  step();
+}
+function nextVersus(){
+  run.i++;
+  const p=vs.puzzles[run.i-1];
+  run.parTotal+=p.par; $("#stTotalPar").textContent=run.parTotal;
+  $("#stRun").textContent=`${run.i}/${VS_LEN}`;
+  renderPips();
+  loadPuzzle(p,`<span class="tierbadge" style="background:${TIERCOL[p.tier]||"#fff"}">${esc(p.tier)}</span> ${esc(p.name)}`);
+}
+function renderRival(){
+  if(!vs) return;
+  const done=vs.theirs?VS_LEN:(vs.theirI||0);
+  $("#stRival").textContent=`${Math.min(vs.theirI||0,VS_LEN)}/${VS_LEN}`;
+  $("#stRivalTime").textContent=mmss(vs.theirs?vs.theirs.time:(vs.theirMs||0));
+  $("#stRivalPips").innerHTML=rows(VS_LEN,i=>
+    `<span class="pip${i<(vs.theirCleared||0)?" hit":""}"></span>`).join("");
+  const mine=run?run.cleared:0, theirs=vs.theirCleared||0;
+  const el=$("#stLead");
+  el.textContent = vs.gone?"FORFEIT" : mine>theirs?"AHEAD" : mine<theirs?"BEHIND" : "LEVEL";
+  el.className="lead "+(mine>theirs?"up":mine<theirs?"down":"");
+}
+
+function finishVersus(L,done,keysT){
+  const me={cleared:done.length,time:L.reduce((n,r)=>n+r.ms,0),keys:keysT,log:L};
+  vs.mine=me;
+  send({t:"done",log:L,cleared:me.cleared,time:me.time,keys:me.keys});
+  $("#stClock").textContent=mmss(me.time);
+  if(vs.theirs||vs.gone) showVersusResult();
+  else { shout("RUN COMPLETE","WAITING FOR YOUR RIVAL…"); waitingCard(me); }
+}
+function waitingCard(me){
+  $("#stxVerdict").textContent="WAITING FOR YOUR RIVAL…";
+  $("#stxH2H").innerHTML=`<div class="side win"><div class="who">YOU</div><div class="big">${mmss(me.time)}</div>
+    <div class="sub">${me.cleared}/${VS_LEN} CLEARED · ${me.keys} KEYS</div></div>
+    <div class="mid">VS</div>
+    <div class="side"><div class="who">RIVAL</div><div class="big">…</div><div class="sub">STILL PLAYING</div></div>`;
+  $("#stxTiles").innerHTML=""; $("#stxCalls").innerHTML=""; $("#stxRows").innerHTML="";
+  $("#stxAgain").textContent="REMATCH ⏎"; $("#stxAgain").style.display=vs.host?"":"none";
+  openStats();
+}
+function showVersusResult(){
+  const me=vs.mine, them=vs.theirs||{cleared:0,time:0,keys:0,log:[]};
+  const w=vs.gone&&!vs.theirs ? "a" : winner(me,them);
+  $("#stxTier").textContent=vs.tier; $("#stxTier").style.background=TIERCOL[vs.tier]||"#fff";
+  $("#stxTitle").textContent=`VERSUS · ${VS_LEN} PUZZLES`;
+  $("#stxNew").classList.remove("show");
+  $("#stxVerdict").textContent = w==="draw"?"DEAD HEAT" : w==="a"?"YOU WIN":"RIVAL WINS";
+  const side=(who,d,win)=>`<div class="side ${win?"win":"lose"}"><div class="who">${who}</div>
+    <div class="big" style="--tc:${win?"var(--n-grn)":"var(--n-mag)"}">${mmss(d.time)}</div>
+    <div class="sub">${d.cleared}/${VS_LEN} CLEARED · ${d.keys} KEYS</div></div>`;
+  $("#stxH2H").innerHTML=side("YOU",me,w==="a"||w==="draw")+`<div class="mid">VS</div>`+
+    side(vs.gone&&!vs.theirs?"RIVAL (LEFT)":"RIVAL",them,w==="b"||w==="draw");
+  $("#stxTiles").innerHTML=""; $("#stxCalls").innerHTML="";
+  const hd=`<tr class="hd" style="--d:380ms"><td></td><td class="nm">PUZZLE</td>
+    <td class="t2">YOUR TIME</td><td class="num">KEYS</td><td class="t2">RIVAL</td><td class="num">KEYS</td></tr>`;
+  $("#stxRows").innerHTML=hd+rows(VS_LEN,i=>{
+    const a=me.log[i], b=them.log&&them.log[i];
+    const at=a&&a.cleared?a.ms:null, bt=b&&b.cleared?b.ms:null;
+    const aw=at!==null&&(bt===null||at<bt), bw=bt!==null&&(at===null||bt<at);
+    const d=560+i*45;
+    return `<tr style="--d:${d}ms"><td class="n">${String(i+1).padStart(2,"0")}</td>
+      <td class="nm">${esc(a?a.name:"—")}</td>
+      <td class="t2 ${aw?"fast":"slow"}">${at===null?"skip":mmss(at)}</td>
+      <td class="num">${a&&a.cleared?a.keys:"—"}</td>
+      <td class="t2 ${bw?"fast":"slow"}">${bt===null?(b?"skip":"—"):mmss(bt)}</td>
+      <td class="num">${b&&b.cleared?b.keys:"—"}</td></tr>`;
+  }).join("");
+  $("#stxAgain").textContent="REMATCH ⏎"; $("#stxAgain").style.display=vs.host?"":"none";
+  openStats();
+  shout(w==="draw"?"DEAD HEAT":w==="a"?"YOU WIN":"RIVAL WINS",
+    `${mmss(me.time)} · ${me.cleared}/${VS_LEN} · ${me.keys} KEYS`);
+}
+
+/* ---- wiring ---- */
+$("#btnHost").addEventListener("click",hostLobby);
+$("#btnJoin").addEventListener("click",()=>joinLobby($("#joinCode").value));
+$("#joinCode").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.stopPropagation(); joinLobby(e.target.value); } });
+$("#lbClose").addEventListener("click",vsLeave);
+$("#lbLeave").addEventListener("click",vsLeave);
+$("#lbStart").addEventListener("click",hostStart);
+$$("#lbTierChips .chip").forEach(b=>b.addEventListener("click",()=>{
+  $$("#lbTierChips .chip").forEach(x=>x.classList.toggle("on",x===b));
+  if(vs){ vs.tier=b.dataset.tier; lobbyUI(); }
+}));
+function copyText(t,btn){
+  const done=()=>{ const o=btn.textContent; btn.textContent="COPIED"; setTimeout(()=>btn.textContent=o,1200); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done,()=>fallback());
+  else fallback();
+  function fallback(){ const a=document.createElement("textarea"); a.value=t; a.style.position="fixed";
+    a.style.opacity="0"; document.body.appendChild(a); a.select();
+    try{ document.execCommand("copy"); done(); }catch{} a.remove(); }
+}
+$("#lbCopyCode").addEventListener("click",e=>copyText(vs?vs.code:"",e.target));
+$("#lbCopyLink").addEventListener("click",e=>
+  copyText(location.origin+location.pathname+"#lobby="+(vs?vs.code:""),e.target));
+
+// invite links: .../index.html#lobby=ABC123
+// hashchange matters too — pasting a link while the page is already open is a
+// same-document navigation, so nothing re-runs on its own.
+function tryDeepLink(){
+  const m=/[#&]lobby=([A-Z0-9]{6})/i.exec(location.hash);
+  if(!m) return;
+  const code=m[1].toUpperCase();
+  if(vs&&vs.code===code) return;                 // already in this lobby
+  $("#joinCode").value=code;
+  joinLobby(code);
+}
+addEventListener("hashchange",tryDeepLink);
+setTimeout(tryDeepLink,400);
+
+function nextLevel(){
+  if(mode==="free"){ load(0); return; }
+  if(mode==="versus"){
+    if(run.done) return;
+    if(!won){ logPuzzle(false); renderRival();
+      send({t:"progress",i:run.i,cleared:run.cleared,keys:totKeys(),ms:activeMs()}); }
+    if(run.i>=VS_LEN) finishRun(); else nextVersus();
+    return;
+  }
+  if(mode==="random"){
+    if(run.done){ startRun(); return; }
+    // skipping an unsolved puzzle must not inflate the run's par
+    if(!won){ logPuzzle(false); run.parTotal-=puz.par; $("#stTotalPar").textContent=run.parTotal; }
+    if(run.i>=run.len) finishRun(); else nextRandom();
+    return;
+  }
+  const all=LEVELS.every(L=>best[L.name]!==undefined);
+  const n=(idx+1)%LEVELS.length;
+  load(n);
+  if(all&&n===0) shout("ALL CLEARED","EVERY CHALLENGE BEATEN · GO AGAIN FOR FEWER KEYS");
+}
+
+/* click a solution key -> dim the sheet, fly to the card, detonate it */
+let spotT=null;
+function spotlight(tok){
+  const card=CARDBY.get(tok);
+  if(!card){ shout("NOT ON THE SHEET",tok); return; }
+  clearTimeout(spotT);
+  $$(".card.spotlight").forEach(c=>c.classList.remove("spotlight"));
+  $$(".k.hot").forEach(k=>k.classList.remove("hot"));
+  card.closest(".cat")?.classList.add("in");   // it may not have scroll-revealed yet
+  card.classList.add("in");
+  card.style.transform="";                     // drop any leftover hover tilt
+  card.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"});
+  document.body.classList.add("hunting");
+  void card.offsetWidth;
+  card.classList.add("spotlight");
+  const chip=$$(".k",card).find(k=>k.textContent===tok);
+  chip?.classList.add("hot");
+  setTimeout(()=>{
+    const r=card.getBoundingClientRect();
+    burst(r.left+r.width/2,r.top+r.height/2,46,9);
+  },REDUCED?0:450);
+  spotT=setTimeout(()=>{
+    document.body.classList.remove("hunting");
+    card.classList.remove("spotlight");
+    chip?.classList.remove("hot");
+  },2700);
+}
+$("#solution").addEventListener("click",e=>{
+  const b=e.target.closest(".sol-k");
+  if(!b) return;
+  burst(e.clientX,e.clientY,26,6);
+  spotlight(b.dataset.tok);
+});
+
+function check(){
+  if(mode==="free"||won||!puz) return;
+  const hit=norm(view.state.doc.toString())===norm(puz.target);
+  $("#tgtPane").classList.toggle("match",hit);
+  if(!hit) return;
+
+  // a puzzle that states a rule has to actually hold you to it
+  if(puz.rule&&puz.rule.noInsert&&usedInsert){
+    $("#tgtPane").classList.remove("match");
+    $("#tgtPane").classList.add("broke");
+    if(!violated){
+      violated=true;
+      $("#nextBar").innerHTML=`INSERT MODE USED &mdash; THIS ONE WANTS <kbd>r</kbd>. RESET WITH <kbd>F6</kbd>`;
+      $("#nextBar").classList.add("show","warn");
+      shout("RULE BROKEN","NO INSERT MODE ON THIS ONE — F6 TO RESET");
+    }
+    return;
+  }
+
+  won=true;
+  $("#solution").classList.add("show");
+  const verdict = keys<=puz.par ? (keys<puz.par?"UNDER PAR":"PAR") : `${keys-puz.par} OVER PAR`;
+
+  if(mode==="versus"){
+    run.cleared++; run.keysTotal+=keys;
+    logPuzzle(true);
+    renderPips(); renderRival();
+    send({t:"progress",i:run.i,cleared:run.cleared,keys:totKeys(),ms:activeMs()});
+    if(run.i>=VS_LEN){ finishRun(); return; }
+    $("#nextBar").innerHTML=`CLEARED &mdash; PRESS <kbd>&crarr;</kbd> FOR THE NEXT PUZZLE`;
+    $("#nextBar").classList.add("show");
+    shout(keys<=puz.par?"CLEARED":"SOLVED",`${keys} KEYS · ${mmss(run.log[run.log.length-1].ms)} · ${run.i}/${VS_LEN}`,true);
+    return;
+  }
+
+  if(mode==="random"){
+    run.cleared++; run.keysTotal+=keys;
+    logPuzzle(true);
+    $("#stTotal").textContent=run.keysTotal;
+    renderPips();
+    if(run.i>=run.len){ finishRun(); return; }
+    $("#nextBar").innerHTML=`CLEARED &mdash; PRESS <kbd>&crarr;</kbd> FOR THE NEXT PUZZLE`;
+    $("#nextBar").classList.add("show");
+    shout(keys<=puz.par?"CLEARED":"SOLVED",
+      `${keys} KEYS · PAR ${puz.par} · ${verdict} · ${run.i}${run.len===Infinity?"":"/"+run.len}`,true);
+    return;
+  }
+
+  const prev=best[puz.name], pb=prev===undefined||keys<prev;
+  if(pb){ best[puz.name]=keys; saveBest(); $("#stBest").textContent=keys; }
+  $$(".lv").forEach(b=>{ if(+b.dataset.i===idx) b.classList.add("done"); });
+  $("#nextBar").innerHTML=`CLEARED &mdash; PRESS <kbd>&crarr;</kbd> FOR THE NEXT CHALLENGE`;
+  $("#nextBar").classList.add("show");
+  shout(keys<=puz.par?"CLEARED":"SOLVED", `${keys} KEYS · PAR ${puz.par} · ${verdict}${pb?" · NEW BEST":""}`,true);
+}
+
+const list=$("#lvList");
+LEVELS.forEach((L,i)=>{
+  const li=document.createElement("li");
+  li.innerHTML=`<button class="lv${best[L.name]!==undefined?" done":""}" data-i="${i}">
+    <span class="num">${String(i+1).padStart(2,"0")}</span>${esc(L.name)}<span class="tick">✓</span></button>`;
+  list.appendChild(li);
+});
+$$(".lv").forEach(b=>b.addEventListener("click",()=>{
+  b.dataset.free ? loadFree() : load(+b.dataset.i);
+}));
+
+const chipBurst=b=>{ const r=b.getBoundingClientRect(); burst(r.left+r.width/2,r.top+r.height/2,18,5); };
+$$("#tierChips .chip").forEach(b=>b.addEventListener("click",()=>{
+  tier=b.dataset.tier;
+  $$("#tierChips .chip").forEach(x=>x.classList.toggle("on",x===b));
+  chipBurst(b);
+}));
+$$("#lenChips .chip").forEach(b=>b.addEventListener("click",()=>{
+  runLen=+b.dataset.len;
+  $$("#lenChips .chip").forEach(x=>x.classList.toggle("on",x===b));
+  chipBurst(b);
+}));
+$("#btnAnim").addEventListener("click",toggleAnim);
+$("#btnRel").addEventListener("click",()=>setRelative(!relNums));
+$("#btnRun").addEventListener("click",startRun);
+$("#btnFinish").addEventListener("click",()=>{ if(mode==="random") finishRun(); });
+// "again" means rematch inside a match, and a fresh solo run otherwise
+function statsAgain(){
+  if(mode==="versus"&&vs){ if(vs.host){ closeStats(); hostStart(); } return; }
+  startRun();
+}
+$("#stxClose").addEventListener("click",closeStats);
+$("#stxAgain").addEventListener("click",statsAgain);
+$("#stxBack").addEventListener("click",()=>{ closeStats(); load(0); });
+$("#statsOv").addEventListener("click",e=>{ if(e.target===$("#statsOv")) closeStats(); });
+renderRunBest();
+
+function doReset(){
+  if(statsOpen) return;
+  if(mode==="free") return loadFree();
+  // same puzzle, clean slate — the clock keeps running, resetting is not a free rewind
+  if(mode==="random"||mode==="versus") return loadPuzzle(puz,$("#lvTitle").innerHTML);
+  load(idx);
+}
+$("#btnReset").addEventListener("click",doReset);
+
+// No control may pull the caret out of the buffer. A native mousedown focuses the
+// button it lands on, so kill that default everywhere outside the editor.
+document.addEventListener("mousedown",e=>{
+  if(e.target.closest("#editor")) return;
+  if(e.target.closest("button")) e.preventDefault();
+});
+$("#btnSolve").addEventListener("click",()=>{ $("#solution").classList.toggle("show"); });
+$("#btnNext").addEventListener("click",nextLevel);
+
+// the rail buttons drive the real editor, not a fake mode
+$$(".mode-btn").forEach(b=>b.addEventListener("click",()=>{
+  view.focus();
+  Vim.handleKey(cm,"<Esc>");
+  const k={insert:"i",visual:"v",command:":"}[b.dataset.m];
+  if(k) Vim.handleKey(cm,k);
+}));
+
+load(0);
+observeReveals();
+
+/* ============================================================
+   6. COMMAND REFERENCE
+   ============================================================ */
+const CATS=[
+  { name:"MOTION", c:"var(--n-cyan)", list:[
+    ["h j k l","left / down / up / right — the home row is the arrow keys"],
+    ["w b e","forward a word, back a word, end of word"],
+    ["0 ^ $","start of line, first non-blank, end of line"],
+    ["gg G","top of file, bottom of file"],
+    ["{ }","jump paragraph up / down"],
+    ["Ctrl-d Ctrl-u","half page down / up"],
+    ["H M L","top / middle / bottom of the visible screen"],
+    ["f t ; ,","f{char} lands on it, t{char} stops before, ; repeats, , reverses"],
+    ["%","hop to the matching bracket"],
+    ["Ctrl-o Ctrl-i","jump back / forward through the jump list"],
+  ]},
+  { name:"EDIT", c:"var(--n-grn)", list:[
+    ["i a","insert before / after the cursor"],
+    ["I A","insert at line start / line end"],
+    ["o O","open a new line below / above"],
+    ["x X","delete char under / before the cursor"],
+    ["dd dw d$ D","delete line, word, to end of line (D is shorthand)"],
+    ["cc cw C","change line, word, to end of line — deletes then inserts"],
+    ["ct, dt) yt;","operator + an f/t motion — act right up to a character"],
+    ["yy p P","yank line, paste after / before"],
+    ["u Ctrl-r","undo, redo"],
+    ["r R","replace one char / overwrite mode"],
+    ["J","join this line with the next"],
+    [">> <<","indent / outdent the line"],
+    ["~ gU gu","swap case / uppercase / lowercase"],
+    [".","repeat the last change — the most powerful key in vim"],
+    ["Esc","leave insert or visual mode and drop back to normal — the most-pressed key in vim"],
+    ["3dd 5j 2@q","stick a count in front and the command runs that many times"],
+  ]},
+  { name:"SEARCH & REPLACE", c:"var(--n-yel)", list:[
+    ["/ ?","search forward / backward"],
+    ["n N","next / previous match"],
+    ["* #","search the word under the cursor forward / back"],
+    [":%s/a/b/g","replace a with b in the whole file"],
+    [":%s/a/b/gc","same, but confirm every hit"],
+    [":2,4s/a/b/g :2,4d","act on a line range only — substitute inside it, or delete it outright"],
+    [":g/pat/d :v/pat/d","run a command on every line that matches — or every line that does not"],
+    [":%norm","run a normal-mode command on every line, macros without the macro"],
+    [":sort","sort the whole file"],
+    [":noh","clear the leftover search highlight"],
+  ]},
+  { name:"VISUAL & TEXT OBJECTS", c:"var(--n-mag)", list:[
+    ["v V","character-wise / line-wise visual mode"],
+    ["Ctrl-v","block visual — column editing, then I or A to insert down the column"],
+    ["gv","reselect whatever you had last time"],
+    ["aw iw","a word (with its space) / inner word"],
+    ['ci\" di(',"change inside quotes / delete inside parens"],
+    ["ap ip","a paragraph / inner paragraph"],
+    ["dit cit","delete / change inside an HTML tag"],
+  ]},
+  { name:"FILES & WINDOWS", c:"var(--n-pur)", list:[
+    [":w :q","write, quit"],
+    [":wq ZZ","write and quit — ZZ is the lazy way"],
+    [":q! ZQ","quit and throw the changes away"],
+    [":e file","open another file"],
+    [":sp :vs","split horizontally / vertically"],
+    ["Ctrl-w h j k l","move between splits"],
+    [":bn :bp","next / previous buffer"],
+  ]},
+  { name:"MARKS, REGISTERS & MACROS", c:"var(--n-cyan)", list:[
+    ["ma `a","drop mark a, jump straight back to it"],
+    ['"ayy "ap',"yank into register a, paste from it"],
+    ["qa q","record a macro into register a, stop recording"],
+    ["@a @@","play macro a, replay the last one"],
+    ["10@a","run it ten times and go get a coffee"],
+  ]},
+];
+
+const catsEl=$("#cats");
+CATS.forEach(cat=>{
+  const sec=document.createElement("div");
+  sec.className="cat reveal";
+  sec.style.setProperty("--c",cat.c);
+  sec.innerHTML=`<div class="cat-h"><span>${cat.name}</span><div class="bar"></div></div>`;
+  const g=document.createElement("div"); g.className="grid";
+  cat.list.forEach(([k,d],i)=>{
+    const card=document.createElement("div");
+    card.className="card reveal";
+    card.style.transitionDelay=(i*40)+"ms";
+    card.style.setProperty("--c",cat.c);
+    card.dataset.keys=k;
+    card.innerHTML=`<div class="keys">${k.split(/\s+/).map(x=>`<span class="k">${esc(x)}</span>`).join("")}</div>
+                    <div class="desc">${d}</div>`;
+    g.appendChild(card);
+  });
+  sec.appendChild(g); catsEl.appendChild(sec);
+});
+
+const KEYMAP=new Map();
+$$(".card").forEach(card=>{
+  card.dataset.keys.split(/\s+/).forEach(tok=>{
+    if(!CARDBY.has(tok)) CARDBY.set(tok,card);   // exact token, for solution links
+    const k=tok.replace(/[{}"]/g,"");            // stripped, for the single-key flare
+    if(!k) return;
+    if(!KEYMAP.has(k)) KEYMAP.set(k,[]);
+    KEYMAP.get(k).push(card);
+  });
+});
+$$(".card").forEach(card=>{
+  card.addEventListener("pointermove",e=>{
+    const r=card.getBoundingClientRect();
+    const px=(e.clientX-r.left)/r.width-.5, py=(e.clientY-r.top)/r.height-.5;
+    card.style.transform=`perspective(680px) rotateY(${px*14}deg) rotateX(${-py*14}deg) translateZ(16px)`;
+  });
+  card.addEventListener("pointerleave",()=>{ card.style.transform=""; });
+  card.addEventListener("click",e=>burst(e.clientX,e.clientY,20,5));
+});
+observeReveals();
+
+/* ============================================================
+   7. GLOBAL KEYS — cosmetic only, and never inside the editor
+   ============================================================ */
+addEventListener("keydown",e=>{
+  if(statsOpen){
+    if(e.key==="Enter") statsAgain();
+    else if(e.key==="Escape") closeStats();
+    return;
+  }
+  if(lobbyOpen) return;                       // the lobby owns its own inputs
+  if(e.key==="F6"){ e.preventDefault(); doReset(); view.focus(); return; }
+  if(view.dom.contains(document.activeElement)) return;   // the editor owns its keys
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  if(won && e.key==="Enter"){ nextLevel(); return; }       // works even with focus off the buffer
+  cap(label(e));
+  burst(innerWidth-46,innerHeight-42,12,5);
+  const hits=KEYMAP.get(e.key);
+  if(hits) hits.forEach(card=>{
+    card.classList.remove("flare"); void card.offsetWidth; card.classList.add("flare");
+    const r=card.getBoundingClientRect();
+    if(r.top<innerHeight&&r.bottom>0) burst(r.left+r.width/2,r.top+r.height/2,14,5);
+  });
+});   // not passive: F6 above needs preventDefault
+
+})();
+</script>
+</body>
+</html>
