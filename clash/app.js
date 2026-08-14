@@ -35,7 +35,7 @@ function freshState(th) {
   return {
     v: 1, th: th || 11, builders: 5, name: "", tag: "",
     buildings: {}, walls: {}, heroes: {}, lab: {}, pets: {}, equip: {}, running: [],
-    settings: { buildBoost: 0, labBoost: 0,
+    settings: { buildBoost: 0, labBoost: 0, maxHeroBusy: 2,
       lootGold: 12000000, lootElixir: 12000000, lootDark: 60000,
       wallGoldDay: 3000000, wallElixirDay: 3000000, apiEndpoint: "",
       oreWeekShiny: 6500, oreWeekGlowy: 550, oreWeekStarry: 15 },
@@ -388,7 +388,7 @@ function builderTasks(A) {
     const seeded = consume(h.id, cur, h.id + ":0", h.name, h.res);
     stepsBetween(h.rows, cur + (seeded ? 1 : 0), mx).forEach((s, k) => {
       tasks.push({ kind: "hero", id: h.id, name: h.name, inst: 0, to: s.lvl, cost: s.cost, res: h.res,
-        time: s.time, tier: 0, seq: k, why: "hero — always keep upgrading", value: 0 });
+        time: s.time, tier: 0, seq: k, why: "hero — top priority", value: 0 });
     });
   }
   // buildings
@@ -428,11 +428,36 @@ function schedule(tasks, workers, boostPct, seeds) {
   const factor = 1 - (boostPct || 0) / 100;
   const lanes = Array.from({ length: workers }, () => ({ free: 0, items: [] }));
   const instAvail = {}; // instance key -> hour its current upgrade finishes
+  // Hero cap: never more than `capH` heroes upgrading at any moment, so enough
+  // stay awake to attack with. This is a hard rule — it even outranks the
+  // critical-chain shortcut. heroFit returns the earliest start >= s at which
+  // one more hero upgrade of length `dur` fits under the cap.
+  const heroSet = new Set(HEROES.map(h => h.id));
+  const capH = state.settings.maxHeroBusy === 0 ? Infinity : (state.settings.maxHeroBusy || 2);
+  const heroIv = []; // [startH, endH] of every scheduled hero upgrade (incl. running)
+  const heroFit = (s, dur) => {
+    if (capH === Infinity || !heroIv.length) return s;
+    for (let g = 0; g < 500; g++) {
+      const pts = [];
+      for (const [st, en] of heroIv) if (st < s + dur && en > s)
+        pts.push([Math.max(st, s), 1], [Math.min(en, s + dur), -1]);
+      pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      let cur = 0, mx = 0;
+      for (const p of pts) { cur += p[1]; if (cur > mx) mx = cur; }
+      if (mx < capH) return s;
+      let next = Infinity;
+      for (const [, en] of heroIv) if (en > s && en < next) next = en;
+      if (next === Infinity) return s;
+      s = next; // retry once the earliest overlapping hero finishes
+    }
+    return s;
+  };
   (seeds || []).slice(0, workers).forEach((sd, i) => {
     const item = { ...sd, start: 0, lane: i, running: true };
     lanes[i].free = sd.end;
     lanes[i].items.push(item);
     instAvail[sd.key] = sd.end;
+    if (heroSet.has(sd.id)) heroIv.push([0, sd.end]);
   });
   // Resource balancing: each free builder takes the highest-priority job from
   // whichever resource is least ahead of its farming budget (loot/day rates
@@ -467,7 +492,8 @@ function schedule(tasks, workers, boostPct, seeds) {
       const t = pending[i];
       const key = t.id + ":" + t.inst;
       if ((started[key] || 0) !== t.seq) continue;
-      const avail = instAvail[key] || 0;
+      let avail = instAvail[key] || 0;
+      if (heroSet.has(t.id)) avail = heroFit(Math.max(avail, lane.free), t.time * factor);
       if (avail <= lane.free) nowIdx.push(i);
       else if (avail < fbAvail) { fbAvail = avail; fbIdx = i; }
     }
@@ -503,12 +529,14 @@ function schedule(tasks, workers, boostPct, seeds) {
     const t = pending.splice(idx, 1)[0];
     const key = t.id + ":" + t.inst;
     started[key] = (started[key] || 0) + 1;
-    const start = Math.max(lane.free, instAvail[key] || 0);
     const dur = t.time * factor;
+    let start = Math.max(lane.free, instAvail[key] || 0);
+    if (heroSet.has(t.id)) start = heroFit(start, dur);
     const item = { ...t, start, end: start + dur, lane: lanes.indexOf(lane), ord: timeline.length };
     lane.free = item.end;
     lane.items.push(item);
     instAvail[key] = item.end;
+    if (heroSet.has(t.id)) heroIv.push([start, item.end]);
     chainRem[key] = Math.max(0, (chainRem[key] || 0) - dur);
     workLeft = Math.max(0, workLeft - dur);
     spent[t.res] += t.cost;
@@ -1009,7 +1037,8 @@ function renderPlan() {
       <div class="io-row" style="margin:6px 0 0">
         <label class="field small">builder −<select id="buildBoost">${[0, 10, 15, 20].map(v => `<option ${v === state.settings.buildBoost ? "selected" : ""}>${v}</option>`).join("")}</select>%</label>
         <label class="field small">lab −<select id="labBoost">${[0, 10, 15, 20].map(v => `<option ${v === state.settings.labBoost ? "selected" : ""}>${v}</option>`).join("")}</select>%</label>
-      </div><div class="delta">Gold Pass / events time discount</div></div>
+        <label class="field small">heroes ≤<select id="maxHeroBusy">${[[1, "1"], [2, "2"], [3, "3"], [0, "all"]].map(([v, l]) => `<option value="${v}"${v === (state.settings.maxHeroBusy ?? 2) ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+      </div><div class="delta">time discounts · hero cap keeps the rest awake for attacks</div></div>
   </div>
   ${state.running.length ? `<div class="card" style="margin-bottom:14px"><h2>Running now</h2>${runningRows}</div>` : ""}
   <div class="card" style="margin-bottom:14px"><h2>Next up — fill your queue</h2>
@@ -1027,7 +1056,9 @@ function renderPlan() {
     whichever resource is least ahead of your loot/day rates (set in To Max), so gold, elixir and dark elixir
     spending stay balanced instead of burning one resource first — except when an upgrade chain is long enough
     to set the finish date (usually a hero): that always continues immediately, so balancing never makes the
-    plan take longer. The Laboratory and Pet House are single queues.
+    plan take longer. ${state.settings.maxHeroBusy ? `Hard rule: at most <b>${state.settings.maxHeroBusy}</b> hero${state.settings.maxHeroBusy > 1 ? "es" : ""}
+    upgrade at the same time (set next to the boosts), so the rest stay awake for attacking.` : ""}
+    The Laboratory and Pet House are single queues.
     Walls aren't scheduled — they're instant and only cost resources.</div>
     <div class="g-legend">
       <span><span class="dot gold"></span> costs gold</span>
@@ -2500,6 +2531,7 @@ function bindEvents() {
     } else if (t.id === "ganttHorizon") { ganttHorizon = +t.value; renderPlan(); }
     else if (t.id === "buildBoost") { state.settings.buildBoost = +t.value; save(); renderActive(); }
     else if (t.id === "labBoost") { state.settings.labBoost = +t.value; save(); renderActive(); }
+    else if (t.id === "maxHeroBusy") { state.settings.maxHeroBusy = +t.value; save(); renderActive(); }
     else if (t.id === "lootGold") { state.settings.lootGold = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootElixir") { state.settings.lootElixir = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "lootDark") { state.settings.lootDark = Math.max(0, +t.value || 0); save(); renderActive(); }
