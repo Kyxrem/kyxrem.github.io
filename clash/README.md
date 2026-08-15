@@ -27,6 +27,20 @@ A fully client-side Clash of Clans base analyzer, hosted on GitHub Pages at
 - **To Max** — gold / elixir / dark elixir / ore totals needed to max the
   current TH, time bottleneck analysis at your loot-per-day rates with an ETA
   date, and a reference table of what *every* TH costs from scratch.
+- **Ores** — an ore income calculator built from your actual sources (ranked
+  league star bonuses, wars per month and win rate at your TH's war-loot
+  table, the Trader's raid-medal and gem deals, plus a manual line for
+  events/pass/CWL): weekly and monthly income per ore, an ETA date for maxing
+  all owned equipment, a per-equipment "time alone" table, and a from→to
+  upgrade cost calculator with the gem-equivalent price. Using the calculator
+  keeps the weekly numbers in the To Max / plan cards in sync. Income tables
+  (star bonus per league, war ore per TH) are in a reference fold-out.
+- **Magic Items** — "best use right now" computed from your base: which
+  upgrade each Book should skip (longest timer you can start), what each
+  Hammer should buy out (most expensive next upgrade), potion time values,
+  rune value vs. your storages and remaining bills, and wall-ring value per
+  ring at your current wall level — plus a reference table of every magic
+  item with gem / CWL-medal / raid-medal prices and holding caps.
 - **Base Builder** — a layout creator for every Town Hall level: the exact
   building counts for that TH on the 44×44 grid, click/drag placement, wall
   painting, and a coverage overlay showing which tiles your defenses can
