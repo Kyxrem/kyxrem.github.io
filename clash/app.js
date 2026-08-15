@@ -38,7 +38,10 @@ function freshState(th) {
     settings: { buildBoost: 0, labBoost: 0,
       lootGold: 12000000, lootElixir: 12000000, lootDark: 60000,
       wallGoldDay: 3000000, wallElixirDay: 3000000, apiEndpoint: "",
-      oreWeekShiny: 6500, oreWeekGlowy: 550, oreWeekStarry: 15 },
+      oreWeekShiny: 6500, oreWeekGlowy: 550, oreWeekStarry: 15,
+      oreCalc: { league: 17, sbPerWeek: 7, warsPerMonth: 8, winRate: 50,
+        medalShiny: 2, medalGlowy: 2, medalStarry: 2, gemShiny: 0, gemGlowy: 0, gemStarry: 0,
+        extraShiny: 0, extraGlowy: 0, extraStarry: 0 } },
   };
 }
 function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
@@ -111,6 +114,7 @@ function completeRunning(r) {
 function normalize() {
   const th = state.th;
   state.settings = { ...freshState(1).settings, ...(state.settings || {}) };
+  state.settings.oreCalc = { ...freshState(1).settings.oreCalc, ...(state.settings.oreCalc || {}) };
   if (!Array.isArray(state.running)) state.running = [];
   const now = Date.now();
   state.running = state.running.filter(r => {
@@ -647,7 +651,7 @@ function progRow(name, spent, total, extra) {
 }
 
 /* ---------------- tabs ---------------- */
-const TABS = ["overview", "base", "plan", "tomax", "metrics", "builder", "io"];
+const TABS = ["overview", "base", "plan", "tomax", "ores", "magic", "metrics", "builder", "io"];
 let activeTab = "overview";
 let ganttHorizon = 56; // days shown in the plan timetable; 0 = everything
 function switchTab(t) {
@@ -664,6 +668,8 @@ function renderActive() {
   if (activeTab === "base") renderBase();
   if (activeTab === "plan") renderPlan();
   if (activeTab === "tomax") renderToMax();
+  if (activeTab === "ores") renderOres();
+  if (activeTab === "magic") renderMagic();
   if (activeTab === "metrics") renderMetrics();
   if (activeTab === "builder") renderBuilder();
   if (activeTab === "io") renderIO();
@@ -1219,7 +1225,7 @@ function renderToMax() {
         <tbody>${wallRows}</tbody></table></div>
     </div>
     <div class="card"><h2>Equipment & ore plan</h2>
-      <div class="note">Weekly ore income (raid medals, trader, events) → when your owned equipment maxes for this TH's Blacksmith.</div>
+      <div class="note">Weekly ore income → when your owned equipment maxes for this TH's Blacksmith. The <b>Ores</b> tab calculates these numbers from your league, wars and trader deals — using it keeps them in sync.</div>
       <div class="io-row small">
         <label class="field"><span class="dot shiny"></span>Shiny/wk <input type="number" class="wide" id="oreWeekShiny" value="${s.oreWeekShiny}" step="500"></label>
         <label class="field"><span class="dot glowy"></span>Glowy/wk <input type="number" class="wide" id="oreWeekGlowy" value="${s.oreWeekGlowy}" step="50"></label>
@@ -1240,6 +1246,363 @@ function renderToMax() {
     <div class="table-scroll"><table class="data">
       <thead><tr><th>Level</th><th>TH upgrade (gold)</th><th>Gold</th><th>Elixir</th><th>Dark</th><th>Builder time</th><th>Lab time</th></tr></thead>
       <tbody>${thRows}</tbody></table></div></div>`;
+}
+
+/* ---------- Ores ---------- */
+// Income data scraped from clashofclans.fandom.com/wiki/Ores + /wiki/Trader (Aug 2026).
+// Star Bonus per completion, by ranked league: [shiny, glowy, starry]
+const ORE_LEAGUES = [
+  ["Skeleton 1", 300, 20, 0], ["Skeleton 2", 325, 21, 0], ["Skeleton 3", 350, 22, 0],
+  ["Barbarian 4", 375, 23, 0], ["Barbarian 5", 400, 24, 0], ["Barbarian 6", 425, 25, 0],
+  ["Archer 7", 450, 26, 0], ["Archer 8", 475, 27, 1], ["Archer 9", 500, 29, 1],
+  ["Wizard 10", 525, 31, 1], ["Wizard 11", 550, 33, 1], ["Wizard 12", 575, 35, 1],
+  ["Valkyrie 13", 600, 37, 1], ["Valkyrie 14", 625, 39, 1], ["Valkyrie 15", 650, 41, 1],
+  ["Witch 16", 675, 43, 1], ["Witch 17", 725, 45, 1], ["Witch 18", 775, 47, 1],
+  ["Golem 19", 825, 49, 1], ["Golem 20", 875, 51, 1], ["Golem 21", 900, 53, 1],
+  ["P.E.K.K.A 22", 925, 54, 1], ["P.E.K.K.A 23", 950, 55, 1], ["P.E.K.K.A 24", 963, 56, 1],
+  ["Titan 25", 1000, 57, 1], ["Titan 26", 1010, 58, 1], ["Titan 27", 1020, 59, 1],
+  ["Dragon 28", 1030, 60, 1], ["Dragon 29", 1040, 61, 1], ["Dragon 30", 1050, 62, 1],
+  ["Electro 31", 1060, 62, 2], ["Electro 32", 1070, 63, 2], ["Electro 33", 1080, 64, 2],
+  ["Legend", 1100, 65, 2],
+];
+// Max war ore per war by (opponent ≈ own) TH: [shiny, glowy, starry]. Full amount needs ≥1 star; loss pays half.
+const ORE_WAR = { 8: [380, 15, 0], 9: [410, 18, 0], 10: [460, 21, 3], 11: [560, 24, 3], 12: [610, 27, 4],
+  13: [710, 30, 4], 14: [810, 33, 4], 15: [960, 36, 5], 16: [1110, 39, 6], 17: [1110, 39, 6], 18: [1110, 39, 6] };
+const ORE_GEM_VALUE = { shiny: 1, glowy: 5, starry: 35 }; // Blacksmith top-up rate, gems per ore
+
+function oreIncome() {
+  const c = state.settings.oreCalc;
+  const lg = ORE_LEAGUES[c.league] || ORE_LEAGUES[17];
+  const war = ORE_WAR[Math.min(Math.max(state.th, 8), MAX_TH)] || [0, 0, 0];
+  const sb = Math.min(7, c.sbPerWeek), wr = Math.min(100, c.winRate) / 100;
+  const winF = wr + (1 - wr) * 0.5; // losses pay half
+  const warsWk = c.warsPerMonth * 7 / 30 * winF;
+  return {
+    shiny: lg[1] * sb + war[0] * warsWk + c.medalShiny * 500 + c.gemShiny * 300 + c.extraShiny * 7 / 30,
+    glowy: lg[2] * sb + war[1] * warsWk + 10 + c.medalGlowy * 50 + c.gemGlowy * 60 + c.extraGlowy * 7 / 30,
+    starry: lg[3] * sb + war[2] * warsWk + c.medalStarry * 5 + c.gemStarry * 15 + c.extraStarry * 7 / 30,
+    medals: c.medalShiny * 350 + c.medalGlowy * 300 + c.medalStarry * 350,
+    gems: c.gemShiny * 150 + c.gemGlowy * 150 + c.gemStarry * 275,
+  };
+}
+function syncOreWeekly() {
+  const wk = oreIncome();
+  state.settings.oreWeekShiny = Math.round(wk.shiny);
+  state.settings.oreWeekGlowy = Math.round(wk.glowy);
+  state.settings.oreWeekStarry = Math.round(wk.starry);
+}
+function etaStr(weeks) {
+  if (!isFinite(weeks)) return "∞";
+  if (weeks <= 0) return "done";
+  return new Date(Date.now() + weeks * 7 * 864e5).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+let oreSel = null; // from→to calculator selection (not persisted)
+
+function renderOres() {
+  const root = $("#tab-ores");
+  const A = analyze();
+  const c = state.settings.oreCalc;
+  const wk = oreIncome();
+  const bsMax = blacksmithLevel("max");
+  const rem = { shiny: A.totals.shiny, glowy: A.totals.glowy, starry: A.totals.starry };
+  const weeks = k => wk[k] > 0 ? rem[k] / wk[k] : (rem[k] > 0 ? Infinity : 0);
+  const wkAll = Math.max(weeks("shiny"), weeks("glowy"), weeks("starry"));
+  const synced = Math.round(wk.shiny) === state.settings.oreWeekShiny &&
+    Math.round(wk.glowy) === state.settings.oreWeekGlowy && Math.round(wk.starry) === state.settings.oreWeekStarry;
+
+  // per-equipment: remaining ores + ETA if all income went to that item
+  const eqRows = Object.entries(state.equip).map(([id, lvl]) => {
+    const e = byId[id];
+    if (!e) return null;
+    const cap = equipCapAt(bsMax, e.rarity);
+    const r = { shiny: 0, glowy: 0, starry: 0 };
+    for (const row of e.rows) if (row.lvl > lvl && row.lvl <= cap) { r.shiny += row.shiny; r.glowy += row.glowy; r.starry += row.starry; }
+    const w = Math.max(...["shiny", "glowy", "starry"].map(k => wk[k] > 0 ? r[k] / wk[k] : (r[k] ? Infinity : 0)));
+    return { name: e.name, rarity: e.rarity, lvl, cap, rem: r, w };
+  }).filter(Boolean).filter(r => r.lvl < r.cap).sort((a, b) => a.w - b.w);
+  const eqTable = eqRows.map(r => `
+    <tr><td>${esc(r.name)} ${r.rarity === "epic" ? '<span class="pill acc">epic</span>' : ""}</td>
+      <td>${r.lvl} / ${r.cap}</td><td>${fmt(r.rem.shiny)}</td><td>${fmt(r.rem.glowy)}</td><td>${fmt(r.rem.starry)}</td>
+      <td>${isFinite(r.w) ? r.w.toFixed(1) + " wk · " + etaStr(r.w) : "–"}</td></tr>`).join("");
+
+  // from→to calculator
+  if (!oreSel || !byId[oreSel.id]) {
+    const first = eqRows[0] ? EQUIP.find(e => e.name === eqRows[0].name) : EQUIP[0];
+    oreSel = { id: first.id, from: state.equip[first.id] || 1, to: equipCapAt(bsMax, first.rarity) || (first.rarity === "epic" ? 27 : 18) };
+  }
+  const selE = byId[oreSel.id];
+  const selMax = selE.rarity === "epic" ? 27 : 18;
+  oreSel.from = Math.min(Math.max(1, oreSel.from), selMax - 1);
+  oreSel.to = Math.min(Math.max(oreSel.from + 1, oreSel.to), selMax);
+  const selCost = { shiny: 0, glowy: 0, starry: 0 };
+  for (const r of selE.rows) if (r.lvl > oreSel.from && r.lvl <= oreSel.to) { selCost.shiny += r.shiny; selCost.glowy += r.glowy; selCost.starry += r.starry; }
+  const selGems = selCost.shiny * ORE_GEM_VALUE.shiny + selCost.glowy * ORE_GEM_VALUE.glowy + selCost.starry * ORE_GEM_VALUE.starry;
+  const selWeeks = Math.max(...["shiny", "glowy", "starry"].map(k => wk[k] > 0 ? selCost[k] / wk[k] : (selCost[k] ? Infinity : 0)));
+  const selCap = equipCapAt(bsMax, selE.rarity);
+  const eqOpts = EQUIP.slice().sort((a, b) => a.rarity === b.rarity ? a.name.localeCompare(b.name) : a.rarity === "common" ? -1 : 1)
+    .map(e => `<option value="${e.id}"${e.id === oreSel.id ? " selected" : ""}>${esc(e.name)}${e.rarity === "epic" ? " (epic)" : ""}${e.id in state.equip ? " · owned L" + state.equip[e.id] : ""}</option>`).join("");
+  const lvlOpts = (from, to, cur) => {
+    let o = "";
+    for (let l = from; l <= to; l++) o += `<option value="${l}"${l === cur ? " selected" : ""}>L${l}</option>`;
+    return o;
+  };
+
+  const num = (key, label, val, extra) =>
+    `<label class="field">${label} <input type="number" class="wide" data-orecalc="${key}" value="${val}" ${extra || ""}></label>`;
+  const leagueOpts = ORE_LEAGUES.map((l, i) => `<option value="${i}"${i === c.league ? " selected" : ""}>${l[0]}</option>`).join("");
+  const dealSel = (key, max, label, sub) => {
+    let o = "";
+    for (let n = 0; n <= max; n++) o += `<option value="${n}"${n === c[key] ? " selected" : ""}>${n}×</option>`;
+    return `<label class="field" title="${sub}">${label} <select data-orecalc="${key}">${o}</select></label>`;
+  };
+  const warOre = ORE_WAR[Math.min(Math.max(state.th, 8), MAX_TH)] || [0, 0, 0];
+
+  root.innerHTML = `
+  ${state.th < 8 ? `<div class="msg info" style="margin-bottom:14px">Ores and the Blacksmith unlock at TH8 — numbers below assume TH8 war loot.</div>` : ""}
+  <div class="grid cols-4" style="margin-bottom:14px">
+    ${tile("Shiny / week", fmt(wk.shiny), "shiny", `≈ ${fmt(wk.shiny * 30 / 7)} / month · need ${fmt(rem.shiny)}`)}
+    ${tile("Glowy / week", fmt(wk.glowy), "glowy", `≈ ${fmt(wk.glowy * 30 / 7)} / month · need ${fmt(rem.glowy)}`)}
+    ${tile("Starry / week", fmt(wk.starry), "starry", `≈ ${fmt(wk.starry * 30 / 7)} / month · need ${fmt(rem.starry)}`)}
+    ${tile("All equipment maxed", isFinite(wkAll) ? etaStr(wkAll) : "∞", "accent",
+      isFinite(wkAll) && wkAll > 0 ? `≈ ${Math.ceil(wkAll)} weeks at this income` : wkAll <= 0 ? "everything owned is maxed" : "no income set")}
+  </div>
+  <div class="grid cols-2" style="margin-bottom:14px">
+    <div class="card"><h2>Ore income calculator</h2>
+      <div class="note">Weekly income from your actual sources. The free 10 glowy from the Trader each week is always included.
+        ${synced ? "" : `<b>Plan tabs currently use ${fmt(state.settings.oreWeekShiny)}/${fmt(state.settings.oreWeekGlowy)}/${fmt(state.settings.oreWeekStarry)} per week — change any input here to sync them.</b>`}</div>
+      <h3 class="small" style="margin:10px 0 4px">Star Bonus (daily)</h3>
+      <div class="io-row small">
+        <label class="field">League <select data-orecalc="league">${leagueOpts}</select></label>
+        ${num("sbPerWeek", "Star bonuses/wk", c.sbPerWeek, 'min="0" max="7"')}
+      </div>
+      <h3 class="small" style="margin:10px 0 4px">Clan wars <span class="muted">(TH${Math.min(Math.max(state.th, 8), MAX_TH)} war: ${warOre[0]}/${warOre[1]}/${warOre[2]} per won war, ≥1★ attacks)</span></h3>
+      <div class="io-row small">
+        ${num("warsPerMonth", "Wars/month", c.warsPerMonth, 'min="0" max="15"')}
+        ${num("winRate", "Win rate %", c.winRate, 'min="0" max="100" step="5"')}
+      </div>
+      <h3 class="small" style="margin:10px 0 4px">Trader — raid medal deals <span class="muted">(each up to 2×/wk: 500 shiny·350m, 50 glowy·300m, 5 starry·350m)</span></h3>
+      <div class="io-row small">
+        ${dealSel("medalShiny", 2, "500 shiny", "350 raid medals each")}
+        ${dealSel("medalGlowy", 2, "50 glowy", "300 raid medals each")}
+        ${dealSel("medalStarry", 2, "5 starry", "350 raid medals each")}
+        ${wk.medals ? `<span class="pill">${fmtFull(wk.medals)} medals/wk</span>` : ""}
+      </div>
+      <h3 class="small" style="margin:10px 0 4px">Trader — gem deals <span class="muted">(weekly: 300 shiny·150g up to 5×, 60 glowy·150g up to 2×, 15 starry·275g 1×)</span></h3>
+      <div class="io-row small">
+        ${dealSel("gemShiny", 5, "300 shiny", "150 gems each")}
+        ${dealSel("gemGlowy", 2, "60 glowy", "150 gems each")}
+        ${dealSel("gemStarry", 1, "15 starry", "275 gems each")}
+        ${wk.gems ? `<span class="pill">${fmtFull(wk.gems)} gems/wk</span>` : ""}
+      </div>
+      <h3 class="small" style="margin:10px 0 4px">Everything else, per month <span class="muted">(events, season pass, CWL, clan games)</span></h3>
+      <div class="io-row small">
+        ${num("extraShiny", "Shiny", c.extraShiny, 'step="500" min="0"')}
+        ${num("extraGlowy", "Glowy", c.extraGlowy, 'step="50" min="0"')}
+        ${num("extraStarry", "Starry", c.extraStarry, 'step="5" min="0"')}
+      </div>
+    </div>
+    <div class="card"><h2>Upgrade cost calculator</h2>
+      <div class="note">Ore cost between any two levels — and how long that takes at your income.</div>
+      <div class="io-row small">
+        <label class="field">Equipment <select data-oresel="id">${eqOpts}</select></label>
+        <label class="field">From <select data-oresel="from">${lvlOpts(1, selMax - 1, oreSel.from)}</select></label>
+        <label class="field">To <select data-oresel="to">${lvlOpts(oreSel.from + 1, selMax, oreSel.to)}</select></label>
+      </div>
+      <div class="grid cols-3" style="margin:10px 0">
+        ${tile("Shiny", fmtFull(selCost.shiny), "shiny", "")}
+        ${tile("Glowy", fmtFull(selCost.glowy), "glowy", "")}
+        ${tile("Starry", fmtFull(selCost.starry), "starry", "")}
+      </div>
+      <p class="small">${esc(selE.name)} L${oreSel.from}→L${oreSel.to}: ≈ <b>${isFinite(selWeeks) ? selWeeks.toFixed(1) + " weeks" : "∞"}</b> of your full income${isFinite(selWeeks) && selWeeks > 0 ? ` (${etaStr(selWeeks)})` : ""}.
+        Buying the ores outright would cost <b>${fmtFull(selGems)}</b> gems (1/5/35 per shiny/glowy/starry).
+        ${oreSel.to > selCap ? `<span class="muted">Note: your TH${state.th} Blacksmith caps ${selE.rarity} equipment at L${selCap}.</span>` : ""}</p>
+      <h3 class="small" style="margin:14px 0 4px">Your equipment (${eqRows.length} not maxed for Blacksmith L${bsMax})</h3>
+      <div class="table-scroll"><table class="data">
+        <thead><tr><th>Equipment</th><th>Level</th><th>Shiny</th><th>Glowy</th><th>Starry</th><th>Alone: time · date</th></tr></thead>
+        <tbody>${eqTable || '<tr><td colspan=6 class="muted">Everything you own is maxed for this Blacksmith. Tick owned equipment in My Base.</td></tr>'}</tbody></table></div>
+      <p class="small muted">"Alone" = if every ore went into that one item. Total for all of it: ≈ ${isFinite(wkAll) ? Math.ceil(wkAll) + " weeks" : "∞"}.</p>
+    </div>
+  </div>
+  <details class="card"><summary style="cursor:pointer"><b>Reference: where ores come from</b> <span class="muted small">(wiki data, Aug 2026)</span></summary>
+    <div class="grid cols-2" style="margin-top:10px">
+      <div><h3 class="small">Star Bonus per day, by league</h3>
+        <div class="table-scroll" style="max-height:300px;overflow-y:auto"><table class="data">
+          <thead><tr><th>League</th><th>Shiny</th><th>Glowy</th><th>Starry</th></tr></thead>
+          <tbody>${ORE_LEAGUES.map(l => `<tr><td>${l[0]}</td><td>${l[1]}</td><td>${l[2]}</td><td>${l[3] || "–"}</td></tr>`).join("")}</tbody></table></div>
+      </div>
+      <div><h3 class="small">Clan war, per won war (≥1★)</h3>
+        <div class="table-scroll"><table class="data">
+          <thead><tr><th>TH</th><th>Shiny</th><th>Glowy</th><th>Starry</th></tr></thead>
+          <tbody>${Object.entries(ORE_WAR).filter(([t]) => +t <= MAX_TH && (+t < 17)).map(([t, v]) =>
+            `<tr><td>TH${t === "16" ? "16+" : t}</td><td>${v[0]}</td><td>${v[1]}</td><td>${v[2] || "–"}</td></tr>`).join("")}</tbody></table></div>
+        <p class="small muted" style="margin-top:8px">Loss pays half, draw 4/7. A no-star attack pays by destruction %.
+          Ore buys at the Blacksmith cost 1 / 5 / 35 gems per shiny / glowy / starry.</p>
+      </div>
+    </div>
+  </details>`;
+}
+
+/* ---------- Magic Items ---------- */
+// Costs from clashofclans.fandom.com (Trader + League Shop tables, Aug 2026). Trader prices vary a bit week to week.
+// [group, name, effect, cap, gems, cwlMedals, raidMedals, sell]
+const MAGIC_ITEMS = [
+  ["Books", "Book of Building", "Finishes any ongoing building upgrade or construction", 1, 925, null, null, 50],
+  ["Books", "Book of Fighting", "Finishes any ongoing troop / siege upgrade in the Lab", 1, 925, null, null, 50],
+  ["Books", "Book of Spells", "Finishes any ongoing spell upgrade in the Lab", 1, 925, null, null, 50],
+  ["Books", "Book of Heroes", "Finishes any ongoing hero or pet upgrade", 1, 500, null, null, 50],
+  ["Books", "Book of Everything", "Finishes any ongoing upgrade timer (Clan Games / events only)", 5, null, null, null, 50],
+  ["Hammers", "Hammer of Building", "Upgrades any building instantly, free (1-week cooldown)", 1, null, 120, null, 100],
+  ["Hammers", "Hammer of Fighting", "Upgrades any troop / siege instantly, free (1-week cooldown)", 1, null, 120, null, 100],
+  ["Hammers", "Hammer of Spells", "Upgrades any spell instantly, free (1-week cooldown)", 1, null, 120, null, 100],
+  ["Hammers", "Hammer of Heroes", "Upgrades any hero or pet instantly, free (1-week cooldown)", 1, null, 165, null, 100],
+  ["Runes", "Rune of Gold", "Fills all gold storages", 1, 1000, null, null, 50],
+  ["Runes", "Rune of Elixir", "Fills all elixir storages", 1, 1000, null, null, 50],
+  ["Runes", "Rune of Dark Elixir", "Fills the dark elixir storage", 1, 1000, null, null, 50],
+  ["Potions", "Builder Potion", "Builders work 10× for 1h — saves ~9h per builder", 5, 285, 30, null, 10],
+  ["Potions", "Research Potion", "Lab works 24× for 1h — saves ~23h", 5, 120, 20, 200, 10],
+  ["Potions", "Pet Potion", "Pet House works 24× for 1h — saves ~23h", 5, 120, null, 200, 10],
+  ["Potions", "Resource Potion", "2× resource production for 1 day", 5, 60, 10, 115, 10],
+  ["Potions", "Power Potion", "Troops/spells boosted to TH max level for 1h", 5, 150, null, 150, 10],
+  ["Potions", "Hero Potion", "Heroes boosted to TH max level for 1h", 5, 150, null, 150, 10],
+  ["Potions", "Super Potion", "Turns a troop into its Super version for 3 days", 5, 300, null, null, 10],
+  ["Potions", "Clock Tower Potion", "Builder Base Clock Tower boost, 30 min", 5, 75, null, 100, 10],
+  ["Misc", "Wall Ring", "Upgrades a wall for free — higher walls need more rings", 25, 35, 3, 45, 5],
+  ["Misc", "Shovel of Obstacles", "Makes one obstacle permanently movable", 5, 500, null, 1000, 50],
+  ["Misc", "Builder Star Jar", "Builder Base star bonus instantly available", 5, 100, null, 150, 10],
+  ["Misc", "Rune of Builder Gold", "Fills all Builder Base gold storages", 1, 1000, null, null, 50],
+  ["Misc", "Rune of Builder Elixir", "Fills all Builder Base elixir storages", 1, 1000, null, null, 50],
+];
+const WALL_RINGS_PER = lvl => lvl <= 12 ? 1 : lvl <= 14 ? 2 : lvl === 15 ? 3 : lvl === 16 ? 4 : lvl === 17 ? 5 : 8;
+
+// Next available upgrade steps from the current base — what a book/hammer could hit right now.
+function nextStepCandidates() {
+  const th = state.th;
+  const out = { building: [], hero: [], troop: [], spell: [] };
+  for (const b of BUILDINGS) {
+    const mx = maxLvlAt(b.rows, th);
+    if (!mx) continue;
+    const seen = new Set();
+    for (const cur0 of (state.buildings[b.id] || [])) {
+      const cur = Math.min(cur0, mx);
+      if (cur >= mx || seen.has(cur)) continue;
+      seen.add(cur);
+      const r = b.rows.find(x => x.lvl === cur + 1);
+      if (r) out.building.push({ name: `${b.name} ${cur ? `${cur}→${cur + 1}` : "(new build)"}`, time: r.time, cost: r.cost, res: b.res });
+    }
+  }
+  for (const h of HEROES) {
+    if (h.unlockTH > th) continue;
+    const mx = maxLvlAt(h.rows, th), cur = Math.min(state.heroes[h.id] || 0, mx);
+    const r = cur < mx && h.rows.find(x => x.lvl === cur + 1);
+    if (r) out.hero.push({ name: `${h.name} ${cur}→${cur + 1}`, time: r.time, cost: r.cost, res: h.res });
+  }
+  for (const p of PETS) {
+    if (p.unlockTH > th) continue;
+    const mx = maxLvlAt(p.rows, th), cur = Math.min(Math.max(1, state.pets[p.id] || 1), mx);
+    const r = cur < mx && p.rows.find(x => x.lvl === cur + 1);
+    if (r) out.hero.push({ name: `${p.name} ${cur}→${cur + 1}`, time: r.time, cost: r.cost, res: p.res });
+  }
+  for (const x of LAB) {
+    if (x.unlockTH > th) continue;
+    const mx = maxLvlAt(x.rows, th), cur = Math.min(Math.max(1, state.lab[x.id] || 1), mx);
+    const r = cur < mx && x.rows.find(l => l.lvl === cur + 1);
+    if (r) (x.cat === "spell" || x.cat === "dark_spell" ? out.spell : out.troop)
+      .push({ name: `${x.name} ${cur}→${cur + 1}`, time: r.time, cost: r.cost, res: x.res });
+  }
+  return out;
+}
+
+function renderMagic() {
+  const root = $("#tab-magic");
+  const A = analyze();
+  const cand = nextStepCandidates();
+  const byTime = list => list.slice().sort((a, b) => b.time - a.time);
+  const byCost = list => list.slice().sort((a, b) => wcost(b.res, b.cost) - wcost(a.res, a.cost));
+  const topTime = (list, n) => byTime(list).slice(0, n || 3);
+  const topCost = (list, n) => byCost(list).slice(0, n || 3);
+
+  const bookRow = (item, cost, list) => {
+    const t = topTime(list);
+    if (!t.length) return `<tr><td><b>${item}</b><div class="muted small">${cost}</div></td><td class="muted" colspan="2">nothing left to speed up 🎉</td></tr>`;
+    return `<tr><td><b>${item}</b><div class="muted small">${cost}</div></td>
+      <td>${esc(t[0].name)}${t.length > 1 ? `<div class="muted small">then: ${t.slice(1).map(x => esc(x.name) + " (" + fmtH(x.time) + ")").join(" · ")}</div>` : ""}</td>
+      <td><b>${fmtH(t[0].time)}</b> skipped</td></tr>`;
+  };
+  const hammerRow = (item, cost, list) => {
+    const t = topCost(list);
+    if (!t.length) return `<tr><td><b>${item}</b><div class="muted small">${cost}</div></td><td class="muted" colspan="2">nothing left to buy out 🎉</td></tr>`;
+    return `<tr><td><b>${item}</b><div class="muted small">${cost}</div></td>
+      <td>${esc(t[0].name)}${t.length > 1 ? `<div class="muted small">then: ${t.slice(1).map(x => esc(x.name) + " (" + fmt(x.cost) + ")").join(" · ")}</div>` : ""}</td>
+      <td>${resTxt(t[0].res, t[0].cost)} + <b>${fmtH(t[0].time)}</b> free</td></tr>`;
+  };
+  const all = cand.building.concat(cand.hero, cand.troop, cand.spell);
+
+  // runes: storage capacity vs what's still needed
+  const runeRow = (name, cap, need, cls) => `<tr><td><b>${name}</b><div class="muted small">Trader, ~1,000 gems</div></td>
+    <td>fills <span class="res-txt"><span class="dot ${cls}"></span>${fmt(cap)}</span> of storage</td>
+    <td>${need > 0 ? `covers <b>${Math.min(100, 100 * cap / need).toFixed(0)}%</b> of the ${fmt(need)} you still need` : '<span class="muted">nothing needed</span>'}</td></tr>`;
+
+  // wall rings: what your current wall step costs per ring
+  let wallRingRow = "";
+  {
+    const mx = maxLvlAt(WALLS.rows, state.th);
+    const cur = A.wall.levels.filter(w => !w.maxed).sort((a, b) => a.lvl - b.lvl)[0];
+    if (cur) {
+      const step = WALLS.rows.find(r => r.lvl === cur.lvl + 1);
+      const rings = WALL_RINGS_PER(cur.lvl + 1);
+      wallRingRow = `<tr><td><b>Wall Ring</b><div class="muted small">3 CWL medals · 35 gems · 45 raid medals each</div></td>
+        <td>your L${cur.lvl}→${cur.lvl + 1} walls: ${rings} ring${rings > 1 ? "s" : ""} each (${cur.cnt} segments)</td>
+        <td>≈ <b>${fmt(step ? step.cost / rings : 0)}</b> loot saved per ring ${step && step.cost / rings >= 1e6 ? '<span class="pill good">good value</span>' : '<span class="pill warn">save them for higher walls</span>'}</td></tr>`;
+    } else {
+      wallRingRow = `<tr><td><b>Wall Ring</b></td><td class="muted" colspan="2">walls are done for this TH</td></tr>`;
+    }
+  }
+
+  const petAvail = PETS.some(p => p.unlockTH <= state.th);
+  const refRows = MAGIC_ITEMS.map(([g, n, eff, cap, gems, cwl, raid, sell], i, arr) =>
+    `${!i || arr[i - 1][0] !== g ? `<tr><th colspan="6" style="text-align:left">${g}</th></tr>` : ""}
+    <tr><td>${n}</td><td class="small">${eff}</td><td>${cap}</td>
+      <td>${gems ? fmtFull(gems) : "–"}</td><td>${cwl ? cwl : "–"}</td><td>${raid ? fmtFull(raid) : "–"}</td></tr>`).join("");
+
+  root.innerHTML = `
+  <div class="card" style="margin-bottom:14px"><h2>Best use right now</h2>
+    <div class="note">Ranked against your current base: books skip the longest timer you can start, hammers buy out the most expensive upgrade.
+      Start the upgrade first, then book it. ${all.length ? "" : "Load or edit a base to get suggestions."}</div>
+    <div class="table-scroll"><table class="data">
+      <thead><tr><th style="min-width:160px">Item</th><th>Best target</th><th>Payoff</th></tr></thead>
+      <tbody>
+        ${bookRow("Book of Building", "Trader, 925 gems", cand.building)}
+        ${bookRow("Book of Heroes", "Trader, 500 gems", cand.hero)}
+        ${bookRow("Book of Fighting", "Trader, 925 gems", cand.troop)}
+        ${bookRow("Book of Spells", "Trader, 925 gems", cand.spell)}
+        ${bookRow("Book of Everything", "Clan Games / events", all)}
+        ${hammerRow("Hammer of Building", "League Shop, 120 CWL medals", cand.building)}
+        ${hammerRow("Hammer of Heroes", "League Shop, 165 CWL medals", cand.hero)}
+        ${hammerRow("Hammer of Fighting", "League Shop, 120 CWL medals", cand.troop)}
+        ${hammerRow("Hammer of Spells", "League Shop, 120 CWL medals", cand.spell)}
+        <tr><td><b>Builder Potion</b><div class="muted small">League Shop, 30 medals · 285 gems</div></td>
+          <td>while all ${state.builders} builders are busy on long upgrades</td>
+          <td>saves <b>${fmtH(9 * state.builders)}</b> of builder time (9h × ${state.builders})</td></tr>
+        <tr><td><b>Research Potion</b><div class="muted small">League Shop, 20 medals · 120 gems</div></td>
+          <td>while a long research runs${topTime(cand.troop.concat(cand.spell), 1).map(x => ` — e.g. ${esc(x.name)}`).join("")}</td>
+          <td>saves <b>23h</b> of lab time</td></tr>
+        ${petAvail ? `<tr><td><b>Pet Potion</b><div class="muted small">Trader, 120 gems · 200 raid medals</div></td>
+          <td>while a long pet upgrade runs</td><td>saves <b>23h</b> of Pet House time</td></tr>` : ""}
+        ${runeRow("Rune of Gold", A.storage.gold, A.totals.res.gold + A.wall.rem, "gold")}
+        ${runeRow("Rune of Elixir", A.storage.elixir, A.totals.res.elixir, "elixir")}
+        ${runeRow("Rune of Dark Elixir", A.storage.dark, A.totals.res.dark, "dark")}
+        ${wallRingRow}
+      </tbody></table></div>
+    <p class="small muted" style="margin-top:8px">Rule of thumb: hammers are the best CWL medal spend while you still have expensive upgrades;
+      Book of Heroes at 500 gems is the cheapest book per hour skipped; runes shine right after a Town Hall upgrade when everything is expensive.</p>
+  </div>
+  <details class="card"><summary style="cursor:pointer"><b>Reference: every magic item &amp; where to get it</b> <span class="muted small">(wiki data, Aug 2026 — trader prices vary week to week)</span></summary>
+    <div class="table-scroll" style="margin-top:10px"><table class="data">
+      <thead><tr><th>Item</th><th>Effect</th><th>Max held</th><th>Gems</th><th>CWL medals</th><th>Raid medals</th></tr></thead>
+      <tbody>${refRows}</tbody></table></div>
+    <p class="small muted" style="margin-top:8px">Books, potions and runes also drop from Clan Games, Season Challenges and events.
+      Hammers are League-Shop-only, one per type per week. Unwanted items sell for gems (books 50, hammers 100, potions 10, runes 50).</p>
+  </details>`;
 }
 
 /* ---------- Metrics ---------- */
@@ -2509,6 +2872,19 @@ function bindEvents() {
     else if (t.id === "oreWeekShiny") { state.settings.oreWeekShiny = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "oreWeekGlowy") { state.settings.oreWeekGlowy = Math.max(0, +t.value || 0); save(); renderActive(); }
     else if (t.id === "oreWeekStarry") { state.settings.oreWeekStarry = Math.max(0, +t.value || 0); save(); renderActive(); }
+    else if (t.dataset.orecalc) {
+      state.settings.oreCalc[t.dataset.orecalc] = Math.max(0, +t.value || 0);
+      syncOreWeekly(); save(); renderActive();
+    }
+    else if (t.dataset.oresel) {
+      oreSel[t.dataset.oresel] = t.dataset.oresel === "id" ? t.value : +t.value;
+      if (t.dataset.oresel === "id") {
+        const e = byId[oreSel.id];
+        oreSel.from = state.equip[e.id] || 1;
+        oreSel.to = equipCapAt(blacksmithLevel("max"), e.rarity) || (e.rarity === "epic" ? 27 : 18);
+      }
+      renderOres();
+    }
   });
 
   document.querySelector("main").addEventListener("click", async e => {
